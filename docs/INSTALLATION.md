@@ -1,5 +1,14 @@
 # Installation
 
+## One-click links
+
+### Home Assistant App (backend)
+[![Add app repository to your Home Assistant instance.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fgitviola%2Fhass-flatmate)
+[![Show app on your Home Assistant instance.](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_addon/?addon=hass_flatmate_service&repository_url=https%3A%2F%2Fgithub.com%2Fgitviola%2Fhass-flatmate)
+
+### HACS integration
+[![Open HACS repository on your Home Assistant instance.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=gitviola&repository=hass-flatmate&category=integration)
+
 ## Install Home Assistant App Backend
 
 1. Add this repository as an App/Add-on repository in Home Assistant.

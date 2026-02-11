@@ -14,6 +14,17 @@ It replaces the used Flatastic features with:
 - Home Assistant calendar activity events
 - Built-in notification scheduling (Monday + Sunday reminders)
 
+## One-Click Install
+
+### Home Assistant App (backend)
+
+[![Add app repository to your Home Assistant instance.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fgitviola%2Fhass-flatmate)
+[![Show app on your Home Assistant instance.](https://my.home-assistant.io/badges/supervisor_addon.svg)](https://my.home-assistant.io/redirect/supervisor_addon/?addon=hass_flatmate_service&repository_url=https%3A%2F%2Fgithub.com%2Fgitviola%2Fhass-flatmate)
+
+### HACS integration
+
+[![Open HACS repository on your Home Assistant instance.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=gitviola&repository=hass-flatmate&category=integration)
+
 ## Repository Layout
 
 - `/custom_components/hass_flatmate`: install via HACS (custom repository)
