@@ -68,6 +68,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
       members: attrs.members || [],
       service_domain: attrs.service_domain || "",
       service_mark_done: attrs.service_mark_done || "",
+      service_mark_undone: attrs.service_mark_undone || "",
       service_swap_week: attrs.service_swap_week || "",
       modal_open: this._modalOpen,
       selected_week: this._selectedWeekStart,
@@ -91,6 +92,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
     return {
       domain: attributes.service_domain || "hass_flatmate",
       markDone: attributes.service_mark_done || "hass_flatmate_mark_cleaning_done",
+      markUndone: attributes.service_mark_undone || "hass_flatmate_mark_cleaning_undone",
       swapWeek: attributes.service_swap_week || "hass_flatmate_swap_cleaning_week",
     };
   }
@@ -122,10 +124,13 @@ class HassFlatmateCleaningCard extends HTMLElement {
   }
 
   _weekTitle(row, index) {
+    if (row?.is_previous) {
+      return "Previous week";
+    }
     if (row?.is_current) {
       return "This week";
     }
-    if (index === 1) {
+    if (row?.is_next || index === 1) {
       return "Next week";
     }
     if (row?.week_number != null) {
@@ -155,7 +160,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
     }
 
     const memberIds = members.map((m) => Number(m.member_id)).filter((id) => Number.isInteger(id) && id > 0);
-    const baselineId = Number(weekRow.baseline_assignee_member_id);
+    const baselineId = Number(weekRow.original_assignee_member_id ?? weekRow.baseline_assignee_member_id);
     const effectiveId = Number(weekRow.assignee_member_id);
 
     let memberA = Number.isInteger(baselineId) && baselineId > 0 ? baselineId : memberIds[0];
@@ -193,6 +198,17 @@ class HassFlatmateCleaningCard extends HTMLElement {
     await this._hass.callService(meta.domain, service, data);
   }
 
+  async _requestEntityRefresh() {
+    if (!this._hass || !this._config?.entity) {
+      return;
+    }
+    try {
+      await this._hass.callService("homeassistant", "update_entity", {
+        entity_id: this._config.entity,
+      });
+    } catch (_error) {}
+  }
+
   async _markDone(weekStart) {
     if (!weekStart || this._pendingDoneWeeks.has(weekStart)) {
       return;
@@ -205,9 +221,30 @@ class HassFlatmateCleaningCard extends HTMLElement {
     try {
       const meta = this._serviceMeta(this._stateObj.attributes || {});
       await this._callService(meta.markDone, { week_start: weekStart });
+      await this._requestEntityRefresh();
     } catch (error) {
       this._pendingDoneWeeks.delete(weekStart);
       this._errorMessage = error?.message || "Unable to mark cleaning as done";
+      this._render();
+    }
+  }
+
+  async _markUndone(weekStart) {
+    if (!weekStart || this._pendingDoneWeeks.has(weekStart)) {
+      return;
+    }
+
+    this._pendingDoneWeeks.add(weekStart);
+    this._errorMessage = "";
+    this._render();
+
+    try {
+      const meta = this._serviceMeta(this._stateObj.attributes || {});
+      await this._callService(meta.markUndone, { week_start: weekStart });
+      await this._requestEntityRefresh();
+    } catch (error) {
+      this._pendingDoneWeeks.delete(weekStart);
+      this._errorMessage = error?.message || "Unable to mark cleaning as undone";
       this._render();
     }
   }
@@ -257,6 +294,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
         member_b_id: safeMemberB,
         cancel,
       });
+      await this._requestEntityRefresh();
       this._pendingSwapWeeks.delete(weekStart);
       this._closeSwapModal();
     } catch (error) {
@@ -281,6 +319,12 @@ class HassFlatmateCleaningCard extends HTMLElement {
       });
     });
 
+    this._root.querySelectorAll("[data-action='mark-undone']").forEach((el) => {
+      el.addEventListener("click", async () => {
+        await this._markUndone(el.dataset.weekStart || "");
+      });
+    });
+
     const memberASelect = this._root.querySelector("#hf-swap-member-a");
     const memberBSelect = this._root.querySelector("#hf-swap-member-b");
 
@@ -293,8 +337,10 @@ class HassFlatmateCleaningCard extends HTMLElement {
       this._render();
     });
 
-    this._root.querySelector("[data-action='close-swap']")?.addEventListener("click", () => {
-      this._closeSwapModal();
+    this._root.querySelectorAll("[data-action='close-swap']").forEach((el) => {
+      el.addEventListener("click", () => {
+        this._closeSwapModal();
+      });
     });
 
     this._root.querySelector("[data-action='apply-swap']")?.addEventListener("click", async () => {
@@ -367,6 +413,15 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
     const currentAssigneeName = currentWeek?.assignee_name || (currentWeek?.assignee_member_id ? `Member ${currentWeek.assignee_member_id}` : "Unassigned");
     const selectedWeek = this._resolveSelectedWeek(weeks);
+    const selectedOriginalName = selectedWeek
+      ? (
+          selectedWeek.original_assignee_name
+          || selectedWeek.baseline_assignee_name
+          || (selectedWeek.original_assignee_member_id || selectedWeek.baseline_assignee_member_id
+            ? `Member ${selectedWeek.original_assignee_member_id || selectedWeek.baseline_assignee_member_id}`
+            : "Unassigned")
+        )
+      : "";
 
     const weekRows = weeks
       .map((row, index) => {
@@ -375,14 +430,16 @@ class HassFlatmateCleaningCard extends HTMLElement {
         const isMissed = status === "missed";
         const isPending = !isDone && !isMissed;
         const isCurrent = !!row.is_current;
+        const isPrevious = !!row.is_previous;
+        const isPast = !!row.is_past;
         const isSwapPending = this._pendingSwapWeeks.has(row.week_start);
 
         const assigneeName = this._escape(
           row.assignee_name || (row.assignee_member_id ? `Member ${row.assignee_member_id}` : "Unassigned")
         );
-        const baselineName = row.baseline_assignee_name
-          ? this._escape(row.baseline_assignee_name)
-          : (row.baseline_assignee_member_id ? `Member ${row.baseline_assignee_member_id}` : "");
+        const baselineName = row.original_assignee_name
+          ? this._escape(row.original_assignee_name)
+          : (row.original_assignee_member_id ? `Member ${row.original_assignee_member_id}` : "");
         const completedByName = row.completed_by_name
           ? this._escape(row.completed_by_name)
           : (row.completed_by_member_id ? `Member ${row.completed_by_member_id}` : "");
@@ -399,7 +456,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
           : "";
 
         const secondary = row.override_type === "manual_swap" && baselineName && baselineName !== assigneeName
-          ? `<span class="meta-note">Baseline: ${baselineName}</span>`
+          ? `<span class="meta-note">Original: ${baselineName}</span>`
           : "";
 
         const doneButton = isCurrent && !isDone
@@ -411,8 +468,15 @@ class HassFlatmateCleaningCard extends HTMLElement {
                ${isDone ? "Done" : isMissed ? "Missed" : "Pending"}
              </span>`;
 
+        const undoButton = isDone && (isCurrent || isPrevious)
+          ? `<button class="action undo" type="button" data-action="mark-undone" data-week-start="${this._escape(row.week_start)}" ${this._pendingDoneWeeks.has(row.week_start) ? "disabled" : ""}>
+               <ha-icon icon="mdi:undo-variant"></ha-icon>
+               <span>${this._pendingDoneWeeks.has(row.week_start) ? "Saving..." : "Undo"}</span>
+             </button>`
+          : "";
+
         return `
-          <li class="week-row ${isCurrent ? "current" : ""} ${isDone ? "done" : ""} ${isMissed ? "missed" : ""}">
+          <li class="week-row ${isCurrent ? "current" : ""} ${isPast ? "past" : ""} ${isDone ? "done" : ""} ${isMissed ? "missed" : ""}">
             <div class="week-main">
               <div class="week-top">
                 <span class="week-label">${this._escape(this._weekTitle(row, index))}</span>
@@ -430,6 +494,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
             </div>
             <div class="week-actions">
               ${doneButton}
+              ${undoButton}
               <button class="action swap" type="button" data-action="open-swap" data-week-start="${this._escape(row.week_start)}" ${isSwapPending ? "disabled" : ""}>
                 <ha-icon icon="mdi:swap-horizontal"></ha-icon>
                 <span>${row.override_type === "manual_swap" ? "Edit swap" : "Swap"}</span>
@@ -472,7 +537,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
           </div>
 
           <section>
-            <h3>Upcoming schedule</h3>
+            <h3>Schedule</h3>
             <ul class="week-list">
               ${weekRows || '<li class="empty-list">No schedule data yet</li>'}
             </ul>
@@ -506,6 +571,9 @@ class HassFlatmateCleaningCard extends HTMLElement {
               <p class="modal-preview">
                 Preview: <strong>${this._escape(selectedAName)}</strong> and <strong>${this._escape(selectedBName)}</strong>
                 will swap this week.
+              </p>
+              <p class="modal-preview">
+                Original assignee for this week: <strong>${this._escape(selectedOriginalName)}</strong>
               </p>
               <p class="modal-preview subtle">
                 When you save or cancel this swap, both selected flatmates are notified immediately.
@@ -603,6 +671,10 @@ class HassFlatmateCleaningCard extends HTMLElement {
           background: color-mix(in srgb, var(--primary-color) 8%, var(--card-background-color));
         }
 
+        .week-row.past {
+          background: color-mix(in srgb, var(--secondary-text-color) 6%, var(--card-background-color));
+        }
+
         .week-top {
           display: flex;
           align-items: baseline;
@@ -695,6 +767,10 @@ class HassFlatmateCleaningCard extends HTMLElement {
           color: var(--success-color, #4caf50);
           border-color: color-mix(in srgb, var(--success-color, #4caf50) 40%, var(--divider-color));
           background: color-mix(in srgb, var(--success-color, #4caf50) 10%, var(--card-background-color));
+        }
+
+        .action.undo {
+          color: var(--secondary-text-color);
         }
 
         .action.swap {

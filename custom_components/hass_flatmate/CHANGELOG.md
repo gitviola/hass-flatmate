@@ -2,9 +2,15 @@
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-02-11
+
 ### Fixed
 - Shopping service actions now return faster by running refresh/activity-calendar sync in a background coalesced task.
 - Shopping card now optimistically hides pending completed/deleted items to avoid repeated clicks during backend updates.
+- Cleaning swap cancel no longer returns HTTP 500 when canceling after prior canceled swap history exists.
+- Swap dialog close controls now work reliably.
+- Cleaning card requests immediate entity refresh after done/undone and swap actions, removing the need for full dashboard reloads.
+- Swap creation now rejects same-member swaps.
 
 ### Added
 - New custom cleaning card (`custom:hass-flatmate-cleaning-card`) with:
@@ -19,6 +25,8 @@
   - per-week `status`, `completed_by_*`, `completion_mode`
   - member list metadata for swap UI
   - cleaning service metadata for card actions
+- New `hass_flatmate_mark_cleaning_undone` service and in-card Undo action for done current/previous weeks.
+- Cleaning schedule API consumption now includes one previous week, plus `original_assignee_*` fields for clearer card labels and swap preview.
 
 ## [0.1.10] - 2026-02-11
 

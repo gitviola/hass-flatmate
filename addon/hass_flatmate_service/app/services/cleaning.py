@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import (
+    ActivityEvent,
     CleaningAssignment,
     CleaningAssignmentStatus,
     CleaningOverride,
@@ -156,16 +157,35 @@ def _build_swap_notifications(
 ) -> list[dict]:
     member_a = get_member_by_id(session, member_a_id)
     member_b = get_member_by_id(session, member_b_id)
+    original_assignee_id = baseline_assignee_member_id(session, week_start)
+    original_assignee = (
+        get_member_by_id(session, original_assignee_id)
+        if original_assignee_id is not None
+        else None
+    )
+    original_suffix = (
+        f" Original assignee: {original_assignee.display_name}."
+        if original_assignee is not None
+        else ""
+    )
 
     if action == "created":
-        msg_a = f"Swap confirmed for week {week_start.isoformat()} with {member_b.display_name if member_b else 'member'}"
-        msg_b = f"Swap confirmed for week {week_start.isoformat()} with {member_a.display_name if member_a else 'member'}"
+        msg_a = (
+            f"Swap confirmed for week {week_start.isoformat()} with "
+            f"{member_b.display_name if member_b else 'member'}."
+            f"{original_suffix}"
+        )
+        msg_b = (
+            f"Swap confirmed for week {week_start.isoformat()} with "
+            f"{member_a.display_name if member_a else 'member'}."
+            f"{original_suffix}"
+        )
     elif action == "updated":
-        msg_a = f"Swap updated for week {week_start.isoformat()}. Check current assignment."
-        msg_b = f"Swap updated for week {week_start.isoformat()}. Check current assignment."
+        msg_a = f"Swap updated for week {week_start.isoformat()}. Check current assignment.{original_suffix}"
+        msg_b = f"Swap updated for week {week_start.isoformat()}. Check current assignment.{original_suffix}"
     else:
-        msg_a = f"Swap canceled for week {week_start.isoformat()}. Rotation has been restored."
-        msg_b = f"Swap canceled for week {week_start.isoformat()}. Rotation has been restored."
+        msg_a = f"Swap canceled for week {week_start.isoformat()}. Rotation has been restored.{original_suffix}"
+        msg_b = f"Swap canceled for week {week_start.isoformat()}. Rotation has been restored.{original_suffix}"
 
     title = "Weekly Cleaning Shift"
     return [
@@ -196,7 +216,21 @@ def upsert_manual_swap(
 
     if cancel:
         if existing is not None:
-            existing.status = OverrideStatus.CANCELED
+            already_canceled = session.execute(
+                select(CleaningOverride).where(
+                    CleaningOverride.week_start == week_start,
+                    CleaningOverride.type == OverrideType.MANUAL_SWAP,
+                    CleaningOverride.status == OverrideStatus.CANCELED,
+                )
+            ).scalar_one_or_none()
+
+            if already_canceled is not None and already_canceled.id != existing.id:
+                already_canceled.member_from_id = existing.member_from_id
+                already_canceled.member_to_id = existing.member_to_id
+                already_canceled.created_by_member_id = actor_member.id if actor_member else None
+                session.delete(existing)
+            else:
+                existing.status = OverrideStatus.CANCELED
             action = "canceled"
             notifications = _build_swap_notifications(
                 session,
@@ -324,6 +358,84 @@ def mark_cleaning_done(
             "completion_mode": "own",
         },
         created_at=now,
+    )
+
+    session.commit()
+
+
+def _latest_takeover_event_for_week(session: Session, week_start: date) -> ActivityEvent | None:
+    week_start_iso = week_start.isoformat()
+    rows = session.execute(
+        select(ActivityEvent)
+        .where(
+            ActivityEvent.domain == "cleaning",
+            ActivityEvent.action == "cleaning_takeover_done",
+        )
+        .order_by(ActivityEvent.created_at.desc(), ActivityEvent.id.desc())
+    ).scalars().all()
+
+    for row in rows:
+        payload = row.payload_json if isinstance(row.payload_json, dict) else {}
+        if str(payload.get("week_start")) == week_start_iso:
+            return row
+    return None
+
+
+def mark_cleaning_undone(
+    session: Session,
+    *,
+    week_start: date,
+    actor_user_id: str | None,
+) -> None:
+    _ensure_week_start_is_monday(week_start)
+    actor_member = resolve_actor_member(session, actor_user_id)
+    assignment = ensure_assignment(session, week_start)
+
+    if assignment.status != CleaningAssignmentStatus.DONE:
+        return
+
+    previous_mode = assignment.completion_mode
+
+    assignment.status = CleaningAssignmentStatus.PENDING
+    assignment.completed_by_member_id = None
+    assignment.completion_mode = None
+    assignment.completed_at = None
+
+    override = _planned_override_for_week(session, week_start)
+    if override is None:
+        override = session.execute(
+            select(CleaningOverride).where(
+                CleaningOverride.week_start == week_start,
+                CleaningOverride.status == OverrideStatus.APPLIED,
+            )
+        ).scalar_one_or_none()
+    if override is not None and override.status == OverrideStatus.APPLIED:
+        override.status = OverrideStatus.PLANNED
+
+    if previous_mode == "takeover":
+        takeover_event = _latest_takeover_event_for_week(session, week_start)
+        if takeover_event is not None:
+            linked_compensations = session.execute(
+                select(CleaningOverride).where(
+                    CleaningOverride.source_event_id == takeover_event.id,
+                    CleaningOverride.type == OverrideType.COMPENSATION,
+                    CleaningOverride.status == OverrideStatus.PLANNED,
+                )
+            ).scalars().all()
+            for compensation in linked_compensations:
+                compensation.status = OverrideStatus.CANCELED
+
+    log_event(
+        session,
+        domain="cleaning",
+        action="cleaning_undone",
+        actor_member_id=actor_member.id if actor_member else None,
+        actor_user_id_raw=actor_user_id,
+        payload={
+            "week_start": week_start.isoformat(),
+            "previous_completion_mode": previous_mode,
+        },
+        created_at=now_utc(),
     )
 
     session.commit()

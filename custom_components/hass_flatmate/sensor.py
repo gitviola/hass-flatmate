@@ -18,6 +18,7 @@ from .const import (
     SERVICE_ADD_FAVORITE_ITEM,
     SERVICE_ADD_SHOPPING_ITEM,
     SERVICE_MARK_CLEANING_DONE,
+    SERVICE_MARK_CLEANING_UNDONE,
     SERVICE_SWAP_CLEANING_WEEK,
     SERVICE_COMPLETE_SHOPPING_ITEM,
     SERVICE_DELETE_SHOPPING_ITEM,
@@ -304,6 +305,9 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
         schedule = self.coordinator.data.get("cleaning_schedule", {}).get("schedule", [])
         current = self.coordinator.data.get("cleaning_current", {})
         current_week_start = str(current.get("week_start") or "")
+        current_week_start_date = _parse_date(current_week_start)
+        current_status = current.get("status")
+        current_completed_by_id = current.get("completed_by_member_id")
 
         weeks = []
         for row in schedule:
@@ -335,8 +339,15 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
             elif override_type == "compensation":
                 note = "compensation"
 
+            is_current = week_start.isoformat() == current_week_start
             status_value = row.get("status")
+            if status_value is None and is_current:
+                status_value = current_status
+
             completed_by_member_id = row.get("completed_by_member_id")
+            if completed_by_member_id is None and is_current:
+                completed_by_member_id = current_completed_by_id
+
             completed_by_name = None
             if completed_by_member_id is not None:
                 try:
@@ -344,7 +355,18 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
                 except (TypeError, ValueError):
                     completed_by_name = None
 
-            is_current = week_start.isoformat() == current_week_start
+            is_past = (
+                current_week_start_date is not None
+                and week_start < current_week_start_date
+            )
+            is_previous = (
+                current_week_start_date is not None
+                and week_start == (current_week_start_date - timedelta(days=7))
+            )
+            is_next = (
+                current_week_start_date is not None
+                and week_start == (current_week_start_date + timedelta(days=7))
+            )
             weeks.append(
                 {
                     "week_start": week_start.isoformat(),
@@ -352,11 +374,16 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
                     "week_number": week_start.isocalendar().week,
                     "assignee_member_id": effective_id,
                     "assignee_name": assignee_name,
+                    "original_assignee_member_id": baseline_id,
+                    "original_assignee_name": baseline_name,
                     "baseline_assignee_member_id": baseline_id,
                     "baseline_assignee_name": baseline_name,
                     "override_type": override_type,
                     "note": note,
                     "is_current": is_current,
+                    "is_past": is_past,
+                    "is_previous": is_previous,
+                    "is_next": is_next,
                     "status": status_value,
                     "completed_by_member_id": completed_by_member_id,
                     "completed_by_name": completed_by_name,
@@ -369,6 +396,7 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
             "members": members_payload,
             "service_domain": DOMAIN,
             "service_mark_done": SERVICE_MARK_CLEANING_DONE,
+            "service_mark_undone": SERVICE_MARK_CLEANING_UNDONE,
             "service_swap_week": SERVICE_SWAP_CLEANING_WEEK,
         }
 

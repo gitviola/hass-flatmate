@@ -4,10 +4,16 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-02-11
+
 ### Fixed
 - Shopping interactions are now much faster in the dashboard by decoupling post-action coordinator/calendar sync from service call completion.
 - Duplicate shopping complete/delete clicks are now idempotent instead of returning HTTP 400 for already-updated items.
 - Shopping distribution SVG now always renders all active flatmates, including zero-count members, even when one member has all completions.
+- Cleaning swap cancel no longer errors with HTTP 500 when a canceled swap already exists for the same week.
+- Cleaning card swap dialog close controls now work reliably.
+- Cleaning card refreshes immediately after done/undone and swap actions, so manual page refresh is no longer required.
+- Swap validation now rejects selecting the same member on both sides.
 
 ### Added
 - Dedicated cleaning dashboard card with:
@@ -19,6 +25,11 @@ All notable changes to this project are documented in this file.
 - Dedicated shopping distribution dashboard card (`custom:hass-flatmate-distribution-card`) to replace SVG image card dependency.
 - Automatic Lovelace resource registration for distribution card JS (`/hass_flatmate/static/hass-flatmate-distribution-card.js`) in storage mode.
 - Cleaning schedule payload now includes per-week assignment status/completion metadata for richer UI rendering.
+- Cleaning undo flow:
+  - New API endpoint: `POST /v1/cleaning/mark_undone`
+  - New HA service: `hass_flatmate_mark_cleaning_undone`
+  - In-card Undo action for done current/previous weeks
+- Cleaning schedule now includes previous-week context and `original_assignee_*` metadata for clearer swap UX.
 
 ## [0.1.10] - 2026-02-11
 

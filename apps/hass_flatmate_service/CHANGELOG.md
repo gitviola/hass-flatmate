@@ -2,10 +2,19 @@
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-02-11
+
 ### Fixed
 - Shopping complete/delete actions are idempotent for already-updated items.
 - Shopping distribution SVG always includes all active flatmates in the rendered chart, including zero-count members.
 - Cleaning schedule API rows now include assignment `status`, `completed_by_member_id`, and `completion_mode`.
+- Cleaning swap cancel no longer fails with HTTP 500 when canceled swap history for the same week already exists.
+- Swap validation now rejects `member_a_id == member_b_id`.
+
+### Added
+- `POST /v1/cleaning/mark_undone` to revert week completion state to pending.
+- `GET /v1/cleaning/schedule` support for `include_previous_weeks`.
+- Swap notification messages now include original assignee context for the week.
 
 ## [0.1.10] - 2026-02-11
 

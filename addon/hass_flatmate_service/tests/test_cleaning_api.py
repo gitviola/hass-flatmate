@@ -239,3 +239,109 @@ def test_swap_rejects_same_member_ids(client, auth_headers) -> None:
     )
     assert response.status_code == 400
     assert "must be different" in response.json()["detail"]
+
+
+def test_cancel_swap_repeatedly_does_not_raise_500(client, auth_headers) -> None:
+    _sync_members(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    week_start = date.fromisoformat(current.json()["week_start"])
+
+    first_swap = client.post(
+        "/v1/cleaning/overrides/swap",
+        headers=auth_headers,
+        json={
+            "week_start": week_start.isoformat(),
+            "member_a_id": 1,
+            "member_b_id": 2,
+            "actor_user_id": "u1",
+            "cancel": False,
+        },
+    )
+    assert first_swap.status_code == 200
+
+    first_cancel = client.post(
+        "/v1/cleaning/overrides/swap",
+        headers=auth_headers,
+        json={
+            "week_start": week_start.isoformat(),
+            "member_a_id": 1,
+            "member_b_id": 2,
+            "actor_user_id": "u1",
+            "cancel": True,
+        },
+    )
+    assert first_cancel.status_code == 200
+
+    second_swap = client.post(
+        "/v1/cleaning/overrides/swap",
+        headers=auth_headers,
+        json={
+            "week_start": week_start.isoformat(),
+            "member_a_id": 1,
+            "member_b_id": 3,
+            "actor_user_id": "u1",
+            "cancel": False,
+        },
+    )
+    assert second_swap.status_code == 200
+
+    second_cancel = client.post(
+        "/v1/cleaning/overrides/swap",
+        headers=auth_headers,
+        json={
+            "week_start": week_start.isoformat(),
+            "member_a_id": 1,
+            "member_b_id": 3,
+            "actor_user_id": "u1",
+            "cancel": True,
+        },
+    )
+    assert second_cancel.status_code == 200
+
+
+def test_mark_done_then_undone(client, auth_headers) -> None:
+    _sync_members(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    week_start = date.fromisoformat(current.json()["week_start"])
+
+    done = client.post(
+        "/v1/cleaning/mark_done",
+        headers=auth_headers,
+        json={"week_start": week_start.isoformat(), "actor_user_id": "u1"},
+    )
+    assert done.status_code == 200
+
+    undone = client.post(
+        "/v1/cleaning/mark_undone",
+        headers=auth_headers,
+        json={"week_start": week_start.isoformat(), "actor_user_id": "u1"},
+    )
+    assert undone.status_code == 200
+
+    schedule = client.get("/v1/cleaning/schedule?weeks_ahead=2", headers=auth_headers)
+    assert schedule.status_code == 200
+    current_row = schedule.json()["schedule"][0]
+    assert current_row["status"] == "pending"
+    assert current_row["completed_by_member_id"] is None
+
+
+def test_schedule_can_include_previous_week(client, auth_headers) -> None:
+    _sync_members(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    week_start = date.fromisoformat(current.json()["week_start"])
+    previous_week = week_start - timedelta(days=7)
+
+    schedule = client.get(
+        "/v1/cleaning/schedule?weeks_ahead=2&include_previous_weeks=1",
+        headers=auth_headers,
+    )
+    assert schedule.status_code == 200
+    rows = schedule.json()["schedule"]
+    starts = [date.fromisoformat(row["week_start"]) for row in rows]
+    assert previous_week in starts

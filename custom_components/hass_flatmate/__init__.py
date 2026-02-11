@@ -63,6 +63,7 @@ from .const import (
     SERVICE_DELETE_FAVORITE_ITEM,
     SERVICE_DELETE_SHOPPING_ITEM,
     SERVICE_MARK_CLEANING_DONE,
+    SERVICE_MARK_CLEANING_UNDONE,
     SERVICE_MARK_CLEANING_TAKEOVER_DONE,
     SERVICE_SWAP_CLEANING_WEEK,
     SERVICE_SYNC_MEMBERS,
@@ -486,6 +487,15 @@ async def _register_services(hass: HomeAssistant) -> None:
         )
         await _refresh_and_process_activity(hass, runtime)
 
+    async def mark_cleaning_undone(call: ServiceCall) -> None:
+        runtime = _get_primary_runtime(hass)
+        week_start = date.fromisoformat(call.data[SERVICE_ATTR_WEEK_START])
+        await runtime.api.mark_cleaning_undone(
+            week_start=week_start,
+            actor_user_id=call.context.user_id,
+        )
+        await _refresh_and_process_activity(hass, runtime)
+
     async def mark_cleaning_takeover_done(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
         week_start = date.fromisoformat(call.data[SERVICE_ATTR_WEEK_START])
@@ -550,6 +560,12 @@ async def _register_services(hass: HomeAssistant) -> None:
         DOMAIN,
         SERVICE_MARK_CLEANING_DONE,
         mark_cleaning_done,
+        schema=vol.Schema({vol.Required(SERVICE_ATTR_WEEK_START): cv.string}),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_MARK_CLEANING_UNDONE,
+        mark_cleaning_undone,
         schema=vol.Schema({vol.Required(SERVICE_ATTR_WEEK_START): cv.string}),
     )
     hass.services.async_register(

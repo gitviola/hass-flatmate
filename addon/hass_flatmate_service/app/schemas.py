@@ -85,6 +85,11 @@ class CleaningMarkDoneRequest(BaseModel):
     actor_user_id: str | None = None
 
 
+class CleaningMarkUndoneRequest(BaseModel):
+    week_start: date
+    actor_user_id: str | None = None
+
+
 class CleaningMarkTakeoverDoneRequest(BaseModel):
     week_start: date
     original_assignee_member_id: int

@@ -17,6 +17,7 @@ from .schemas import (
     BuyStatsResponse,
     CleaningCurrentResponse,
     CleaningMarkDoneRequest,
+    CleaningMarkUndoneRequest,
     CleaningMarkTakeoverDoneRequest,
     CleaningNotificationDueResponse,
     CleaningScheduleResponse,
@@ -265,9 +266,14 @@ def get_cleaning_current(session: Session = Depends(get_session)) -> CleaningCur
 )
 def get_cleaning_schedule(
     weeks_ahead: int = Query(default=12, ge=1, le=104),
+    include_previous_weeks: int = Query(default=0, ge=0, le=8),
     session: Session = Depends(get_session),
 ) -> CleaningScheduleResponse:
-    rows = cleaning.get_schedule(session, weeks_ahead=weeks_ahead)
+    rows = cleaning.get_schedule(
+        session,
+        weeks_ahead=weeks_ahead + include_previous_weeks,
+        from_week_start=cleaning.add_weeks(cleaning.week_start_for(cleaning.now_utc()), -include_previous_weeks),
+    )
     return CleaningScheduleResponse(schedule=rows)
 
 
@@ -282,6 +288,26 @@ def post_mark_done(
 ) -> OperationResponse:
     try:
         cleaning.mark_cleaning_done(
+            session,
+            week_start=payload.week_start,
+            actor_user_id=payload.actor_user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return OperationResponse(ok=True)
+
+
+@app.post(
+    "/v1/cleaning/mark_undone",
+    response_model=OperationResponse,
+    dependencies=[Depends(require_token)],
+)
+def post_mark_undone(
+    payload: CleaningMarkUndoneRequest,
+    session: Session = Depends(get_session),
+) -> OperationResponse:
+    try:
+        cleaning.mark_cleaning_undone(
             session,
             week_start=payload.week_start,
             actor_user_id=payload.actor_user_id,

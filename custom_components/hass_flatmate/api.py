@@ -117,13 +117,32 @@ class HassFlatmateApiClient:
     async def get_cleaning_current(self) -> dict[str, Any]:
         return await self._request("GET", "/v1/cleaning/current")
 
-    async def get_cleaning_schedule(self, *, weeks_ahead: int = 12) -> dict[str, Any]:
-        return await self._request("GET", "/v1/cleaning/schedule", params={"weeks_ahead": weeks_ahead})
+    async def get_cleaning_schedule(
+        self,
+        *,
+        weeks_ahead: int = 12,
+        include_previous_weeks: int = 0,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "GET",
+            "/v1/cleaning/schedule",
+            params={
+                "weeks_ahead": weeks_ahead,
+                "include_previous_weeks": include_previous_weeks,
+            },
+        )
 
     async def mark_cleaning_done(self, *, week_start: date, actor_user_id: str | None) -> dict[str, Any]:
         return await self._request(
             "POST",
             "/v1/cleaning/mark_done",
+            json={"week_start": week_start.isoformat(), "actor_user_id": actor_user_id},
+        )
+
+    async def mark_cleaning_undone(self, *, week_start: date, actor_user_id: str | None) -> dict[str, Any]:
+        return await self._request(
+            "POST",
+            "/v1/cleaning/mark_undone",
             json={"week_start": week_start.isoformat(), "actor_user_id": actor_user_id},
         )
 
