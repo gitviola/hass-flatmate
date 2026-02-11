@@ -56,9 +56,10 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Validate shopping card syntax
+      - name: Validate shopping and cleaning card syntax
         run: |
           node --check custom_components/hass_flatmate/frontend/hass-flatmate-shopping-card.js
+          node --check custom_components/hass_flatmate/frontend/hass-flatmate-cleaning-card.js
 
   app-build-test:
     runs-on: ubuntu-latest

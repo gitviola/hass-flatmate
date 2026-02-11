@@ -124,6 +124,9 @@ class CleaningScheduleRow(BaseModel):
     baseline_assignee_member_id: int | None
     effective_assignee_member_id: int | None
     override_type: str | None
+    status: str | None = None
+    completed_by_member_id: int | None = None
+    completion_mode: str | None = None
 
 
 class CleaningScheduleResponse(BaseModel):

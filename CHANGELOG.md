@@ -9,6 +9,15 @@ All notable changes to this project are documented in this file.
 - Duplicate shopping complete/delete clicks are now idempotent instead of returning HTTP 400 for already-updated items.
 - Shopping distribution SVG now always renders all active flatmates, including zero-count members, even when one member has all completions.
 
+### Added
+- Dedicated cleaning dashboard card with:
+  - Week-based schedule view (`This week`, `Next week`, etc.)
+  - Done/pending/missed status visuals
+  - In-card mark-done action
+  - Week-specific swap override modal with member selectors and preview
+- Automatic Lovelace resource registration for cleaning card JS (`/hass_flatmate/static/hass-flatmate-cleaning-card.js`) in storage mode.
+- Cleaning schedule payload now includes per-week assignment status/completion metadata for richer UI rendering.
+
 ## [0.1.10] - 2026-02-11
 
 ### Added

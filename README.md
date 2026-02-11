@@ -41,7 +41,7 @@ It replaces the used Flatastic features with:
 4. Configure integration with:
    - `base_url`: service URL (default `http://ebc95cb1-hass-flatmate-service:8099`)
    - `api_token`: same value from app config
-5. In Lovelace storage mode, the shopping card resource is auto-registered.
+5. In Lovelace storage mode, shopping and cleaning card resources are auto-registered.
 6. Add cards/entities from `examples/lovelace-flatmate-dashboard.yaml` (Sections dashboard format).
 
 ## Shopping UI Card
@@ -63,7 +63,28 @@ Features:
 - Add/remove favorites
 
 The card uses integration services, so actor attribution stays correct.
-In Lovelace YAML resource mode, add this resource manually: `/hass_flatmate/static/hass-flatmate-shopping-card.js` as `module`.
+
+## Cleaning UI Card
+
+Use the dedicated cleaning card in any dashboard:
+
+```yaml
+type: custom:hass-flatmate-cleaning-card
+entity: sensor.hass_flatmate_cleaning_schedule
+title: Weekly Cleaning
+weeks: 5
+```
+
+Features:
+- Human-friendly week list (`This week`, `Next week`, etc.)
+- Clear done/pending/missed status
+- Strike-through visual once completed
+- Mark-done action in-card
+- Swap override modal with week preview and member selectors
+
+In Lovelace YAML resource mode, add both resources manually as `module`:
+- `/hass_flatmate/static/hass-flatmate-shopping-card.js`
+- `/hass_flatmate/static/hass-flatmate-cleaning-card.js`
 
 ## Notification Test Mode
 
@@ -90,7 +111,7 @@ pytest
 CI also runs on every push/PR:
 - Backend test suite
 - Integration compile check
-- Shopping custom card JavaScript syntax check
+- Shopping/cleaning custom card JavaScript syntax check
 - Home Assistant app test build (via `home-assistant/builder`)
 - Sync guard for `apps/hass_flatmate_service/service_src`
 

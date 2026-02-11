@@ -1,5 +1,6 @@
-# Resource `/hass_flatmate/static/hass-flatmate-shopping-card.js` is auto-added
-# in Lovelace storage mode. Add it manually only if you use YAML resources mode.
+# Resources `/hass_flatmate/static/hass-flatmate-shopping-card.js` and
+# `/hass_flatmate/static/hass-flatmate-cleaning-card.js` are auto-added in
+# Lovelace storage mode. Add them manually only if you use YAML resources mode.
 title: Flatmate
 views:
   - title: Flatmate
@@ -33,13 +34,10 @@ views:
             heading: Cleaning
             icon: mdi:broom
 
-          - type: entities
-            title: Cleaning Rotation
-            entities:
-              - entity: sensor.hass_flatmate_cleaning_current_assignee
-              - entity: sensor.hass_flatmate_cleaning_current_week_status
-              - entity: sensor.hass_flatmate_cleaning_next_assignee
-              - entity: button.hass_flatmate_mark_cleaning_done
+          - type: custom:hass-flatmate-cleaning-card
+            entity: sensor.hass_flatmate_cleaning_schedule
+            title: Weekly Cleaning
+            weeks: 5
 
           - type: entities
             title: Notification Test Mode
@@ -48,23 +46,6 @@ views:
               - entity: select.hass_flatmate_notification_test_target
               - entity: select.hass_flatmate_shopping_calendar_target
               - entity: select.hass_flatmate_cleaning_calendar_target
-
-          - type: markdown
-            title: Upcoming Cleaning Rotation
-            content: >
-              {% set weeks = state_attr('sensor.hass_flatmate_cleaning_schedule', 'weeks') or [] %}
-              {% if weeks | length == 0 %}
-              No schedule data yet.
-              {% else %}
-              | Week | Person | Dates | Note |
-              | --- | --- | --- | --- |
-              {% for row in weeks[:10] %}
-              {% set start = as_datetime(row.week_start).strftime('%b %d') %}
-              {% set finish = as_datetime(row.week_end).strftime('%b %d') %}
-              {% set note = row.note if row.note else ('current: ' ~ row.status if row.is_current and row.status else '') %}
-              | W{{ row.week_number }} | {{ row.assignee_name or ('Member ' ~ row.assignee_member_id) }} | {{ start }} - {{ finish }} | {{ note }} |
-              {% endfor %}
-              {% endif %}
 
       - type: grid
         cards:

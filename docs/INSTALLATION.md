@@ -32,22 +32,26 @@ If install fails with GHCR `403 denied`, ensure package visibility is `public` i
 - Base URL of backend (default `http://ebc95cb1-hass-flatmate-service:8099`)
 - Same `api_token` used in app.
 
-## Shopping Card Resource
+## Custom Card Resources
 
 Lovelace storage mode:
-- Resource is auto-registered by the integration.
+- Resources are auto-registered by the integration.
 
 Lovelace YAML resources mode:
 1. Open dashboard resources.
-2. Add resource:
-- URL: `/hass_flatmate/static/hass-flatmate-shopping-card.js`
-- Type: `module`
+2. Add resources:
+- URL: `/hass_flatmate/static/hass-flatmate-shopping-card.js` | Type: `module`
+- URL: `/hass_flatmate/static/hass-flatmate-cleaning-card.js` | Type: `module`
 3. Save.
 
 ## Dashboard Layout
 
 Use the example Sections dashboard for modern HA layout:
 - `examples/lovelace-flatmate-dashboard.yaml`
+
+Custom cards available in the dashboard card picker:
+- `custom:hass-flatmate-shopping-card`
+- `custom:hass-flatmate-cleaning-card`
 
 ## Validate
 

@@ -6,6 +6,18 @@
 - Shopping service actions now return faster by running refresh/activity-calendar sync in a background coalesced task.
 - Shopping card now optimistically hides pending completed/deleted items to avoid repeated clicks during backend updates.
 
+### Added
+- New custom cleaning card (`custom:hass-flatmate-cleaning-card`) with:
+  - Friendly schedule timeline
+  - Done-state visuals
+  - In-card mark-done action
+  - Swap override modal UX
+- Auto-registration of cleaning card frontend resource and card picker metadata.
+- `sensor.hass_flatmate_cleaning_schedule` attributes extended with:
+  - per-week `status`, `completed_by_*`, `completion_mode`
+  - member list metadata for swap UI
+  - cleaning service metadata for card actions
+
 ## [0.1.10] - 2026-02-11
 
 ### Added

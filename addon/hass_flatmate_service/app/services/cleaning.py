@@ -459,7 +459,7 @@ def get_schedule(session: Session, *, weeks_ahead: int, from_week_start: date | 
 
     for offset in range(max(weeks_ahead, 0)):
         week = add_weeks(start, offset)
-        ensure_assignment(session, week)
+        assignment = ensure_assignment(session, week)
         baseline_id = baseline_assignee_member_id(session, week)
         effective_id, override = effective_assignee_member_id(session, week)
         rows.append(
@@ -468,6 +468,9 @@ def get_schedule(session: Session, *, weeks_ahead: int, from_week_start: date | 
                 "baseline_assignee_member_id": baseline_id,
                 "effective_assignee_member_id": effective_id,
                 "override_type": override.type.value if override else None,
+                "status": assignment.status.value,
+                "completed_by_member_id": assignment.completed_by_member_id,
+                "completion_mode": assignment.completion_mode,
             }
         )
 

@@ -52,6 +52,7 @@ def test_rotation_swap_takeover_and_compensation(client, auth_headers) -> None:
     assert schedule.status_code == 200
     rows = schedule.json()["schedule"]
     assert rows[0]["week_start"] == week_start.isoformat()
+    assert rows[0]["status"] in {"pending", "done", "missed"}
 
     # Mark takeover done: Sam cleaned Alex's shift.
     takeover = client.post(
@@ -132,6 +133,13 @@ def test_sunday_reminders_suppressed_after_completion(client, auth_headers) -> N
         json={"week_start": week_start.isoformat(), "actor_user_id": "u1"},
     )
     assert done.status_code == 200
+
+    schedule = client.get("/v1/cleaning/schedule?weeks_ahead=2", headers=auth_headers)
+    assert schedule.status_code == 200
+    current_row = schedule.json()["schedule"][0]
+    assert current_row["status"] == "done"
+    assert current_row["completed_by_member_id"] == 1
+    assert current_row["completion_mode"] == "own"
 
     sunday = week_start + timedelta(days=6)
     sunday_18 = client.get(

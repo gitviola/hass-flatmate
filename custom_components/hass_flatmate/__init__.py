@@ -37,6 +37,9 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     FRONTEND_SHOPPING_CARD_FILENAME,
+    FRONTEND_CLEANING_CARD_FILENAME,
+    FRONTEND_CLEANING_CARD_RESOURCE_TYPE,
+    FRONTEND_CLEANING_CARD_RESOURCE_URL,
     FRONTEND_SHOPPING_CARD_RESOURCE_TYPE,
     FRONTEND_SHOPPING_CARD_RESOURCE_URL,
     FRONTEND_STATIC_PATH,
@@ -581,23 +584,25 @@ async def _register_frontend_static_assets(hass: HomeAssistant) -> None:
     if data.frontend_registered:
         return
 
-    static_file = Path(__file__).parent / "frontend" / FRONTEND_SHOPPING_CARD_FILENAME
-    if not static_file.exists():
-        _LOGGER.warning(
-            "Frontend asset not found, skipping static registration: %s",
-            static_file,
-        )
+    targets = [
+        (FRONTEND_SHOPPING_CARD_FILENAME, FRONTEND_SHOPPING_CARD_RESOURCE_URL),
+        (FRONTEND_CLEANING_CARD_FILENAME, FRONTEND_CLEANING_CARD_RESOURCE_URL),
+    ]
+    static_paths: list[StaticPathConfig] = []
+    for filename, resource_url in targets:
+        static_file = Path(__file__).parent / "frontend" / filename
+        if not static_file.exists():
+            _LOGGER.warning(
+                "Frontend asset not found, skipping static registration: %s",
+                static_file,
+            )
+            continue
+        static_paths.append(StaticPathConfig(resource_url, str(static_file), False))
+
+    if not static_paths:
         return
 
-    await hass.http.async_register_static_paths(
-        [
-            StaticPathConfig(
-                f"{FRONTEND_STATIC_PATH}/{FRONTEND_SHOPPING_CARD_FILENAME}",
-                str(static_file),
-                False,
-            )
-        ]
-    )
+    await hass.http.async_register_static_paths(static_paths)
     data.frontend_registered = True
 
 
@@ -616,42 +621,57 @@ async def _register_lovelace_card_resource(hass: HomeAssistant) -> None:
     if lovelace_data is None:
         return
 
+    resource_targets = [
+        {
+            CONF_URL: FRONTEND_SHOPPING_CARD_RESOURCE_URL,
+            CONF_TYPE: FRONTEND_SHOPPING_CARD_RESOURCE_TYPE,
+            CONF_RESOURCE_TYPE_WS: FRONTEND_SHOPPING_CARD_RESOURCE_TYPE,
+        },
+        {
+            CONF_URL: FRONTEND_CLEANING_CARD_RESOURCE_URL,
+            CONF_TYPE: FRONTEND_CLEANING_CARD_RESOURCE_TYPE,
+            CONF_RESOURCE_TYPE_WS: FRONTEND_CLEANING_CARD_RESOURCE_TYPE,
+        },
+    ]
+
     if lovelace_data.resource_mode != MODE_STORAGE:
+        resource_urls = ", ".join(target[CONF_URL] for target in resource_targets)
         _LOGGER.debug(
-            "Lovelace resource mode is '%s'; add resource manually if needed: %s",
+            "Lovelace resource mode is '%s'; add resources manually if needed: %s",
             lovelace_data.resource_mode,
-            FRONTEND_SHOPPING_CARD_RESOURCE_URL,
+            resource_urls,
         )
         return
 
     resources = lovelace_data.resources
     await resources.async_get_info()
-    for item in resources.async_items() or []:
-        if (
-            item.get(CONF_URL) == FRONTEND_SHOPPING_CARD_RESOURCE_URL
-            and item.get(CONF_TYPE) == FRONTEND_SHOPPING_CARD_RESOURCE_TYPE
-        ):
-            return
+    existing = {
+        (item.get(CONF_URL), item.get(CONF_TYPE))
+        for item in (resources.async_items() or [])
+    }
 
-    try:
-        await resources.async_create_item(
-            {
-                CONF_RESOURCE_TYPE_WS: FRONTEND_SHOPPING_CARD_RESOURCE_TYPE,
-                CONF_URL: FRONTEND_SHOPPING_CARD_RESOURCE_URL,
-            }
-        )
-    except Exception as err:  # pragma: no cover - defensive for HA API edge cases
-        _LOGGER.warning(
-            "Failed to auto-register Lovelace resource %s: %s",
-            FRONTEND_SHOPPING_CARD_RESOURCE_URL,
-            err,
-        )
-        return
+    for target in resource_targets:
+        key = (target[CONF_URL], target[CONF_TYPE])
+        if key in existing:
+            continue
 
-    _LOGGER.info(
-        "Auto-registered Lovelace resource: %s",
-        FRONTEND_SHOPPING_CARD_RESOURCE_URL,
-    )
+        try:
+            await resources.async_create_item(
+                {
+                    CONF_RESOURCE_TYPE_WS: target[CONF_RESOURCE_TYPE_WS],
+                    CONF_URL: target[CONF_URL],
+                }
+            )
+            _LOGGER.info(
+                "Auto-registered Lovelace resource: %s",
+                target[CONF_URL],
+            )
+        except Exception as err:  # pragma: no cover - defensive for HA API edge cases
+            _LOGGER.warning(
+                "Failed to auto-register Lovelace resource %s: %s",
+                target[CONF_URL],
+                err,
+            )
 
 
 async def _migrate_legacy_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:

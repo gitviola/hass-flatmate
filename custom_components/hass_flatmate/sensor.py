@@ -17,6 +17,8 @@ from .const import (
     DOMAIN,
     SERVICE_ADD_FAVORITE_ITEM,
     SERVICE_ADD_SHOPPING_ITEM,
+    SERVICE_MARK_CLEANING_DONE,
+    SERVICE_SWAP_CLEANING_WEEK,
     SERVICE_COMPLETE_SHOPPING_ITEM,
     SERVICE_DELETE_SHOPPING_ITEM,
     SERVICE_DELETE_FAVORITE_ITEM,
@@ -292,10 +294,16 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         members = _member_lookup(self.coordinator.data)
+        members_payload = [
+            {"member_id": int(member.get("id")), "name": member.get("display_name")}
+            for member in self.coordinator.data.get("members", [])
+            if member.get("id") is not None and member.get("display_name")
+        ]
+        members_payload.sort(key=lambda row: str(row["name"]).lower())
+
         schedule = self.coordinator.data.get("cleaning_schedule", {}).get("schedule", [])
         current = self.coordinator.data.get("cleaning_current", {})
         current_week_start = str(current.get("week_start") or "")
-        current_status = current.get("status")
 
         weeks = []
         for row in schedule:
@@ -327,6 +335,15 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
             elif override_type == "compensation":
                 note = "compensation"
 
+            status_value = row.get("status")
+            completed_by_member_id = row.get("completed_by_member_id")
+            completed_by_name = None
+            if completed_by_member_id is not None:
+                try:
+                    completed_by_name = members.get(int(completed_by_member_id))
+                except (TypeError, ValueError):
+                    completed_by_name = None
+
             is_current = week_start.isoformat() == current_week_start
             weeks.append(
                 {
@@ -340,11 +357,20 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
                     "override_type": override_type,
                     "note": note,
                     "is_current": is_current,
-                    "status": current_status if is_current else None,
+                    "status": status_value,
+                    "completed_by_member_id": completed_by_member_id,
+                    "completed_by_name": completed_by_name,
+                    "completion_mode": row.get("completion_mode"),
                 }
             )
 
-        return {"weeks": weeks}
+        return {
+            "weeks": weeks,
+            "members": members_payload,
+            "service_domain": DOMAIN,
+            "service_mark_done": SERVICE_MARK_CLEANING_DONE,
+            "service_swap_week": SERVICE_SWAP_CLEANING_WEEK,
+        }
 
 
 class ActivityRecentSensor(HassFlatmateCoordinatorEntity, SensorEntity):
