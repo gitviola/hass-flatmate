@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-02-11
+
+### Fixed
+- Home Assistant dashboard card editors no longer flicker while editing title/layout/entity fields.
+- Card editors now follow render-once + value-sync behavior to avoid focus loss and repeated input re-mounts during live config updates.
+
 ## [0.1.12] - 2026-02-11
 
 ### Changed

@@ -1,6 +1,6 @@
 [project]
 name = "hass-flatmate-service"
-version = "0.1.12"
+version = "0.1.13"
 description = "Flatmate shopping and cleaning service for Home Assistant"
 requires-python = ">=3.12"
 dependencies = [

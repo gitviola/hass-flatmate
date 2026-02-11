@@ -1200,6 +1200,7 @@ class HassFlatmateCleaningCardEditor extends HTMLElement {
   constructor() {
     super();
     this._root = this.attachShadow({ mode: "open" });
+    this._editorReady = false;
   }
 
   setConfig(config) {
@@ -1211,11 +1212,13 @@ class HassFlatmateCleaningCardEditor extends HTMLElement {
       ...config,
     };
     this._render();
+    this._syncEditorValues();
   }
 
   set hass(hass) {
     this._hass = hass;
     this._render();
+    this._syncEditorValues();
   }
 
   _emitConfig(config) {
@@ -1231,6 +1234,9 @@ class HassFlatmateCleaningCardEditor extends HTMLElement {
 
   _render() {
     if (!this._hass || !this._config || !this._root) {
+      return;
+    }
+    if (this._editorReady) {
       return;
     }
 
@@ -1311,8 +1317,6 @@ class HassFlatmateCleaningCardEditor extends HTMLElement {
 
     const entityPicker = this._root.querySelector("#hf-editor-entity");
     if (entityPicker) {
-      entityPicker.hass = this._hass;
-      entityPicker.value = this._config.entity || "sensor.hass_flatmate_cleaning_schedule";
       entityPicker.includeDomains = ["sensor"];
       entityPicker.addEventListener("value-changed", (event) => {
         const nextValue = event.detail?.value;
@@ -1333,6 +1337,45 @@ class HassFlatmateCleaningCardEditor extends HTMLElement {
         layout: event.target.value || "interactive",
       });
     });
+    this._editorReady = true;
+  }
+
+  _syncEditorValues() {
+    if (!this._editorReady || !this._config || !this._hass) {
+      return;
+    }
+
+    const active = this._root.activeElement;
+
+    const titleInput = this._root.querySelector("#hf-editor-title");
+    if (titleInput && active !== titleInput) {
+      titleInput.value = this._config.title || "";
+    }
+
+    const weeksInput = this._root.querySelector("#hf-editor-weeks");
+    if (weeksInput && active !== weeksInput) {
+      const nextWeeks = Number.parseInt(this._config.weeks, 10) || 5;
+      if (Number.parseInt(weeksInput.value, 10) !== nextWeeks) {
+        weeksInput.value = String(nextWeeks);
+      }
+    }
+
+    const entityPicker = this._root.querySelector("#hf-editor-entity");
+    if (entityPicker) {
+      entityPicker.hass = this._hass;
+      const nextEntity = this._config.entity || "sensor.hass_flatmate_cleaning_schedule";
+      if (entityPicker.value !== nextEntity) {
+        entityPicker.value = nextEntity;
+      }
+    }
+
+    const layoutInput = this._root.querySelector("#hf-editor-layout");
+    if (layoutInput && active !== layoutInput) {
+      const nextLayout = this._config.layout === "compact" ? "compact" : "interactive";
+      if (layoutInput.value !== nextLayout) {
+        layoutInput.value = nextLayout;
+      }
+    }
   }
 }
 

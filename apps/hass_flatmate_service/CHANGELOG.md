@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-02-11
+
+### Changed
+- Version alignment release to match integration editor UX fixes (no backend API behavior changes).
+
 ## [0.1.12] - 2026-02-11
 
 ### Changed

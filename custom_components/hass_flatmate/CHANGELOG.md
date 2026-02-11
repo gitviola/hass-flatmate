@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-02-11
+
+### Fixed
+- Shopping, cleaning, and distribution card editors now avoid full DOM re-renders on every `hass` update.
+- Editor title/layout/entity inputs keep stable focus/value while editing in dashboard edit mode (no flicker/reopen behavior).
+
 ## [0.1.12] - 2026-02-11
 
 ### Changed

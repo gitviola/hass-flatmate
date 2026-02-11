@@ -394,6 +394,7 @@ class HassFlatmateDistributionCardEditor extends HTMLElement {
   constructor() {
     super();
     this._root = this.attachShadow({ mode: "open" });
+    this._editorReady = false;
   }
 
   setConfig(config) {
@@ -404,11 +405,13 @@ class HassFlatmateDistributionCardEditor extends HTMLElement {
       ...config,
     };
     this._render();
+    this._syncEditorValues();
   }
 
   set hass(hass) {
     this._hass = hass;
     this._render();
+    this._syncEditorValues();
   }
 
   _emitConfig(config) {
@@ -424,6 +427,9 @@ class HassFlatmateDistributionCardEditor extends HTMLElement {
 
   _render() {
     if (!this._hass || !this._config || !this._root) {
+      return;
+    }
+    if (this._editorReady) {
       return;
     }
 
@@ -491,8 +497,6 @@ class HassFlatmateDistributionCardEditor extends HTMLElement {
 
     const entityPicker = this._root.querySelector("#hf-editor-entity");
     if (entityPicker) {
-      entityPicker.hass = this._hass;
-      entityPicker.value = this._config.entity || "sensor.hass_flatmate_shopping_distribution_90d";
       entityPicker.includeDomains = ["sensor"];
       entityPicker.addEventListener("value-changed", (event) => {
         const nextValue = event.detail?.value;
@@ -513,6 +517,37 @@ class HassFlatmateDistributionCardEditor extends HTMLElement {
         layout: event.target.value || "bars",
       });
     });
+    this._editorReady = true;
+  }
+
+  _syncEditorValues() {
+    if (!this._editorReady || !this._config || !this._hass) {
+      return;
+    }
+
+    const active = this._root.activeElement;
+
+    const titleInput = this._root.querySelector("#hf-editor-title");
+    if (titleInput && active !== titleInput) {
+      titleInput.value = this._config.title || "";
+    }
+
+    const entityPicker = this._root.querySelector("#hf-editor-entity");
+    if (entityPicker) {
+      entityPicker.hass = this._hass;
+      const nextEntity = this._config.entity || "sensor.hass_flatmate_shopping_distribution_90d";
+      if (entityPicker.value !== nextEntity) {
+        entityPicker.value = nextEntity;
+      }
+    }
+
+    const layoutPicker = this._root.querySelector("#hf-editor-layout");
+    if (layoutPicker && active !== layoutPicker) {
+      const nextLayout = this._config.layout === "compact" ? "compact" : "bars";
+      if (layoutPicker.value !== nextLayout) {
+        layoutPicker.value = nextLayout;
+      }
+    }
   }
 }
 
