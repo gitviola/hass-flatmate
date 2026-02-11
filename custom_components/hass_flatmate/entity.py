@@ -17,6 +17,13 @@ class HassFlatmateCoordinatorEntity(CoordinatorEntity):
         self._config_entry = config_entry
         self._runtime = runtime
         self._attr_has_entity_name = True
+        # Keep stable, integration-prefixed entity ids for first registration.
+        unique_id = getattr(self, "_attr_unique_id", None)
+        if isinstance(unique_id, str) and unique_id:
+            if unique_id.startswith(f"{DOMAIN}_"):
+                self._attr_suggested_object_id = unique_id
+            else:
+                self._attr_suggested_object_id = f"{DOMAIN}_{unique_id}"
 
     @property
     def runtime(self) -> HassFlatmateRuntime:
