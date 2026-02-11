@@ -12,7 +12,9 @@
   - Done-state visuals
   - In-card mark-done action
   - Swap override modal UX
+- New custom distribution card (`custom:hass-flatmate-distribution-card`) with native bar rendering from shopping distribution sensor attributes.
 - Auto-registration of cleaning card frontend resource and card picker metadata.
+- Auto-registration of distribution card frontend resource and card picker metadata.
 - `sensor.hass_flatmate_cleaning_schedule` attributes extended with:
   - per-week `status`, `completed_by_*`, `completion_mode`
   - member list metadata for swap UI

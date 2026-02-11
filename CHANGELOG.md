@@ -16,6 +16,8 @@ All notable changes to this project are documented in this file.
   - In-card mark-done action
   - Week-specific swap override modal with member selectors and preview
 - Automatic Lovelace resource registration for cleaning card JS (`/hass_flatmate/static/hass-flatmate-cleaning-card.js`) in storage mode.
+- Dedicated shopping distribution dashboard card (`custom:hass-flatmate-distribution-card`) to replace SVG image card dependency.
+- Automatic Lovelace resource registration for distribution card JS (`/hass_flatmate/static/hass-flatmate-distribution-card.js`) in storage mode.
 - Cleaning schedule payload now includes per-week assignment status/completion metadata for richer UI rendering.
 
 ## [0.1.10] - 2026-02-11

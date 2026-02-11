@@ -86,6 +86,24 @@ In Lovelace YAML resource mode, add both resources manually as `module`:
 - `/hass_flatmate/static/hass-flatmate-shopping-card.js`
 - `/hass_flatmate/static/hass-flatmate-cleaning-card.js`
 
+## Distribution UI Card
+
+Use the dedicated distribution card instead of the SVG image entity card:
+
+```yaml
+type: custom:hass-flatmate-distribution-card
+entity: sensor.hass_flatmate_shopping_distribution_90d
+title: Shopping Distribution (90d)
+```
+
+Features:
+- Stable native bar-chart rendering in the card
+- Shows all flatmates from distribution payload (including zero-count members)
+- Total completed and unknown-excluded context badges
+
+In Lovelace YAML resource mode, also add:
+- `/hass_flatmate/static/hass-flatmate-distribution-card.js`
+
 ## Notification Test Mode
 
 Use these entities to test all flows without notifying everyone:

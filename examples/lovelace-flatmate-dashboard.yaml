@@ -22,11 +22,9 @@ views:
             entity: sensor.hass_flatmate_shopping_open_count
             name: Shopping Open Items
 
-          - type: picture-entity
-            entity: image.hass_flatmate_shopping_distribution_90d
-            name: Shopping Distribution (90 days)
-            show_state: false
-            show_name: true
+          - type: custom:hass-flatmate-distribution-card
+            entity: sensor.hass_flatmate_shopping_distribution_90d
+            title: Shopping Distribution (90d)
 
       - type: grid
         cards:
