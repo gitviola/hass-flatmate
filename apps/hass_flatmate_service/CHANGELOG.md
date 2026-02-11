@@ -2,10 +2,13 @@
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-02-11
+
 ### Added
 - App branding assets for Home Assistant app store rendering:
   - `icon.png`
   - `logo.png`
+- App version bump to align with repository release tag and publish workflow validation.
 
 ## [0.1.5] - 2026-02-11
 

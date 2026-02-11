@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-02-11
+
 ### Added
 - Integration 0.1.9 updates:
 - Calendar timezone normalization for event validation.

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-02-11
+
 ### Added
 - Integration branding icon asset (`icon.png`) for improved presentation in Home Assistant UI surfaces.
 
