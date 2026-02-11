@@ -110,6 +110,7 @@ class ManualImportRequest(BaseModel):
     rotation_rows: str | None = None
     cleaning_history_rows: str | None = None
     shopping_history_rows: str | None = None
+    cleaning_override_rows: str | None = None
     actor_user_id: str | None = None
 
 

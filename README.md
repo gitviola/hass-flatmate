@@ -200,6 +200,10 @@ Use service `hass_flatmate_import_manual_data` from Developer Tools to paste CSV
   - status: `done` (default), `missed`, `pending`
 - `shopping_history_rows` format:
   - `date,item_name,buyer_name`
+- `cleaning_override_rows` format:
+  - `date,member_from_name,member_to_name[,override_type]`
+  - `override_type`: `compensation` (default) or `manual_swap`
+  - For compensation, `member_from_name` is the person whose baseline turn is being covered.
 
 Example:
 
@@ -216,7 +220,13 @@ data:
   shopping_history_rows: |
     2026-01-30,Milk,Martin
     2026-01-31,Toilet Paper,Gianmarco
+  cleaning_override_rows: |
+    2026-03-07,Martin,Martina,compensation
 ```
+
+Notes:
+- Dates can be any day in the target week. Import normalizes to Monday-week internally.
+- Member names must match active hass-flatmate display names exactly (including accents).
 
 ## Automated Tests
 

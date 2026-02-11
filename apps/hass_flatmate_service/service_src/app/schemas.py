@@ -106,10 +106,11 @@ class CleaningSwapRequest(BaseModel):
     cancel: bool = False
 
 
-class FlatasticImportRequest(BaseModel):
+class ManualImportRequest(BaseModel):
     rotation_rows: str | None = None
     cleaning_history_rows: str | None = None
     shopping_history_rows: str | None = None
+    cleaning_override_rows: str | None = None
     actor_user_id: str | None = None
 
 
@@ -125,10 +126,15 @@ class MembersSyncResponse(BaseModel):
     notifications: list[NotificationItem] = Field(default_factory=list)
 
 
-class FlatasticImportResponse(BaseModel):
+class ManualImportResponse(BaseModel):
     ok: bool = True
     notifications: list[NotificationItem] = Field(default_factory=list)
     summary: dict[str, Any] = Field(default_factory=dict)
+
+
+# Backward-compat aliases for older references.
+FlatasticImportRequest = ManualImportRequest
+FlatasticImportResponse = ManualImportResponse
 
 
 class CleaningNotificationDueResponse(BaseModel):

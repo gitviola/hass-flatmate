@@ -23,7 +23,7 @@ from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 
-from .api import HassFlatmateApiClient
+from .api import HassFlatmateApiClient, HassFlatmateApiError
 from .const import (
     ACTIVITY_CURSOR_KEY,
     CALENDAR_CURSOR_CLEANING_KEY,
@@ -66,6 +66,7 @@ from .const import (
     SERVICE_ATTR_FAVORITE_ID,
     SERVICE_ATTR_ITEM_ID,
     SERVICE_ATTR_CLEANING_HISTORY_ROWS,
+    SERVICE_ATTR_CLEANING_OVERRIDE_ROWS,
     SERVICE_ATTR_MEMBER_A_ID,
     SERVICE_ATTR_MEMBER_B_ID,
     SERVICE_ATTR_NAME,
@@ -786,12 +787,16 @@ async def _register_services(hass: HomeAssistant) -> None:
 
     async def import_manual_data(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
-        response = await runtime.api.import_manual_data(
-            rotation_rows=call.data.get(SERVICE_ATTR_ROTATION_ROWS),
-            cleaning_history_rows=call.data.get(SERVICE_ATTR_CLEANING_HISTORY_ROWS),
-            shopping_history_rows=call.data.get(SERVICE_ATTR_SHOPPING_HISTORY_ROWS),
-            actor_user_id=call.context.user_id,
-        )
+        try:
+            response = await runtime.api.import_manual_data(
+                rotation_rows=call.data.get(SERVICE_ATTR_ROTATION_ROWS),
+                cleaning_history_rows=call.data.get(SERVICE_ATTR_CLEANING_HISTORY_ROWS),
+                shopping_history_rows=call.data.get(SERVICE_ATTR_SHOPPING_HISTORY_ROWS),
+                cleaning_override_rows=call.data.get(SERVICE_ATTR_CLEANING_OVERRIDE_ROWS),
+                actor_user_id=call.context.user_id,
+            )
+        except HassFlatmateApiError as exc:
+            raise HomeAssistantError(str(exc)) from exc
         await _dispatch_notifications(
             hass,
             runtime,
@@ -881,6 +886,7 @@ async def _register_services(hass: HomeAssistant) -> None:
                 vol.Optional(SERVICE_ATTR_ROTATION_ROWS, default=""): cv.string,
                 vol.Optional(SERVICE_ATTR_CLEANING_HISTORY_ROWS, default=""): cv.string,
                 vol.Optional(SERVICE_ATTR_SHOPPING_HISTORY_ROWS, default=""): cv.string,
+                vol.Optional(SERVICE_ATTR_CLEANING_OVERRIDE_ROWS, default=""): cv.string,
             }
         ),
     )

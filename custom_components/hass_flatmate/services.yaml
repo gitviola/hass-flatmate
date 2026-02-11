@@ -132,7 +132,7 @@ hass_flatmate_sync_members:
 
 hass_flatmate_import_manual_data:
   name: Import manual data
-  description: Import rotation and optional history from pasted CSV-like rows.
+  description: Import rotation, optional history, and optional planned overrides from pasted CSV-like rows.
   fields:
     rotation_rows:
       required: false
@@ -149,6 +149,12 @@ hass_flatmate_import_manual_data:
     shopping_history_rows:
       required: false
       example: "2026-01-30,Milk,Martin;2026-01-31,Toilet Paper,Gianmarco"
+      selector:
+        text:
+          multiline: true
+    cleaning_override_rows:
+      required: false
+      example: "2026-03-07,Martin,Martina,compensation"
       selector:
         text:
           multiline: true

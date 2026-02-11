@@ -5,9 +5,18 @@ from __future__ import annotations
 from datetime import date, datetime, time, timezone
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import CleaningAssignmentStatus, ShoppingItem, ShoppingStatus
+from ..models import (
+    CleaningAssignmentStatus,
+    CleaningOverride,
+    OverrideSource,
+    OverrideStatus,
+    OverrideType,
+    ShoppingItem,
+    ShoppingStatus,
+)
 from ..services.activity import log_event
 from ..services.cleaning import (
     ensure_assignment,
@@ -293,17 +302,89 @@ def _apply_shopping_history_rows(
     return imported_rows
 
 
+def _parse_override_type(token: str | None, *, line_no: int) -> OverrideType:
+    raw = (token or "").strip().lower()
+    if not raw or raw == "compensation":
+        return OverrideType.COMPENSATION
+    if raw in {"manual_swap", "swap"}:
+        return OverrideType.MANUAL_SWAP
+    raise ValueError(
+        f"Unsupported override type '{token}' at row {line_no}. "
+        "Allowed values: compensation, manual_swap"
+    )
+
+
+def _apply_cleaning_override_rows(
+    session: Session,
+    *,
+    rows_text: str | None,
+    name_index: dict[str, int],
+) -> int:
+    rows = _rows_from_text(rows_text)
+    if not rows:
+        return 0
+
+    imported_rows = 0
+    for line_no, row in rows:
+        columns = [part.strip() for part in row.split(",")]
+        if len(columns) < 3:
+            raise ValueError(
+                f"Cleaning override row {line_no} must contain at least 3 columns: "
+                "date,member_from_name,member_to_name[,override_type]"
+            )
+
+        parsed_date, _at_dt = _parse_date_or_datetime(columns[0], line_no=line_no)
+        week_start = monday_for(parsed_date)
+        member_from_id = _resolve_member_id(name_index, columns[1], line_no=line_no)
+        member_to_id = _resolve_member_id(name_index, columns[2], line_no=line_no)
+        override_type = _parse_override_type(columns[3] if len(columns) >= 4 else None, line_no=line_no)
+
+        if member_from_id == member_to_id:
+            raise ValueError(
+                f"Cleaning override row {line_no} must use two different members."
+            )
+
+        existing_planned = session.execute(
+            select(CleaningOverride).where(
+                CleaningOverride.week_start == week_start,
+                CleaningOverride.status == OverrideStatus.PLANNED,
+            )
+        ).scalar_one_or_none()
+        if existing_planned is not None:
+            raise ValueError(
+                f"Week {week_start.isoformat()} already has a planned override. "
+                "Cancel existing override first or choose another week."
+            )
+
+        override = CleaningOverride(
+            week_start=week_start,
+            type=override_type,
+            source=OverrideSource.MANUAL,
+            source_event_id=None,
+            member_from_id=member_from_id,
+            member_to_id=member_to_id,
+            status=OverrideStatus.PLANNED,
+            created_by_member_id=None,
+        )
+        session.add(override)
+        ensure_assignment(session, week_start)
+        imported_rows += 1
+
+    return imported_rows
+
+
 def import_manual_data(
     session: Session,
     *,
     rotation_rows: str | None,
     cleaning_history_rows: str | None,
     shopping_history_rows: str | None,
+    cleaning_override_rows: str | None,
     actor_user_id: str | None,
 ) -> tuple[dict[str, Any], list[dict]]:
     if not any(
         value and value.strip()
-        for value in [rotation_rows, cleaning_history_rows, shopping_history_rows]
+        for value in [rotation_rows, cleaning_history_rows, shopping_history_rows, cleaning_override_rows]
     ):
         raise ValueError("At least one import field must be provided")
 
@@ -327,6 +408,11 @@ def import_manual_data(
         name_index=name_index,
         actor_user_id=actor_user_id,
     )
+    cleaning_override_rows_imported = _apply_cleaning_override_rows(
+        session,
+        rows_text=cleaning_override_rows,
+        name_index=name_index,
+    )
 
     summary = {
         "rotation_weeks_imported": rotation_weeks_imported,
@@ -336,6 +422,7 @@ def import_manual_data(
         "cleaning_history_rows_imported": cleaning_rows_imported,
         "cleaning_done_events_imported": cleaning_done_events_imported,
         "shopping_history_rows_imported": shopping_rows_imported,
+        "cleaning_override_rows_imported": cleaning_override_rows_imported,
     }
 
     log_event(
@@ -358,6 +445,7 @@ def import_flatastic_data(
     rotation_rows: str | None,
     cleaning_history_rows: str | None,
     shopping_history_rows: str | None,
+    cleaning_override_rows: str | None,
     actor_user_id: str | None,
 ) -> tuple[dict[str, Any], list[dict]]:
     """Backward-compat alias; use import_manual_data."""
@@ -366,5 +454,6 @@ def import_flatastic_data(
         rotation_rows=rotation_rows,
         cleaning_history_rows=cleaning_history_rows,
         shopping_history_rows=shopping_history_rows,
+        cleaning_override_rows=cleaning_override_rows,
         actor_user_id=actor_user_id,
     )

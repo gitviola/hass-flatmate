@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.1.18] - 2026-02-12
+
+### Changed
+- Manual import service now accepts `cleaning_override_rows` for planned compensation/swap migration entries.
+
+### Fixed
+- Manual import action now returns explicit backend error details instead of generic unknown-action errors.
+- Added compatibility fallback to legacy import API route for mixed-version app/integration rollouts.
+
 ## [0.1.17] - 2026-02-11
 
 ### Changed

@@ -120,18 +120,32 @@ class HassFlatmateApiClient:
         rotation_rows: str | None,
         cleaning_history_rows: str | None,
         shopping_history_rows: str | None,
+        cleaning_override_rows: str | None,
         actor_user_id: str | None,
     ) -> dict[str, Any]:
-        return await self._request(
-            "POST",
-            "/v1/import/manual",
-            json={
-                "rotation_rows": rotation_rows,
-                "cleaning_history_rows": cleaning_history_rows,
-                "shopping_history_rows": shopping_history_rows,
-                "actor_user_id": actor_user_id,
-            },
-        )
+        payload = {
+            "rotation_rows": rotation_rows,
+            "cleaning_history_rows": cleaning_history_rows,
+            "shopping_history_rows": shopping_history_rows,
+            "cleaning_override_rows": cleaning_override_rows,
+            "actor_user_id": actor_user_id,
+        }
+
+        try:
+            return await self._request(
+                "POST",
+                "/v1/import/manual",
+                json=payload,
+            )
+        except HassFlatmateApiError as exc:
+            # Mixed-version fallback: integration updated before app image.
+            if "POST /v1/import/manual failed: 404" not in str(exc):
+                raise
+            return await self._request(
+                "POST",
+                "/v1/import/flatastic",
+                json=payload,
+            )
 
     async def import_flatastic_data(
         self,
@@ -139,6 +153,7 @@ class HassFlatmateApiClient:
         rotation_rows: str | None,
         cleaning_history_rows: str | None,
         shopping_history_rows: str | None,
+        cleaning_override_rows: str | None,
         actor_user_id: str | None,
     ) -> dict[str, Any]:
         """Backward-compat shim; use import_manual_data."""
@@ -146,6 +161,7 @@ class HassFlatmateApiClient:
             rotation_rows=rotation_rows,
             cleaning_history_rows=cleaning_history_rows,
             shopping_history_rows=shopping_history_rows,
+            cleaning_override_rows=cleaning_override_rows,
             actor_user_id=actor_user_id,
         )
 

@@ -76,6 +76,7 @@ SERVICE_ATTR_CANCEL = "cancel"
 SERVICE_ATTR_ROTATION_ROWS = "rotation_rows"
 SERVICE_ATTR_CLEANING_HISTORY_ROWS = "cleaning_history_rows"
 SERVICE_ATTR_SHOPPING_HISTORY_ROWS = "shopping_history_rows"
+SERVICE_ATTR_CLEANING_OVERRIDE_ROWS = "cleaning_override_rows"
 
 COORDINATOR_NAME = "hass_flatmate_coordinator"
 NOTIFICATION_DEDUPE_KEY = "last_notification_minute"

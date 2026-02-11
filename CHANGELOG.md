@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.18] - 2026-02-12
+
+### Changed
+- Manual import now supports `cleaning_override_rows` for one-time planned compensation/swap migration rows.
+
+### Fixed
+- `hass_flatmate_import_manual_data` now surfaces backend API errors with explicit messages in Home Assistant instead of generic unknown-action failures.
+- Manual import service now falls back to legacy backend route compatibility when app/integration versions are temporarily mixed.
+
 ## [0.1.17] - 2026-02-11
 
 ### Added

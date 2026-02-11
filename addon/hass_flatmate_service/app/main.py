@@ -50,7 +50,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="hass-flatmate-service", version="0.1.17", lifespan=lifespan)
+app = FastAPI(title="hass-flatmate-service", version="0.1.18", lifespan=lifespan)
 
 
 def require_token(x_flatmate_token: str | None = Header(default=None)) -> None:
@@ -291,6 +291,7 @@ def post_import_manual(
             rotation_rows=payload.rotation_rows,
             cleaning_history_rows=payload.cleaning_history_rows,
             shopping_history_rows=payload.shopping_history_rows,
+            cleaning_override_rows=payload.cleaning_override_rows,
             actor_user_id=payload.actor_user_id,
         )
     except ValueError as exc:
