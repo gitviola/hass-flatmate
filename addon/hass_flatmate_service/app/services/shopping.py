@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import html
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import case, desc, func, select
 from sqlalchemy.orm import Session
@@ -149,29 +149,106 @@ def list_favorites(session: Session) -> list[ShoppingFavorite]:
 
 
 def recent_item_names(session: Session, limit: int = 20) -> list[str]:
-    rows = session.execute(
-        select(ShoppingItem).order_by(
-            desc(
-                func.coalesce(
-                    ShoppingItem.completed_at,
-                    ShoppingItem.deleted_at,
-                    ShoppingItem.added_at,
-                )
-            )
-        )
-    ).scalars().all()
+    if limit <= 0:
+        return []
 
-    seen: set[str] = set()
-    recents: list[str] = []
-    for row in rows:
-        key = row.name.strip().lower()
-        if key in seen:
+    def _normalize(value: str) -> str:
+        return value.strip().lower()
+
+    open_names = {
+        _normalize(name)
+        for (name,) in session.execute(
+            select(ShoppingItem.name).where(ShoppingItem.status == ShoppingStatus.OPEN)
+        ).all()
+        if isinstance(name, str) and _normalize(name)
+    }
+
+    completed_rows = session.execute(
+        select(ShoppingItem.name, ShoppingItem.completed_at)
+        .where(
+            ShoppingItem.status == ShoppingStatus.COMPLETED,
+            ShoppingItem.completed_at.is_not(None),
+        )
+        .order_by(ShoppingItem.completed_at.desc(), ShoppingItem.id.desc())
+    ).all()
+
+    favorite_rows = session.execute(
+        select(ShoppingFavorite.name, ShoppingFavorite.created_at)
+        .where(ShoppingFavorite.active.is_(True))
+        .order_by(ShoppingFavorite.created_at.desc(), ShoppingFavorite.id.desc())
+    ).all()
+
+    candidates: dict[str, dict] = {}
+
+    for name, completed_at in completed_rows:
+        if not isinstance(name, str):
             continue
-        seen.add(key)
-        recents.append(row.name)
-        if len(recents) >= limit:
-            break
-    return recents
+        key = _normalize(name)
+        if not key:
+            continue
+        entry = candidates.setdefault(
+            key,
+            {
+                "name": name.strip(),
+                "buy_count": 0,
+                "last_completed_at": None,
+                "last_favorited_at": None,
+            },
+        )
+        entry["buy_count"] += 1
+        if entry["last_completed_at"] is None or (
+            isinstance(completed_at, datetime) and completed_at > entry["last_completed_at"]
+        ):
+            entry["last_completed_at"] = completed_at
+            entry["name"] = name.strip()
+
+    for name, created_at in favorite_rows:
+        if not isinstance(name, str):
+            continue
+        key = _normalize(name)
+        if not key:
+            continue
+        entry = candidates.setdefault(
+            key,
+            {
+                "name": name.strip(),
+                "buy_count": 0,
+                "last_completed_at": None,
+                "last_favorited_at": None,
+            },
+        )
+        if entry["buy_count"] == 0:
+            entry["name"] = name.strip()
+        if entry["last_favorited_at"] is None or (
+            isinstance(created_at, datetime) and created_at > entry["last_favorited_at"]
+        ):
+            entry["last_favorited_at"] = created_at
+
+    def _epoch_or_floor(value: datetime | None) -> float:
+        if not isinstance(value, datetime):
+            return float("-inf")
+        dt = value
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+
+    ranked = [
+        entry
+        for key, entry in candidates.items()
+        if key not in open_names and (entry["buy_count"] > 0 or entry["last_favorited_at"] is not None)
+    ]
+    ranked.sort(
+        key=lambda entry: (
+            -int(entry["buy_count"]),
+            -max(
+                _epoch_or_floor(entry["last_completed_at"]),
+                _epoch_or_floor(entry["last_favorited_at"]),
+            ),
+            str(entry["name"]).lower(),
+        )
+    )
+
+    return [str(entry["name"]) for entry in ranked[:limit]]
 
 
 def buy_distribution(session: Session, window_days: int = 90) -> dict:

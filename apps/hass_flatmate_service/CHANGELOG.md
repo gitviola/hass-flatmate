@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- Shopping recents ranking now prioritizes historically bought items by purchase count, includes active favorites, and excludes names currently open on the shopping list.
+
 ## [0.1.11] - 2026-02-11
 
 ### Fixed

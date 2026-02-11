@@ -187,12 +187,6 @@ class ShoppingDataSensor(HassFlatmateCoordinatorEntity, SensorEntity):
         recents = [str(item) for item in self.coordinator.data.get("shopping_recents", []) if item]
         suggestions = []
         seen: set[str] = set()
-        for row in favorites:
-            key = str(row["name"]).strip().lower()
-            if not key or key in seen:
-                continue
-            seen.add(key)
-            suggestions.append(row["name"])
         for name in recents:
             key = str(name).strip().lower()
             if not key or key in seen:

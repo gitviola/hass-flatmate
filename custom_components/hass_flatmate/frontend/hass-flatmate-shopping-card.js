@@ -3,10 +3,10 @@ class HassFlatmateShoppingCard extends HTMLElement {
     super();
     this._root = this.attachShadow({ mode: "open" });
     this._draftName = "";
-    this._busy = false;
     this._errorMessage = "";
     this._stateSnapshot = "";
     this._pendingItemIds = new Set();
+    this._pendingAdds = [];
   }
 
   static async getConfigElement() {
@@ -140,21 +140,39 @@ class HassFlatmateShoppingCard extends HTMLElement {
 
   async _addItem(name) {
     const normalized = String(name || "").trim();
-    if (!normalized || this._busy) {
+    if (!normalized) {
       return;
     }
 
-    this._busy = true;
+    const key = normalized.toLowerCase();
+    const openItems = Array.isArray(this._stateObj?.attributes?.open_items)
+      ? this._stateObj.attributes.open_items
+      : [];
+    const currentOpenCount = openItems.filter(
+      (item) => String(item?.name || "").trim().toLowerCase() === key
+    ).length;
+    const currentPendingCount = this._pendingAdds.filter((row) => row.key === key).length;
+    const tempId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    this._pendingAdds.push({
+      tempId,
+      key,
+      name: normalized,
+      addedAt: new Date().toISOString(),
+      expectedOpenCount: currentOpenCount + currentPendingCount + 1,
+    });
+
+    this._draftName = "";
     this._errorMessage = "";
     this._render();
+
     try {
       const meta = this._serviceMeta(this._stateObj.attributes || {});
       await this._callService(meta.addItem, { name: normalized });
-      this._draftName = "";
     } catch (error) {
+      this._pendingAdds = this._pendingAdds.filter((row) => row.tempId !== tempId);
+      this._draftName = normalized;
       this._errorMessage = error?.message || "Unable to add shopping item";
-    } finally {
-      this._busy = false;
       this._render();
     }
   }
@@ -263,6 +281,27 @@ class HassFlatmateShoppingCard extends HTMLElement {
 
     const attrs = this._stateObj.attributes || {};
     const openItems = Array.isArray(attrs.open_items) ? attrs.open_items : [];
+
+    const openCountByName = new Map();
+    for (const item of openItems) {
+      const key = String(item?.name || "").trim().toLowerCase();
+      if (!key) {
+        continue;
+      }
+      openCountByName.set(key, (openCountByName.get(key) || 0) + 1);
+    }
+    this._pendingAdds = this._pendingAdds.filter(
+      (row) => (openCountByName.get(row.key) || 0) < row.expectedOpenCount
+    );
+
+    const pendingOpenItems = this._pendingAdds.map((row) => ({
+      id: `pending-${row.tempId}`,
+      name: row.name,
+      added_at: row.addedAt,
+      added_by_name: null,
+      pending_add: true,
+    }));
+
     const openIdSet = new Set(
       openItems
         .map((item) => Number(item?.id))
@@ -277,10 +316,11 @@ class HassFlatmateShoppingCard extends HTMLElement {
     const visibleOpenItems = openItems.filter(
       (item) => !this._pendingItemIds.has(Number(item?.id))
     );
+    const renderedOpenItems = [...pendingOpenItems, ...visibleOpenItems];
 
     const rawRecents = Array.isArray(attrs.suggestions) ? attrs.suggestions : [];
     const openNameSet = new Set(
-      visibleOpenItems
+      renderedOpenItems
         .map((item) => String(item?.name || "").trim().toLowerCase())
         .filter((name) => name.length > 0)
     );
@@ -297,24 +337,31 @@ class HassFlatmateShoppingCard extends HTMLElement {
         return true;
       })
       .filter((name) => !openNameSet.has(name.toLowerCase()));
-    const openCount = visibleOpenItems.length;
+    const openCount = renderedOpenItems.length;
 
-    const itemRows = visibleOpenItems
+    const itemRows = renderedOpenItems
       .map((item) => {
         const id = Number(item.id);
         const itemName = String(item.name || "");
         const name = this._escape(itemName);
         const relative = this._relativeAdded(item.added_at);
+        const isPendingAdd = Boolean(item.pending_add);
         const addedBy = item.added_by_name ? ` by ${this._escape(item.added_by_name)}` : "";
+        const metaText = isPendingAdd ? "adding..." : `${this._escape(relative)}${addedBy}`;
+        const actionButtons = isPendingAdd
+          ? '<span class="pending-pill">Saving...</span>'
+          : `
+              <button class="todo-check" type="button" data-action="complete-item" data-item-id="${id}" title="Mark as bought" aria-label="Mark ${name} as bought"><ha-icon icon="mdi:check-circle-outline"></ha-icon></button>
+              <button class="todo-delete" type="button" data-action="delete-item" data-item-id="${id}" data-item-name="${name}" title="Remove from shopping list" aria-label="Remove ${name} from shopping list"><ha-icon icon="mdi:close-circle-outline"></ha-icon></button>
+            `;
         return `
-          <li class="item-row">
+          <li class="item-row ${isPendingAdd ? "pending-add" : ""}">
             <div class="item-main">
               <div class="item-name">${name}</div>
-              <div class="item-meta">${this._escape(relative)}${addedBy}</div>
+              <div class="item-meta">${metaText}</div>
             </div>
             <div class="item-actions">
-              <button class="todo-check" type="button" data-action="complete-item" data-item-id="${id}" title="Mark as bought" aria-label="Mark ${name} as bought" ${this._busy ? "disabled" : ""}><ha-icon icon="mdi:check-circle-outline"></ha-icon></button>
-              <button class="todo-delete" type="button" data-action="delete-item" data-item-id="${id}" data-item-name="${name}" title="Remove item" aria-label="Remove ${name} from shopping list" ${this._busy ? "disabled" : ""}><ha-icon icon="mdi:trash-can-outline"></ha-icon></button>
+              ${actionButtons}
             </div>
           </li>
         `;
@@ -325,12 +372,11 @@ class HassFlatmateShoppingCard extends HTMLElement {
       .slice(0, 20)
       .map((name) => {
         const escaped = this._escape(name);
-        return `<button class="chip" type="button" data-action="add-quick" data-name="${escaped}" ${this._busy ? "disabled" : ""}>${escaped}</button>`;
+        return `<button class="chip" type="button" data-action="add-quick" data-name="${escaped}">${escaped}</button>`;
       })
       .join("");
 
     const draftName = this._escape(this._draftName || "");
-    const disabledAttr = this._busy ? "disabled" : "";
     const errorMessage = this._errorMessage ? this._escape(this._errorMessage) : "";
     const suggestionOptions = recents
       .slice(0, 40)
@@ -355,9 +401,9 @@ class HassFlatmateShoppingCard extends HTMLElement {
           <section>
             <h3>Add item</h3>
             <form id="hf-add-form" class="add-row" autocomplete="off">
-              <input id="hf-item-input" type="text" list="hf-item-suggestions" placeholder="Type an item" value="${draftName}" ${disabledAttr} />
+              <input id="hf-item-input" type="text" list="hf-item-suggestions" placeholder="Type an item" value="${draftName}" />
               <datalist id="hf-item-suggestions">${suggestionOptions}</datalist>
-              <button class="add-btn" type="submit" ${disabledAttr}>Add</button>
+              <button class="add-btn" type="submit">Add</button>
             </form>
           </section>
 
@@ -417,6 +463,10 @@ class HassFlatmateShoppingCard extends HTMLElement {
           padding: 10px;
         }
 
+        .item-row.pending-add {
+          opacity: 0.72;
+        }
+
         .item-actions {
           display: inline-flex;
           align-items: center;
@@ -443,6 +493,7 @@ class HassFlatmateShoppingCard extends HTMLElement {
         .todo-check,
         .todo-delete,
         .add-btn,
+        .pending-pill,
         .chip {
           border: 1px solid var(--divider-color);
           background: var(--card-background-color);
@@ -469,6 +520,15 @@ class HassFlatmateShoppingCard extends HTMLElement {
           color: var(--secondary-text-color);
           border-color: transparent;
           background: transparent;
+        }
+
+        .pending-pill {
+          cursor: default;
+          color: var(--secondary-text-color);
+          background: color-mix(in srgb, var(--divider-color) 14%, var(--card-background-color));
+          border-style: dashed;
+          padding: 7px 10px;
+          font-size: 0.8rem;
         }
 
         .todo-check:hover,

@@ -8,6 +8,9 @@
 - Removed percentage labels and `Window: 90d` chip from distribution card UI.
 - Cleaning card now supports `layout: compact` read-only rendering for e-ink/non-touch dashboards.
 - `hass_flatmate_sync_members` now dispatches notifications returned by member-sync cleanup (for auto-canceled overrides).
+- Shopping card add-item flow now uses optimistic UI (pending rows shown instantly while save completes).
+- Shopping suggestions now follow backend-ranked recents/favorites ordering (frequency-first) instead of local favorites-first merging.
+- Shopping remove service wording now clarifies "remove from list" (historical trace kept).
 
 ### Added
 - New HA service `hass_flatmate_import_flatastic_data` for pasted Flatastic migration rows:

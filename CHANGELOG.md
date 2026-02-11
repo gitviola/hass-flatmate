@@ -16,6 +16,9 @@ All notable changes to this project are documented in this file.
 - Cleaning card now supports `layout: compact` read-only mode for e-ink/non-touch displays.
 - Member sync now deactivates departed members in rotation planning and auto-cancels impacted planned overrides.
 - Auto-canceled overrides from member departures now emit notifications for remaining affected flatmates.
+- Shopping card add-item UX is now optimistic/instant with temporary pending rows while backend save completes.
+- Shopping quick suggestions now prioritize names by historical purchase frequency and include favorited items, excluding names currently open on the shopping list.
+- Shopping remove action wording now explicitly reflects "remove from list" behavior rather than hard deletion semantics.
 
 ### Added
 - New Flatastic migration import service flow:

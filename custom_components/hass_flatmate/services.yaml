@@ -21,7 +21,7 @@ hass_flatmate_complete_shopping_item:
 
 hass_flatmate_delete_shopping_item:
   name: Delete shopping item
-  description: Delete an open shopping item.
+  description: Remove an open shopping item from the active shopping list (keeps historical trace).
   fields:
     item_id:
       required: true

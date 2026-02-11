@@ -136,17 +136,51 @@ def test_shopping_lifecycle_and_stats(client, auth_headers) -> None:
 def test_recents_and_favorites(client, auth_headers) -> None:
     _sync_members(client, auth_headers)
 
-    for name in ["Milk", "Bread", "Milk", "Eggs"]:
-        response = client.post(
-            "/v1/shopping/items",
-            headers=auth_headers,
-            json={"name": name, "actor_user_id": "u1"},
-        )
-        assert response.status_code == 200
+    milk_1 = client.post(
+        "/v1/shopping/items",
+        headers=auth_headers,
+        json={"name": "Milk", "actor_user_id": "u1"},
+    )
+    assert milk_1.status_code == 200
+    milk_1_id = milk_1.json()["id"]
+    assert client.post(
+        f"/v1/shopping/items/{milk_1_id}/complete",
+        headers=auth_headers,
+        json={"actor_user_id": "u1"},
+    ).status_code == 200
 
-    recents = client.get("/v1/shopping/recents?limit=3", headers=auth_headers)
-    assert recents.status_code == 200
-    assert recents.json()["recents"] == ["Eggs", "Milk", "Bread"]
+    bread = client.post(
+        "/v1/shopping/items",
+        headers=auth_headers,
+        json={"name": "Bread", "actor_user_id": "u1"},
+    )
+    assert bread.status_code == 200
+    bread_id = bread.json()["id"]
+    assert client.post(
+        f"/v1/shopping/items/{bread_id}/complete",
+        headers=auth_headers,
+        json={"actor_user_id": "u1"},
+    ).status_code == 200
+
+    milk_2 = client.post(
+        "/v1/shopping/items",
+        headers=auth_headers,
+        json={"name": "Milk", "actor_user_id": "u1"},
+    )
+    assert milk_2.status_code == 200
+    milk_2_id = milk_2.json()["id"]
+    assert client.post(
+        f"/v1/shopping/items/{milk_2_id}/complete",
+        headers=auth_headers,
+        json={"actor_user_id": "u1"},
+    ).status_code == 200
+
+    eggs = client.post(
+        "/v1/shopping/items",
+        headers=auth_headers,
+        json={"name": "Eggs", "actor_user_id": "u1"},
+    )
+    assert eggs.status_code == 200
 
     add_favorite = client.post(
         "/v1/shopping/favorites",
@@ -159,6 +193,14 @@ def test_recents_and_favorites(client, auth_headers) -> None:
     favorites = client.get("/v1/shopping/favorites", headers=auth_headers)
     assert favorites.status_code == 200
     assert len(favorites.json()["favorites"]) == 1
+
+    recents = client.get("/v1/shopping/recents?limit=10", headers=auth_headers)
+    assert recents.status_code == 200
+    recent_names = recents.json()["recents"]
+    assert recent_names[0] == "Milk"
+    assert recent_names[1] == "Bread"
+    assert "Pasta" in recent_names
+    assert "Eggs" not in recent_names
 
     delete_favorite = client.request(
         "DELETE",
