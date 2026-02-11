@@ -25,15 +25,22 @@ from homeassistant.util import dt as dt_util
 
 from .api import HassFlatmateApiClient
 from .const import (
+    ACTIVITY_CURSOR_KEY,
     CALENDAR_CURSOR_CLEANING_KEY,
     CALENDAR_CURSOR_SHOPPING_KEY,
     CONF_BASE_URL,
+    CONF_CLEANING_NOTIFICATION_LINK,
     CONF_CLEANING_TARGET_CALENDAR_ENTITY_ID,
+    CONF_NOTIFY_SHOPPING_ITEM_ADDED,
     CONF_NOTIFICATION_TEST_MODE,
     CONF_NOTIFICATION_TEST_TARGET_MEMBER_ID,
     CONF_SCAN_INTERVAL,
+    CONF_SHOPPING_NOTIFICATION_LINK,
     CONF_SHOPPING_TARGET_CALENDAR_ENTITY_ID,
+    DEFAULT_CLEANING_NOTIFICATION_LINK,
     DEFAULT_NOTIFICATION_TEST_MODE,
+    DEFAULT_NOTIFY_SHOPPING_ITEM_ADDED,
+    DEFAULT_SHOPPING_NOTIFICATION_LINK,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     FRONTEND_SHOPPING_CARD_FILENAME,
@@ -148,6 +155,58 @@ def _runtime_notification_test_target(runtime: HassFlatmateRuntime) -> dict[str,
     }
 
 
+def _normalize_notification_link(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    link = value.strip()
+    if not link:
+        return None
+    if (
+        link.startswith("/")
+        or link.startswith("http://")
+        or link.startswith("https://")
+        or link.startswith("homeassistant://")
+    ):
+        return link
+    return f"/{link.lstrip('/')}"
+
+
+def _runtime_notification_link(runtime: HassFlatmateRuntime, category: str | None) -> str | None:
+    if category == "shopping":
+        return _normalize_notification_link(
+            runtime.runtime_state.get(CONF_SHOPPING_NOTIFICATION_LINK, DEFAULT_SHOPPING_NOTIFICATION_LINK)
+        )
+    if category == "cleaning":
+        return _normalize_notification_link(
+            runtime.runtime_state.get(CONF_CLEANING_NOTIFICATION_LINK, DEFAULT_CLEANING_NOTIFICATION_LINK)
+        )
+    return None
+
+
+def _notification_data_payload(*, category: str | None, link: str | None) -> dict[str, Any]:
+    data: dict[str, Any] = {}
+
+    if category == "shopping":
+        data["tag"] = "hass_flatmate_shopping"
+        data["group"] = "hass_flatmate_shopping"
+    elif category == "cleaning":
+        data["tag"] = "hass_flatmate_cleaning"
+        data["group"] = "hass_flatmate_cleaning"
+
+    if link:
+        data["url"] = link  # iOS companion app.
+        data["clickAction"] = link  # Android companion app.
+        data["actions"] = [
+            {
+                "action": "URI",
+                "title": "Open",
+                "uri": link,
+            }
+        ]
+
+    return data
+
+
 def _coerce_activity_id(value: Any) -> int | None:
     try:
         return int(value)
@@ -224,6 +283,152 @@ def _set_calendar_cursors_from_events(runtime: HassFlatmateRuntime) -> None:
     runtime.runtime_state[CALENDAR_CURSOR_CLEANING_KEY] = cleaning_cursor
 
 
+def _set_activity_cursor_from_events(runtime: HassFlatmateRuntime) -> None:
+    activity_cursor = _coerce_activity_id(runtime.runtime_state.get(ACTIVITY_CURSOR_KEY))
+    for row in runtime.coordinator.data.get("activity", []):
+        if not isinstance(row, dict):
+            continue
+        row_id = _coerce_activity_id(row.get("id"))
+        if row_id is None:
+            continue
+        activity_cursor = row_id if activity_cursor is None else max(activity_cursor, row_id)
+    runtime.runtime_state[ACTIVITY_CURSOR_KEY] = activity_cursor
+
+
+def _build_activity_event_data(
+    row: dict[str, Any],
+    *,
+    row_id: int,
+    members_by_id: dict[int, dict[str, Any]],
+) -> dict[str, Any]:
+    payload = row.get("payload_json", {})
+    if not isinstance(payload, dict):
+        payload = {}
+
+    actor_member_id = _coerce_member_id(row.get("actor_member_id"))
+    actor_name: str | None = None
+    if actor_member_id is not None:
+        actor_name = members_by_id.get(actor_member_id, {}).get("display_name")
+        if not isinstance(actor_name, str):
+            actor_name = None
+
+    summary, _description = _event_summary_and_description(row)
+    return {
+        "activity_id": row_id,
+        "domain": row.get("domain"),
+        "action": row.get("action"),
+        "created_at": row.get("created_at"),
+        "actor_member_id": actor_member_id,
+        "actor_name": actor_name,
+        "actor_user_id_raw": row.get("actor_user_id_raw"),
+        "payload": payload,
+        "summary": summary,
+    }
+
+
+def _build_shopping_added_notifications(
+    runtime: HassFlatmateRuntime,
+    row: dict[str, Any],
+    *,
+    members_by_id: dict[int, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not bool(
+        runtime.runtime_state.get(
+            CONF_NOTIFY_SHOPPING_ITEM_ADDED,
+            DEFAULT_NOTIFY_SHOPPING_ITEM_ADDED,
+        )
+    ):
+        return []
+
+    payload = row.get("payload_json", {})
+    if not isinstance(payload, dict):
+        payload = {}
+    item_name = str(payload.get("name", "")).strip()
+    if not item_name:
+        item_name = "an item"
+
+    actor_member_id = _coerce_member_id(row.get("actor_member_id"))
+    actor_name = None
+    if actor_member_id is not None:
+        actor_name = members_by_id.get(actor_member_id, {}).get("display_name")
+    if not isinstance(actor_name, str) or not actor_name.strip():
+        actor_name = "Someone"
+
+    notifications: list[dict[str, Any]] = []
+    for member_id, member in members_by_id.items():
+        if actor_member_id is not None and member_id == actor_member_id:
+            continue
+        if not bool(member.get("active", True)):
+            continue
+        notify_service = member.get("notify_service")
+        if not isinstance(notify_service, str) or not notify_service:
+            continue
+        notifications.append(
+            {
+                "member_id": member_id,
+                "notify_service": notify_service,
+                "title": "Shopping List Updated",
+                "message": f"{actor_name} added {item_name} to the shopping list.",
+                "category": "shopping",
+            }
+        )
+    return notifications
+
+
+async def _emit_new_activity_events(hass: HomeAssistant, runtime: HassFlatmateRuntime) -> None:
+    rows = runtime.coordinator.data.get("activity", [])
+    if not isinstance(rows, list):
+        return
+
+    last_cursor = _coerce_activity_id(runtime.runtime_state.get(ACTIVITY_CURSOR_KEY))
+    members_by_id = _runtime_members_by_id(runtime)
+    candidates: list[tuple[int, dict[str, Any]]] = []
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        row_id = _coerce_activity_id(row.get("id"))
+        if row_id is None:
+            continue
+        if last_cursor is not None and row_id <= last_cursor:
+            continue
+        candidates.append((row_id, row))
+
+    if not candidates:
+        return
+
+    candidates.sort(key=lambda item: item[0])
+    next_cursor = last_cursor
+
+    for row_id, row in candidates:
+        action = str(row.get("action", "")).strip().lower()
+        event_data = _build_activity_event_data(row, row_id=row_id, members_by_id=members_by_id)
+        hass.bus.async_fire("hass_flatmate_activity", event_data)
+        if action:
+            hass.bus.async_fire(f"hass_flatmate_activity_{action}", event_data)
+
+        if action == "shopping_item_added":
+            shopping_notifications = _build_shopping_added_notifications(
+                runtime,
+                row,
+                members_by_id=members_by_id,
+            )
+            if shopping_notifications:
+                try:
+                    await _dispatch_notifications(
+                        hass,
+                        runtime,
+                        shopping_notifications,
+                        default_category="shopping",
+                    )
+                except Exception as err:  # pragma: no cover - defensive
+                    _LOGGER.warning("Failed to dispatch shopping-added notifications: %s", err)
+
+        next_cursor = row_id if next_cursor is None else max(next_cursor, row_id)
+
+    runtime.runtime_state[ACTIVITY_CURSOR_KEY] = next_cursor
+
+
 async def _sync_activity_to_selected_calendars(hass: HomeAssistant, runtime: HassFlatmateRuntime) -> None:
     rows = runtime.coordinator.data.get("activity", [])
     if not isinstance(rows, list):
@@ -292,6 +497,7 @@ async def _sync_activity_to_selected_calendars(hass: HomeAssistant, runtime: Has
 
 async def _refresh_and_process_activity(hass: HomeAssistant, runtime: HassFlatmateRuntime) -> None:
     await runtime.coordinator.async_request_refresh()
+    await _emit_new_activity_events(hass, runtime)
     await _sync_activity_to_selected_calendars(hass, runtime)
 
 
@@ -366,6 +572,8 @@ async def _dispatch_notifications(
     hass: HomeAssistant,
     runtime: HassFlatmateRuntime,
     notifications: list[dict[str, Any]],
+    *,
+    default_category: str | None = None,
 ) -> None:
     test_mode_enabled = bool(runtime.runtime_state.get(CONF_NOTIFICATION_TEST_MODE, DEFAULT_NOTIFICATION_TEST_MODE))
     test_target = _runtime_notification_test_target(runtime) if test_mode_enabled else None
@@ -383,6 +591,8 @@ async def _dispatch_notifications(
         notify_service = item.get("notify_service")
         title = item.get("title", "Weekly Cleaning Shift")
         message = item.get("message", "")
+        category = item.get("category") if isinstance(item.get("category"), str) else default_category
+        category = str(category) if category else None
 
         if test_mode_enabled and test_target is not None:
             notify_service = test_target["notify_service"]
@@ -408,13 +618,21 @@ async def _dispatch_notifications(
             _LOGGER.warning("Unsupported notify domain: %s", notify_service)
             continue
 
+        link = _runtime_notification_link(runtime, category)
+        if "deeplink" in item:
+            link = _normalize_notification_link(item.get("deeplink"))
+        payload = {
+            "title": title,
+            "message": message,
+        }
+        data_payload = _notification_data_payload(category=category, link=link)
+        if data_payload:
+            payload["data"] = data_payload
+
         await hass.services.async_call(
             domain,
             service,
-            {
-                "title": title,
-                "message": message,
-            },
+            payload,
             blocking=False,
         )
 
@@ -426,7 +644,12 @@ async def _sync_members_from_ha(runtime: HassFlatmateRuntime, hass: HomeAssistan
         return
     notifications = response.get("notifications", [])
     if isinstance(notifications, list) and notifications:
-        await _dispatch_notifications(hass, runtime, notifications)
+        await _dispatch_notifications(
+            hass,
+            runtime,
+            notifications,
+            default_category="cleaning",
+        )
 
 
 async def _handle_due_notifications(hass: HomeAssistant, runtime: HassFlatmateRuntime) -> None:
@@ -440,7 +663,12 @@ async def _handle_due_notifications(hass: HomeAssistant, runtime: HassFlatmateRu
     response = await runtime.api.get_due_notifications(at=now)
     notifications = response.get("notifications", [])
     if notifications:
-        await _dispatch_notifications(hass, runtime, notifications)
+        await _dispatch_notifications(
+            hass,
+            runtime,
+            notifications,
+            default_category="cleaning",
+        )
 
 
 async def _register_services(hass: HomeAssistant) -> None:
@@ -496,7 +724,12 @@ async def _register_services(hass: HomeAssistant) -> None:
             actor_user_id=call.context.user_id,
             completed_by_member_id=call.data.get(SERVICE_ATTR_COMPLETED_BY_MEMBER_ID),
         )
-        await _dispatch_notifications(hass, runtime, response.get("notifications", []))
+        await _dispatch_notifications(
+            hass,
+            runtime,
+            response.get("notifications", []),
+            default_category="cleaning",
+        )
         await _refresh_and_process_activity(hass, runtime)
 
     async def mark_cleaning_undone(call: ServiceCall) -> None:
@@ -517,7 +750,12 @@ async def _register_services(hass: HomeAssistant) -> None:
             cleaner_member_id=call.data[SERVICE_ATTR_CLEANER_MEMBER_ID],
             actor_user_id=call.context.user_id,
         )
-        await _dispatch_notifications(hass, runtime, response.get("notifications", []))
+        await _dispatch_notifications(
+            hass,
+            runtime,
+            response.get("notifications", []),
+            default_category="cleaning",
+        )
         await _refresh_and_process_activity(hass, runtime)
 
     async def swap_cleaning_week(call: ServiceCall) -> None:
@@ -530,7 +768,12 @@ async def _register_services(hass: HomeAssistant) -> None:
             actor_user_id=call.context.user_id,
             cancel=call.data.get(SERVICE_ATTR_CANCEL, False),
         )
-        await _dispatch_notifications(hass, runtime, response.get("notifications", []))
+        await _dispatch_notifications(
+            hass,
+            runtime,
+            response.get("notifications", []),
+            default_category="cleaning",
+        )
         await _refresh_and_process_activity(hass, runtime)
 
     async def sync_members(_call: ServiceCall) -> None:
@@ -546,7 +789,11 @@ async def _register_services(hass: HomeAssistant) -> None:
             shopping_history_rows=call.data.get(SERVICE_ATTR_SHOPPING_HISTORY_ROWS),
             actor_user_id=call.context.user_id,
         )
-        await _dispatch_notifications(hass, runtime, response.get("notifications", []))
+        await _dispatch_notifications(
+            hass,
+            runtime,
+            response.get("notifications", []),
+        )
         await _refresh_and_process_activity(hass, runtime)
 
     hass.services.async_register(
@@ -836,10 +1083,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     runtime.runtime_state[CONF_CLEANING_TARGET_CALENDAR_ENTITY_ID] = entry.options.get(
         CONF_CLEANING_TARGET_CALENDAR_ENTITY_ID
     )
+    runtime.runtime_state[CONF_NOTIFY_SHOPPING_ITEM_ADDED] = bool(
+        entry.options.get(
+            CONF_NOTIFY_SHOPPING_ITEM_ADDED,
+            DEFAULT_NOTIFY_SHOPPING_ITEM_ADDED,
+        )
+    )
+    runtime.runtime_state[CONF_SHOPPING_NOTIFICATION_LINK] = str(
+        entry.options.get(
+            CONF_SHOPPING_NOTIFICATION_LINK,
+            DEFAULT_SHOPPING_NOTIFICATION_LINK,
+        )
+        or ""
+    )
+    runtime.runtime_state[CONF_CLEANING_NOTIFICATION_LINK] = str(
+        entry.options.get(
+            CONF_CLEANING_NOTIFICATION_LINK,
+            DEFAULT_CLEANING_NOTIFICATION_LINK,
+        )
+        or ""
+    )
 
     await _sync_members_from_ha(runtime, hass)
     await coordinator.async_request_refresh()
     _set_calendar_cursors_from_events(runtime)
+    _set_activity_cursor_from_events(runtime)
 
     async def _time_listener(now) -> None:
         del now

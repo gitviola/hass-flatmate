@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-02-11
+
+### Added
+- New optional shopping-added push setting:
+  - `switch.hass_flatmate_notify_shopping_item_added`
+- New notification deep-link text entities:
+  - `text.hass_flatmate_shopping_notification_link`
+  - `text.hass_flatmate_cleaning_notification_link`
+- New automation-friendly Home Assistant event bus triggers for activity:
+  - `hass_flatmate_activity`
+  - `hass_flatmate_activity_<action>`
+
+### Changed
+- Notification dispatcher now adds companion-friendly deep-link payload keys (`url` + `clickAction`) and mobile Open action buttons when links are configured.
+- Cleaning notifications are dispatched with category metadata for cleaner grouping/tagging in mobile apps.
+
 ## [0.1.13] - 2026-02-11
 
 ### Fixed

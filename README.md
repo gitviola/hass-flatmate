@@ -13,6 +13,9 @@ It replaces the used Flatastic features with:
 - Takeover completion with automatic compensation override
 - Home Assistant calendar activity events
 - Built-in notification scheduling (Monday + Sunday reminders)
+- Optional shopping-added push notifications
+- Notification deep links (iOS + Android)
+- Automation-friendly activity events on HA event bus
 - Safe notification test mode (redirect all notifications to one selected user)
 
 ## One-Click Install
@@ -81,9 +84,12 @@ Features:
 - Clear done/pending/missed status
 - Strike-through visual once completed
 - Mark-done action in-card
-- Swap override modal with week preview and member selectors
+- Non-assignee completion modal (confirm for assignee vs takeover)
 - Optional `layout: compact` read-only mode for e-ink/non-touch dashboards
 - Compact mode still shows swap/compensation annotations and who is assigned
+
+Manual swap override remains available via service:
+- `hass_flatmate.hass_flatmate_swap_cleaning_week`
 
 In Lovelace YAML resource mode, add both resources manually as `module`:
 - `/hass_flatmate/static/hass-flatmate-shopping-card.js`
@@ -134,10 +140,35 @@ layout: compact
 Use these entities to test all flows without notifying everyone:
 - `switch.hass_flatmate_notification_test_mode`
 - `select.hass_flatmate_notification_test_target`
+- `switch.hass_flatmate_notify_shopping_item_added`
+- `text.hass_flatmate_shopping_notification_link`
+- `text.hass_flatmate_cleaning_notification_link`
 - `select.hass_flatmate_shopping_calendar_target`
 - `select.hass_flatmate_cleaning_calendar_target`
 
 When test mode is enabled, all notifications are redirected to the selected target and prefixed with `[TEST]`.
+
+`*_notification_link` accepts:
+- Relative dashboard/view path like `/dashboard-flatmate/shopping`
+- Full URL like `https://...`
+- Companion deep link like `homeassistant://navigate/dashboard-flatmate/shopping`
+
+The integration attaches this link to mobile notifications using both iOS `url` and Android `clickAction`.
+
+## Automation Event Triggers
+
+The integration emits Home Assistant bus events for every new activity row:
+- Generic: `hass_flatmate_activity`
+- Action-specific: `hass_flatmate_activity_<action>`
+  - Example: `hass_flatmate_activity_shopping_item_added`
+  - Example: `hass_flatmate_activity_cleaning_done`
+
+Event payload includes:
+- `activity_id`, `domain`, `action`, `created_at`
+- `actor_member_id`, `actor_name`, `actor_user_id_raw`
+- `payload` (raw activity payload JSON), `summary`
+
+This enables per-user custom automations/notifications without changing integration code.
 
 ## Flatastic Migration Import
 

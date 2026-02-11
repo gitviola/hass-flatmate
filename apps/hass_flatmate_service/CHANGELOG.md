@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-02-11
+
+### Changed
+- Version alignment release for integration-side notification deep links and automation event trigger enhancements.
+
 ## [0.1.13] - 2026-02-11
 
 ### Changed

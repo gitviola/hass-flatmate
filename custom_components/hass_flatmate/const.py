@@ -13,10 +13,16 @@ CONF_NOTIFICATION_TEST_MODE = "notification_test_mode"
 CONF_NOTIFICATION_TEST_TARGET_MEMBER_ID = "notification_test_target_member_id"
 CONF_SHOPPING_TARGET_CALENDAR_ENTITY_ID = "shopping_target_calendar_entity_id"
 CONF_CLEANING_TARGET_CALENDAR_ENTITY_ID = "cleaning_target_calendar_entity_id"
+CONF_NOTIFY_SHOPPING_ITEM_ADDED = "notify_shopping_item_added"
+CONF_SHOPPING_NOTIFICATION_LINK = "shopping_notification_link"
+CONF_CLEANING_NOTIFICATION_LINK = "cleaning_notification_link"
 
 DEFAULT_BASE_URL = "http://ebc95cb1-hass-flatmate-service:8099"
 DEFAULT_SCAN_INTERVAL = 30
 DEFAULT_NOTIFICATION_TEST_MODE = False
+DEFAULT_NOTIFY_SHOPPING_ITEM_ADDED = False
+DEFAULT_SHOPPING_NOTIFICATION_LINK = ""
+DEFAULT_CLEANING_NOTIFICATION_LINK = ""
 FRONTEND_STATIC_PATH = "/hass_flatmate/static"
 FRONTEND_SHOPPING_CARD_FILENAME = "hass-flatmate-shopping-card.js"
 FRONTEND_CLEANING_CARD_FILENAME = "hass-flatmate-cleaning-card.js"
@@ -35,6 +41,7 @@ PLATFORMS: list[Platform] = [
     Platform.CALENDAR,
     Platform.SWITCH,
     Platform.SELECT,
+    Platform.TEXT,
 ]
 
 SERVICE_ADD_SHOPPING_ITEM = "hass_flatmate_add_shopping_item"
@@ -67,3 +74,4 @@ COORDINATOR_NAME = "hass_flatmate_coordinator"
 NOTIFICATION_DEDUPE_KEY = "last_notification_minute"
 CALENDAR_CURSOR_SHOPPING_KEY = "last_synced_shopping_activity_id"
 CALENDAR_CURSOR_CLEANING_KEY = "last_synced_cleaning_activity_id"
+ACTIVITY_CURSOR_KEY = "last_processed_activity_id"

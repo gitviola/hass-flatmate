@@ -10,9 +10,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
+    CONF_CLEANING_NOTIFICATION_LINK,
+    CONF_NOTIFY_SHOPPING_ITEM_ADDED,
     CONF_NOTIFICATION_TEST_MODE,
     CONF_NOTIFICATION_TEST_TARGET_MEMBER_ID,
+    CONF_SHOPPING_NOTIFICATION_LINK,
     DEFAULT_NOTIFICATION_TEST_MODE,
+    DEFAULT_NOTIFY_SHOPPING_ITEM_ADDED,
 )
 from .entity import HassFlatmateCoordinatorEntity, get_runtime
 
@@ -50,6 +54,17 @@ async def _persist_options(entity: HassFlatmateCoordinatorEntity) -> None:
         CONF_NOTIFICATION_TEST_TARGET_MEMBER_ID: _coerce_member_id(
             entity.runtime.runtime_state.get(CONF_NOTIFICATION_TEST_TARGET_MEMBER_ID)
         ),
+        CONF_NOTIFY_SHOPPING_ITEM_ADDED: bool(
+            entity.runtime.runtime_state.get(
+                CONF_NOTIFY_SHOPPING_ITEM_ADDED, DEFAULT_NOTIFY_SHOPPING_ITEM_ADDED
+            )
+        ),
+        CONF_SHOPPING_NOTIFICATION_LINK: entity.runtime.runtime_state.get(
+            CONF_SHOPPING_NOTIFICATION_LINK
+        ),
+        CONF_CLEANING_NOTIFICATION_LINK: entity.runtime.runtime_state.get(
+            CONF_CLEANING_NOTIFICATION_LINK
+        ),
     }
     entity.hass.config_entries.async_update_entry(entity.config_entry, options=options)
 
@@ -86,11 +101,44 @@ class NotificationTestModeSwitch(HassFlatmateCoordinatorEntity, SwitchEntity):
         self.async_write_ha_state()
 
 
+class ShoppingAddedNotificationSwitch(HassFlatmateCoordinatorEntity, SwitchEntity):
+    """Toggle built-in shopping-added push notifications."""
+
+    _attr_name = "Notify Shopping Item Added"
+    _attr_unique_id = "hass_flatmate_notify_shopping_item_added"
+    _attr_icon = "mdi:cart-arrow-down"
+
+    @property
+    def is_on(self) -> bool:
+        return bool(
+            self.runtime.runtime_state.get(
+                CONF_NOTIFY_SHOPPING_ITEM_ADDED,
+                DEFAULT_NOTIFY_SHOPPING_ITEM_ADDED,
+            )
+        )
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        del kwargs
+        self.runtime.runtime_state[CONF_NOTIFY_SHOPPING_ITEM_ADDED] = True
+        await _persist_options(self)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        del kwargs
+        self.runtime.runtime_state[CONF_NOTIFY_SHOPPING_ITEM_ADDED] = False
+        await _persist_options(self)
+        self.async_write_ha_state()
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     runtime = get_runtime(entry, hass)
-    async_add_entities([NotificationTestModeSwitch(entry, runtime)])
-
+    async_add_entities(
+        [
+            NotificationTestModeSwitch(entry, runtime),
+            ShoppingAddedNotificationSwitch(entry, runtime),
+        ]
+    )
