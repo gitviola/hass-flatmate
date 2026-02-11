@@ -1,4 +1,4 @@
-"""Flatastic migration import API tests."""
+"""Manual migration import API tests."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def test_import_rotation_rows_sets_rotation_order(client, auth_headers) -> None:
         ]
     )
     response = client.post(
-        "/v1/import/flatastic",
+        "/v1/import/manual",
         headers=auth_headers,
         json={"rotation_rows": rotation_rows, "actor_user_id": "u1"},
     )
@@ -69,7 +69,7 @@ def test_import_history_rows_populates_cleaning_and_shopping(client, auth_header
     )
 
     response = client.post(
-        "/v1/import/flatastic",
+        "/v1/import/manual",
         headers=auth_headers,
         json={
             "cleaning_history_rows": cleaning_rows,
@@ -101,7 +101,7 @@ def test_import_history_rows_populates_cleaning_and_shopping(client, auth_header
     activity = client.get("/v1/activity?limit=10", headers=auth_headers)
     assert activity.status_code == 200
     actions = [row["action"] for row in activity.json()]
-    assert "flatastic_import_applied" in actions
+    assert "manual_import_applied" in actions
 
 
 def test_import_rejects_unknown_member_name(client, auth_headers) -> None:
@@ -112,7 +112,7 @@ def test_import_rejects_unknown_member_name(client, auth_headers) -> None:
     week_start = date.fromisoformat(current.json()["week_start"])
 
     response = client.post(
-        "/v1/import/flatastic",
+        "/v1/import/manual",
         headers=auth_headers,
         json={
             "rotation_rows": f"{(week_start + timedelta(days=2)).isoformat()},Unknown Person",

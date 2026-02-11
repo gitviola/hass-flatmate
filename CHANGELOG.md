@@ -9,6 +9,13 @@ All notable changes to this project are documented in this file.
 - Compact shopping card renders a dense read-only list from `sensor.hass_flatmate_shopping_data` with relative age labels such as `added 5 hours ago`.
 - Frontend auto-registration now includes `/hass_flatmate/static/hass-flatmate-shopping-compact-card.js` in storage mode.
 
+### Changed
+- Renamed migration import interfaces to generic manual naming:
+  - API: `POST /v1/import/manual`
+  - HA service: `hass_flatmate_import_manual_data`
+  - Activity action: `manual_import_applied`
+- Removed product-specific wording from user-facing migration docs and service labels.
+
 ## [0.1.16] - 2026-02-11
 
 ### Changed
@@ -77,9 +84,9 @@ All notable changes to this project are documented in this file.
 - Cleaning compact layout is now fully responsive with stacked row content, `Upcoming` labels for future weeks, and no redundant current-assignee/header status text.
 
 ### Added
-- New Flatastic migration import service flow:
-  - API: `POST /v1/import/flatastic`
-  - HA service: `hass_flatmate_import_flatastic_data`
+- New manual migration import service flow:
+  - API: `POST /v1/import/manual`
+  - HA service: `hass_flatmate_import_manual_data`
   - Supports pasted CSV-style rows for rotation seed, cleaning history, and shopping history.
 - Cleaning card now supports `layout: compact` for read-only e-ink dashboards.
 - Added committed app icon/logo assets in mirrored app source for versioned packaging consistency.

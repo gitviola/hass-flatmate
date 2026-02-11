@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+- Renamed manual migration service to `hass_flatmate_import_manual_data` with generic wording.
+- Activity summary now labels migration events as `Manual data import applied`.
+
 ## [0.1.15] - 2026-02-11
 
 ### Fixed
@@ -47,7 +51,7 @@
 - Compact cleaning card now renders responsively with stacked rows, `Upcoming` status for future weeks, and reduced redundant header text.
 
 ### Added
-- New HA service `hass_flatmate_import_flatastic_data` for pasted Flatastic migration rows:
+- New HA service `hass_flatmate_import_manual_data` for pasted migration rows:
   - rotation seed rows (`date,member_name`)
   - optional cleaning history rows
   - optional shopping history rows

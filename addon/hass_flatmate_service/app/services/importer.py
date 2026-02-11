@@ -1,4 +1,4 @@
-"""Import helpers for migrating Flatastic-like data into hass-flatmate."""
+"""Import helpers for manually migrating rotation/history data into hass-flatmate."""
 
 from __future__ import annotations
 
@@ -293,7 +293,7 @@ def _apply_shopping_history_rows(
     return imported_rows
 
 
-def import_flatastic_data(
+def import_manual_data(
     session: Session,
     *,
     rotation_rows: str | None,
@@ -341,7 +341,7 @@ def import_flatastic_data(
     log_event(
         session,
         domain="migration",
-        action="flatastic_import_applied",
+        action="manual_import_applied",
         actor_member_id=None,
         actor_user_id_raw=actor_user_id,
         payload=summary,
@@ -350,3 +350,21 @@ def import_flatastic_data(
 
     session.commit()
     return summary, []
+
+
+def import_flatastic_data(
+    session: Session,
+    *,
+    rotation_rows: str | None,
+    cleaning_history_rows: str | None,
+    shopping_history_rows: str | None,
+    actor_user_id: str | None,
+) -> tuple[dict[str, Any], list[dict]]:
+    """Backward-compat alias; use import_manual_data."""
+    return import_manual_data(
+        session,
+        rotation_rows=rotation_rows,
+        cleaning_history_rows=cleaning_history_rows,
+        shopping_history_rows=shopping_history_rows,
+        actor_user_id=actor_user_id,
+    )

@@ -76,7 +76,7 @@ from .const import (
     SERVICE_COMPLETE_SHOPPING_ITEM,
     SERVICE_DELETE_FAVORITE_ITEM,
     SERVICE_DELETE_SHOPPING_ITEM,
-    SERVICE_IMPORT_FLATASTIC_DATA,
+    SERVICE_IMPORT_MANUAL_DATA,
     SERVICE_MARK_CLEANING_DONE,
     SERVICE_MARK_CLEANING_UNDONE,
     SERVICE_MARK_CLEANING_TAKEOVER_DONE,
@@ -784,9 +784,9 @@ async def _register_services(hass: HomeAssistant) -> None:
         await _sync_members_from_ha(runtime, hass)
         _schedule_refresh_and_process_activity(hass, runtime)
 
-    async def import_flatastic_data(call: ServiceCall) -> None:
+    async def import_manual_data(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
-        response = await runtime.api.import_flatastic_data(
+        response = await runtime.api.import_manual_data(
             rotation_rows=call.data.get(SERVICE_ATTR_ROTATION_ROWS),
             cleaning_history_rows=call.data.get(SERVICE_ATTR_CLEANING_HISTORY_ROWS),
             shopping_history_rows=call.data.get(SERVICE_ATTR_SHOPPING_HISTORY_ROWS),
@@ -874,8 +874,8 @@ async def _register_services(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, SERVICE_SYNC_MEMBERS, sync_members)
     hass.services.async_register(
         DOMAIN,
-        SERVICE_IMPORT_FLATASTIC_DATA,
-        import_flatastic_data,
+        SERVICE_IMPORT_MANUAL_DATA,
+        import_manual_data,
         schema=vol.Schema(
             {
                 vol.Optional(SERVICE_ATTR_ROTATION_ROWS, default=""): cv.string,

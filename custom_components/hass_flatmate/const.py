@@ -59,7 +59,9 @@ SERVICE_MARK_CLEANING_UNDONE = "hass_flatmate_mark_cleaning_undone"
 SERVICE_MARK_CLEANING_TAKEOVER_DONE = "hass_flatmate_mark_cleaning_takeover_done"
 SERVICE_SWAP_CLEANING_WEEK = "hass_flatmate_swap_cleaning_week"
 SERVICE_SYNC_MEMBERS = "hass_flatmate_sync_members"
-SERVICE_IMPORT_FLATASTIC_DATA = "hass_flatmate_import_flatastic_data"
+SERVICE_IMPORT_MANUAL_DATA = "hass_flatmate_import_manual_data"
+# Backward-compat internal alias; user-facing service naming is manual/generic.
+SERVICE_IMPORT_FLATASTIC_DATA = SERVICE_IMPORT_MANUAL_DATA
 
 SERVICE_ATTR_NAME = "name"
 SERVICE_ATTR_ITEM_ID = "item_id"

@@ -130,9 +130,9 @@ hass_flatmate_sync_members:
   name: Sync members
   description: Sync Home Assistant users/persons into hass-flatmate members (deactivates departed members and auto-cancels impacted planned overrides).
 
-hass_flatmate_import_flatastic_data:
-  name: Import Flatastic data
-  description: Import rotation and optional history from pasted Flatastic-style CSV rows.
+hass_flatmate_import_manual_data:
+  name: Import manual data
+  description: Import rotation and optional history from pasted CSV-like rows.
   fields:
     rotation_rows:
       required: false

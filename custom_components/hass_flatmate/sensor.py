@@ -91,8 +91,8 @@ def _activity_summary(row: Mapping[str, Any], members: Mapping[int, str]) -> str
         return "A cleaning swap was canceled"
     if action == "cleaning_override_auto_canceled_member_inactive":
         return "A cleaning override was canceled because a flatmate left"
-    if action == "flatastic_import_applied":
-        return "Flatastic migration import applied"
+    if action in {"manual_import_applied", "flatastic_import_applied"}:
+        return "Manual data import applied"
     return action.replace("_", " ")
 
 

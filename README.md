@@ -5,7 +5,7 @@ Home Assistant-native flat-sharing toolkit with two parts:
 - `custom_components/hass_flatmate`: HACS custom integration
 - `apps/hass_flatmate_service`: Home Assistant App (formerly add-on) backend service
 
-It replaces the used Flatastic features with:
+It replaces the flat-sharing features you use with:
 
 - Shopping list actions (add, complete, delete)
 - Fairness distribution (90-day) + SVG chart image
@@ -187,9 +187,9 @@ Event payload includes:
 
 This enables per-user custom automations/notifications without changing integration code.
 
-## Flatastic Migration Import
+## Manual Data Import
 
-Use service `hass_flatmate_import_flatastic_data` from Developer Tools to paste Flatastic-like rows:
+Use service `hass_flatmate_import_manual_data` from Developer Tools to paste CSV-like rows:
 
 - `rotation_rows` format:
   - `date,member_name`
@@ -204,7 +204,7 @@ Use service `hass_flatmate_import_flatastic_data` from Developer Tools to paste 
 Example:
 
 ```yaml
-service: hass_flatmate.hass_flatmate_import_flatastic_data
+service: hass_flatmate.hass_flatmate_import_manual_data
 data:
   rotation_rows: |
     2026-02-14,Martin
