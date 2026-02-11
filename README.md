@@ -41,10 +41,8 @@ It replaces the used Flatastic features with:
 4. Configure integration with:
    - `base_url`: service URL (default `http://ebc95cb1-hass-flatmate-service:8099`)
    - `api_token`: same value from app config
-5. Add Lovelace resource:
-   - URL: `/hass_flatmate/static/hass-flatmate-shopping-card.js`
-   - Type: `module`
-6. Add cards/entities from `examples/lovelace-flatmate-dashboard.yaml`.
+5. In Lovelace storage mode, the shopping card resource is auto-registered.
+6. Add cards/entities from `examples/lovelace-flatmate-dashboard.yaml` (Sections dashboard format).
 
 ## Shopping UI Card
 
@@ -56,6 +54,8 @@ entity: sensor.hass_flatmate_shopping_data
 title: Shared Shopping
 ```
 
+You can also add it from the dashboard UI card picker (no manual YAML required).
+
 Features:
 - Add shopping items fast
 - Mark item done / delete item
@@ -63,6 +63,7 @@ Features:
 - Add/remove favorites
 
 The card uses integration services, so actor attribution stays correct.
+In Lovelace YAML resource mode, add this resource manually: `/hass_flatmate/static/hass-flatmate-shopping-card.js` as `module`.
 
 ## Notification Test Mode
 
@@ -100,6 +101,12 @@ App images are published automatically to GHCR by GitHub Actions:
 - Architectures: `amd64`, `aarch64`
 
 Release/tag version must match `apps/hass_flatmate_service/config.yaml` `version`.
+
+## Changelogs
+
+- Repo changelog: `/CHANGELOG.md`
+- Integration changelog: `/custom_components/hass_flatmate/CHANGELOG.md`
+- App changelog: `/apps/hass_flatmate_service/CHANGELOG.md`
 
 ## Syncing App Build Source
 

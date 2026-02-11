@@ -1,4 +1,8 @@
 class HassFlatmateShoppingCard extends HTMLElement {
+  static async getConfigElement() {
+    return document.createElement("hass-flatmate-shopping-card-editor");
+  }
+
   static getStubConfig() {
     return {
       entity: "sensor.hass_flatmate_shopping_data",
@@ -519,8 +523,109 @@ class HassFlatmateShoppingCard extends HTMLElement {
   }
 }
 
+class HassFlatmateShoppingCardEditor extends HTMLElement {
+  setConfig(config) {
+    this._config = {
+      entity: "sensor.hass_flatmate_shopping_data",
+      title: "Shopping List",
+      ...config,
+    };
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
+
+  _emitConfig(config) {
+    this._config = config;
+    this.dispatchEvent(
+      new CustomEvent("config-changed", {
+        detail: { config },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  _render() {
+    if (!this._hass || !this._config) {
+      return;
+    }
+
+    if (!this._root) {
+      this._root = document.createElement("div");
+      this.appendChild(this._root);
+    }
+
+    this._root.innerHTML = `
+      <div class="editor">
+        <label for="hass-flatmate-editor-title">Card title</label>
+        <input id="hass-flatmate-editor-title" type="text" value="${this._config.title || ""}" />
+
+        <label for="hass-flatmate-editor-entity">Data entity</label>
+        <ha-entity-picker id="hass-flatmate-editor-entity"></ha-entity-picker>
+      </div>
+      <style>
+        .editor {
+          display: grid;
+          gap: 10px;
+          padding: 8px 0;
+        }
+
+        .editor label {
+          color: var(--secondary-text-color);
+          font-size: 0.9rem;
+          margin-bottom: -4px;
+        }
+
+        .editor input {
+          box-sizing: border-box;
+          width: 100%;
+          min-height: 40px;
+          border-radius: 10px;
+          border: 1px solid var(--divider-color);
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
+          font: inherit;
+          padding: 8px 10px;
+        }
+      </style>
+    `;
+
+    const titleInput = this._root.querySelector("#hass-flatmate-editor-title");
+    titleInput?.addEventListener("input", (event) => {
+      this._emitConfig({
+        ...this._config,
+        title: event.target.value,
+      });
+    });
+
+    const entityPicker = this._root.querySelector("#hass-flatmate-editor-entity");
+    if (entityPicker) {
+      entityPicker.hass = this._hass;
+      entityPicker.value = this._config.entity || "sensor.hass_flatmate_shopping_data";
+      entityPicker.includeDomains = ["sensor"];
+      entityPicker.addEventListener("value-changed", (event) => {
+        const nextValue = event.detail?.value;
+        if (!nextValue) {
+          return;
+        }
+        this._emitConfig({
+          ...this._config,
+          entity: nextValue,
+        });
+      });
+    }
+  }
+}
+
 if (!customElements.get("hass-flatmate-shopping-card")) {
   customElements.define("hass-flatmate-shopping-card", HassFlatmateShoppingCard);
+}
+if (!customElements.get("hass-flatmate-shopping-card-editor")) {
+  customElements.define("hass-flatmate-shopping-card-editor", HassFlatmateShoppingCardEditor);
 }
 
 window.customCards = window.customCards || [];
@@ -530,5 +635,7 @@ if (!window.customCards.some((card) => card.type === "hass-flatmate-shopping-car
     name: "Hass Flatmate Shopping Card",
     description: "Manage the hass_flatmate shopping list with quick add, favorites, and completion actions.",
     preview: true,
+    configurable: true,
+    documentationURL: "https://github.com/gitviola/hass-flatmate#shopping-ui-card",
   });
 }

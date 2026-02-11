@@ -8,6 +8,9 @@ Source mirror used for image build:
 Canonical editable source:
 - `../../addon/hass_flatmate_service/`
 
+App changelog:
+- `CHANGELOG.md`
+
 Before building a new app image after backend changes, run:
 
 ```bash

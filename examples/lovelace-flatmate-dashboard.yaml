@@ -1,51 +1,70 @@
-# Add this Lovelace resource first:
-# /hass_flatmate/static/hass-flatmate-shopping-card.js (type: module)
+# Resource `/hass_flatmate/static/hass-flatmate-shopping-card.js` is auto-added
+# in Lovelace storage mode. Add it manually only if you use YAML resources mode.
 title: Flatmate
 views:
   - title: Flatmate
     path: flatmate
-    badges: []
-    cards:
-      - type: custom:hass-flatmate-shopping-card
-        entity: sensor.hass_flatmate_shopping_data
-        title: Shared Shopping
+    type: sections
+    max_columns: 3
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Shopping
+            icon: mdi:cart-outline
 
-      - type: tile
-        entity: sensor.hass_flatmate_shopping_open_count
-        name: Shopping Open Items
+          - type: custom:hass-flatmate-shopping-card
+            entity: sensor.hass_flatmate_shopping_data
+            title: Shared Shopping
 
-      - type: picture-entity
-        entity: image.hass_flatmate_shopping_distribution_90d
-        name: Shopping Distribution (90 days)
-        show_state: false
-        show_name: true
+          - type: tile
+            entity: sensor.hass_flatmate_shopping_open_count
+            name: Shopping Open Items
 
-      - type: entities
-        title: Cleaning Rotation
-        entities:
-          - entity: sensor.hass_flatmate_cleaning_current_assignee
-          - entity: sensor.hass_flatmate_cleaning_current_week_status
-          - entity: sensor.hass_flatmate_cleaning_next_assignee
-          - entity: button.hass_flatmate_mark_cleaning_done
+          - type: picture-entity
+            entity: image.hass_flatmate_shopping_distribution_90d
+            name: Shopping Distribution (90 days)
+            show_state: false
+            show_name: true
 
-      - type: entity
-        entity: calendar.hass_flatmate_activity
-        name: Flatmate Activity Calendar
+      - type: grid
+        cards:
+          - type: heading
+            heading: Cleaning
+            icon: mdi:broom
 
-      - type: entities
-        title: Notification Test Mode
-        entities:
-          - entity: switch.hass_flatmate_notification_test_mode
-          - entity: select.hass_flatmate_notification_test_target
+          - type: entities
+            title: Cleaning Rotation
+            entities:
+              - entity: sensor.hass_flatmate_cleaning_current_assignee
+              - entity: sensor.hass_flatmate_cleaning_current_week_status
+              - entity: sensor.hass_flatmate_cleaning_next_assignee
+              - entity: button.hass_flatmate_mark_cleaning_done
 
-      - type: markdown
-        title: Recent Activity
-        content: >
-          {% set events = state_attr('sensor.hass_flatmate_activity_recent', 'recent') or [] %}
-          {% if events | length == 0 %}
-          No recent events.
-          {% else %}
-          {% for event in events[:10] %}
-          - {{ event.created_at }} | {{ event.action }}
-          {% endfor %}
-          {% endif %}
+          - type: entities
+            title: Notification Test Mode
+            entities:
+              - entity: switch.hass_flatmate_notification_test_mode
+              - entity: select.hass_flatmate_notification_test_target
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Activity
+            icon: mdi:calendar-clock
+
+          - type: entity
+            entity: calendar.hass_flatmate_activity
+            name: Flatmate Activity Calendar
+
+          - type: markdown
+            title: Recent Activity
+            content: >
+              {% set events = state_attr('sensor.hass_flatmate_activity_recent', 'recent') or [] %}
+              {% if events | length == 0 %}
+              No recent events.
+              {% else %}
+              {% for event in events[:10] %}
+              - {{ event.created_at }} | {{ event.action }}
+              {% endfor %}
+              {% endif %}

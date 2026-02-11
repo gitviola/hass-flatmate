@@ -13,8 +13,8 @@ import voluptuous as vol
 
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_API_TOKEN
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.const import CONF_API_TOKEN, CONF_TYPE, CONF_URL, EVENT_HOMEASSISTANT_STARTED
+from homeassistant.core import Event, HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -33,6 +33,8 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     FRONTEND_SHOPPING_CARD_FILENAME,
+    FRONTEND_SHOPPING_CARD_RESOURCE_TYPE,
+    FRONTEND_SHOPPING_CARD_RESOURCE_URL,
     FRONTEND_STATIC_PATH,
     NOTIFICATION_DEDUPE_KEY,
     PLATFORMS,
@@ -426,6 +428,59 @@ async def _register_frontend_static_assets(hass: HomeAssistant) -> None:
     data.frontend_registered = True
 
 
+async def _register_lovelace_card_resource(hass: HomeAssistant) -> None:
+    """Auto-register the shopping card resource for Lovelace storage mode."""
+    try:
+        from homeassistant.components.lovelace.const import (
+            CONF_RESOURCE_TYPE_WS,
+            LOVELACE_DATA,
+            MODE_STORAGE,
+        )
+    except ImportError:
+        return
+
+    lovelace_data = hass.data.get(LOVELACE_DATA)
+    if lovelace_data is None:
+        return
+
+    if lovelace_data.resource_mode != MODE_STORAGE:
+        _LOGGER.debug(
+            "Lovelace resource mode is '%s'; add resource manually if needed: %s",
+            lovelace_data.resource_mode,
+            FRONTEND_SHOPPING_CARD_RESOURCE_URL,
+        )
+        return
+
+    resources = lovelace_data.resources
+    await resources.async_get_info()
+    for item in resources.async_items() or []:
+        if (
+            item.get(CONF_URL) == FRONTEND_SHOPPING_CARD_RESOURCE_URL
+            and item.get(CONF_TYPE) == FRONTEND_SHOPPING_CARD_RESOURCE_TYPE
+        ):
+            return
+
+    try:
+        await resources.async_create_item(
+            {
+                CONF_RESOURCE_TYPE_WS: FRONTEND_SHOPPING_CARD_RESOURCE_TYPE,
+                CONF_URL: FRONTEND_SHOPPING_CARD_RESOURCE_URL,
+            }
+        )
+    except Exception as err:  # pragma: no cover - defensive for HA API edge cases
+        _LOGGER.warning(
+            "Failed to auto-register Lovelace resource %s: %s",
+            FRONTEND_SHOPPING_CARD_RESOURCE_URL,
+            err,
+        )
+        return
+
+    _LOGGER.info(
+        "Auto-registered Lovelace resource: %s",
+        FRONTEND_SHOPPING_CARD_RESOURCE_URL,
+    )
+
+
 async def _migrate_legacy_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Migrate old unprefixed hass_flatmate entity ids to prefixed object ids."""
     registry = er.async_get(hass)
@@ -468,6 +523,13 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     del config
     _get_domain_data(hass)
     await _register_frontend_static_assets(hass)
+    await _register_lovelace_card_resource(hass)
+
+    @callback
+    def _register_resource_on_started(_event: Event) -> None:
+        hass.async_create_task(_register_lovelace_card_resource(hass))
+
+    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _register_resource_on_started)
     await _register_services(hass)
     return True
 
@@ -524,6 +586,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data.entries[entry.entry_id] = runtime
 
     await _migrate_legacy_entity_ids(hass, entry)
+    await _register_lovelace_card_resource(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
