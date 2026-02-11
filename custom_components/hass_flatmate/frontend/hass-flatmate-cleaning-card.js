@@ -958,8 +958,23 @@ class HassFlatmateCleaningCard extends HTMLElement {
         const isDone = status === "done";
         const isMissed = status === "missed";
         const isFuture = !row.is_current && !row.is_previous && !row.is_past;
-        const compactStatusLabel = isDone ? "Done" : isMissed ? "Missed" : isFuture ? "Upcoming" : "Pending";
-        const compactStatusClass = isDone ? "done" : isMissed ? "missed" : isFuture ? "upcoming" : "pending";
+        const compactStatusLabel = isDone
+          ? "Done"
+          : isMissed
+            ? "Missed"
+            : row.is_current
+              ? "Pending"
+              : "";
+        const compactStatusClass = isDone ? "done" : isMissed ? "missed" : "pending";
+        const compactContext = row.is_current
+          ? " (this week)"
+          : row.is_previous
+            ? " (previous week)"
+            : row.is_next
+              ? " (next week)"
+              : "";
+        const compactIndicator = row.is_current ? '<span class="compact-pointer">=&gt;</span>' : "";
+        const compactHeadline = `${this._rowDateRange(row)}${compactContext}`;
 
         const assigneeName = this._escape(
           row.assignee_name || (row.assignee_member_id ? `Member ${row.assignee_member_id}` : "Unassigned")
@@ -984,8 +999,12 @@ class HassFlatmateCleaningCard extends HTMLElement {
         return `
           <li class="compact-week-row ${row.is_current ? "current" : ""} ${isDone ? "done" : ""} ${isMissed ? "missed" : ""}">
             <div class="compact-top">
-              <span class="compact-week">${this._escape(this._weekTitle(row, index))} • ${this._escape(this._rowDateRange(row))}</span>
-              <span class="compact-status ${compactStatusClass}">${compactStatusLabel}</span>
+              <span class="compact-week">${compactIndicator}${this._escape(compactHeadline)}</span>
+              ${
+                compactStatusLabel
+                  ? `<span class="compact-status ${compactStatusClass}">${compactStatusLabel}</span>`
+                  : ""
+              }
             </div>
             <span class="compact-assignee">${assigneeName}</span>
             ${compactNote ? `<span class="compact-note">${this._escape(compactNote)}</span>` : ""}
@@ -1274,7 +1293,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
         }
 
         .compact-week-row.current {
-          font-weight: 600;
+          font-weight: 700;
         }
 
         .compact-week-row.done .compact-assignee {
@@ -1292,6 +1311,16 @@ class HassFlatmateCleaningCard extends HTMLElement {
           color: var(--secondary-text-color);
           min-width: 0;
           overflow-wrap: anywhere;
+        }
+
+        .compact-week-row.current .compact-week {
+          color: var(--primary-text-color);
+        }
+
+        .compact-pointer {
+          font-weight: 800;
+          margin-right: 4px;
+          letter-spacing: 0.01em;
         }
 
         .compact-assignee {
@@ -1313,10 +1342,6 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
         .compact-week-row.missed .compact-status {
           color: var(--warning-color, #f57c00);
-        }
-
-        .compact-status.upcoming {
-          color: var(--secondary-text-color);
         }
 
         .compact-note {
