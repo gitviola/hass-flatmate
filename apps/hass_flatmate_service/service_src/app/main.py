@@ -50,7 +50,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="hass-flatmate-service", version="0.1.14", lifespan=lifespan)
+app = FastAPI(title="hass-flatmate-service", version="0.1.15", lifespan=lifespan)
 
 
 def require_token(x_flatmate_token: str | None = Header(default=None)) -> None:
@@ -86,9 +86,14 @@ def put_members_sync(
 ) -> MembersSyncResponse:
     rows, deactivated_member_ids = sync_members(session, payload.members)
     cleaning.sync_rotation_members(session)
+    inactive_member_ids = {
+        int(row.id)
+        for row in rows
+        if getattr(row, "id", None) is not None and not bool(getattr(row, "active", True))
+    }
     notifications = cleaning.cancel_overrides_for_inactive_members(
         session,
-        inactive_member_ids=set(deactivated_member_ids),
+        inactive_member_ids=inactive_member_ids,
         actor_user_id=None,
     )
     return MembersSyncResponse(

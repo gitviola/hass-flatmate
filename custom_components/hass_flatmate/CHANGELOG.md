@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-02-11
+
+### Fixed
+- Cleaning schedule sensor now exposes only active flatmates in `members` metadata, so inactive users no longer show up in cleaning card member selectors.
+
 ## [0.1.14] - 2026-02-11
 
 ### Added

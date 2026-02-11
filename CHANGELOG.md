@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-02-11
+
+### Fixed
+- `hass_flatmate_sync_members` now cleans planned overrides using all currently inactive members (not only newly deactivated ones), so stale future swaps/compensations are removed reliably.
+- Cleaning swap creation now rejects inactive members at backend validation time.
+- Cleaning schedule card member metadata now includes only active flatmates, so inactive users no longer appear in in-card selection dropdowns.
+- Added regression coverage for inactive-member swap rejection and post-sync future schedule cleanup.
+
 ## [0.1.14] - 2026-02-11
 
 ### Added

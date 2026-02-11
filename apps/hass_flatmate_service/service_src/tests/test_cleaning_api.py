@@ -465,3 +465,35 @@ def test_member_sync_removes_inactive_members_from_rotation_and_cancels_override
         if row.get("baseline_assignee_member_id") is not None
     }
     assert 2 not in baseline_member_ids
+
+    future_effective_ids = {
+        row["effective_assignee_member_id"]
+        for row in rows
+        if row.get("effective_assignee_member_id") is not None
+        and date.fromisoformat(row["week_start"]) >= week_start
+    }
+    assert 2 not in future_effective_ids
+
+
+def test_swap_rejects_inactive_members(client, auth_headers) -> None:
+    _sync_members(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    week_start = date.fromisoformat(current.json()["week_start"])
+
+    _sync_members_without_u2(client, auth_headers)
+
+    response = client.post(
+        "/v1/cleaning/overrides/swap",
+        headers=auth_headers,
+        json={
+            "week_start": week_start.isoformat(),
+            "member_a_id": 1,
+            "member_b_id": 2,
+            "actor_user_id": "u1",
+            "cancel": False,
+        },
+    )
+    assert response.status_code == 400
+    assert "inactive" in response.json()["detail"]

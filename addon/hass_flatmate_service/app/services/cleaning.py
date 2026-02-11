@@ -194,6 +194,15 @@ def _build_swap_notifications(
     ]
 
 
+def _require_active_member(session: Session, member_id: int, *, field_name: str) -> Member:
+    member = get_member_by_id(session, member_id)
+    if member is None:
+        raise ValueError(f"{field_name} not found")
+    if not member.active:
+        raise ValueError(f"{field_name} is inactive")
+    return member
+
+
 def upsert_manual_swap(
     session: Session,
     *,
@@ -256,10 +265,8 @@ def upsert_manual_swap(
         session.commit()
         return None, notifications
 
-    if get_member_by_id(session, member_a_id) is None:
-        raise ValueError("member_a_id not found")
-    if get_member_by_id(session, member_b_id) is None:
-        raise ValueError("member_b_id not found")
+    _require_active_member(session, member_a_id, field_name="member_a_id")
+    _require_active_member(session, member_b_id, field_name="member_b_id")
 
     if existing_any is not None and existing is None:
         raise ValueError("A planned override already exists for this week")

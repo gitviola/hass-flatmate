@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-02-11
+
+### Fixed
+- Member sync cleanup now cancels planned overrides using the full inactive-member set, preventing stale future overrides from lingering.
+- `POST /v1/cleaning/overrides/swap` now rejects inactive members.
+- Added regression tests for inactive-member swap validation and future schedule cleanup after sync.
+
 ## [0.1.14] - 2026-02-11
 
 ### Changed

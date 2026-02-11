@@ -301,13 +301,15 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
                 "ha_user_id": member.get("ha_user_id"),
             }
             for member in self.coordinator.data.get("members", [])
-            if member.get("id") is not None and member.get("display_name")
+            if member.get("id") is not None and member.get("display_name") and member.get("active", True)
         ]
         members_payload.sort(key=lambda row: str(row["name"]).lower())
 
         member_user_lookup: dict[int, str | None] = {}
         for member in self.coordinator.data.get("members", []):
             if member.get("id") is None:
+                continue
+            if not member.get("active", True):
                 continue
             try:
                 member_id = int(member.get("id"))
