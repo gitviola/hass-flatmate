@@ -217,3 +217,25 @@ def test_week_start_must_be_monday(client, auth_headers) -> None:
         json={"week_start": invalid_day.isoformat(), "actor_user_id": "u1"},
     )
     assert response.status_code == 400
+
+
+def test_swap_rejects_same_member_ids(client, auth_headers) -> None:
+    _sync_members(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    week_start = date.fromisoformat(current.json()["week_start"])
+
+    response = client.post(
+        "/v1/cleaning/overrides/swap",
+        headers=auth_headers,
+        json={
+            "week_start": week_start.isoformat(),
+            "member_a_id": 1,
+            "member_b_id": 1,
+            "actor_user_id": "u1",
+            "cancel": False,
+        },
+    )
+    assert response.status_code == 400
+    assert "must be different" in response.json()["detail"]

@@ -507,6 +507,9 @@ class HassFlatmateCleaningCard extends HTMLElement {
                 Preview: <strong>${this._escape(selectedAName)}</strong> and <strong>${this._escape(selectedBName)}</strong>
                 will swap this week.
               </p>
+              <p class="modal-preview subtle">
+                When you save or cancel this swap, both selected flatmates are notified immediately.
+              </p>
 
               <div class="modal-actions">
                 <button class="btn secondary" type="button" data-action="close-swap">Close</button>
@@ -815,6 +818,10 @@ class HassFlatmateCleaningCard extends HTMLElement {
           margin: 2px 0 0;
           font-size: 0.88rem;
           color: var(--secondary-text-color);
+        }
+
+        .modal-preview.subtle {
+          font-size: 0.82rem;
         }
 
         .modal-actions {

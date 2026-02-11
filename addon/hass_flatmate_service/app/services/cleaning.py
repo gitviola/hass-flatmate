@@ -184,6 +184,9 @@ def upsert_manual_swap(
     cancel: bool,
 ) -> tuple[CleaningOverride | None, list[dict]]:
     _ensure_week_start_is_monday(week_start)
+    if not cancel and member_a_id == member_b_id:
+        raise ValueError("member_a_id and member_b_id must be different")
+
     actor_member = resolve_actor_member(session, actor_user_id)
     existing_any = _planned_override_for_week(session, week_start)
     existing = existing_any if existing_any and existing_any.type == OverrideType.MANUAL_SWAP else None
@@ -218,6 +221,11 @@ def upsert_manual_swap(
         ensure_assignment(session, week_start)
         session.commit()
         return None, notifications
+
+    if get_member_by_id(session, member_a_id) is None:
+        raise ValueError("member_a_id not found")
+    if get_member_by_id(session, member_b_id) is None:
+        raise ValueError("member_b_id not found")
 
     if existing_any is not None and existing is None:
         raise ValueError("A planned override already exists for this week")
