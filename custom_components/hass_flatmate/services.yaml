@@ -1,0 +1,115 @@
+add_shopping_item:
+  name: Add shopping item
+  description: Add an item to the shopping list.
+  fields:
+    name:
+      required: true
+      example: Milk
+      selector:
+        text:
+
+complete_shopping_item:
+  name: Complete shopping item
+  description: Mark a shopping item as completed.
+  fields:
+    item_id:
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+
+delete_shopping_item:
+  name: Delete shopping item
+  description: Delete an open shopping item.
+  fields:
+    item_id:
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+
+add_favorite_item:
+  name: Add favorite item
+  description: Add a favorite quick-add shopping item.
+  fields:
+    name:
+      required: true
+      example: Pasta
+      selector:
+        text:
+
+delete_favorite_item:
+  name: Delete favorite item
+  description: Deactivate a favorite quick-add item.
+  fields:
+    favorite_id:
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+
+mark_cleaning_done:
+  name: Mark cleaning done
+  description: Mark a specific week as cleaned by assignee.
+  fields:
+    week_start:
+      required: true
+      example: "2026-02-16"
+      selector:
+        text:
+
+mark_cleaning_takeover_done:
+  name: Mark cleaning takeover done
+  description: Mark a specific week as cleaned by a takeover.
+  fields:
+    week_start:
+      required: true
+      example: "2026-02-16"
+      selector:
+        text:
+    original_assignee_member_id:
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+    cleaner_member_id:
+      required: true
+      example: 2
+      selector:
+        number:
+          min: 1
+
+swap_cleaning_week:
+  name: Swap cleaning week
+  description: Create, update, or cancel a manual cleaning swap for a week.
+  fields:
+    week_start:
+      required: true
+      example: "2026-02-16"
+      selector:
+        text:
+    member_a_id:
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+    member_b_id:
+      required: true
+      example: 2
+      selector:
+        number:
+          min: 1
+    cancel:
+      required: false
+      default: false
+      selector:
+        boolean:
+
+sync_members:
+  name: Sync members
+  description: Sync Home Assistant users/persons into hass-flatmate members.

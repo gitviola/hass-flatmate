@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install backend test deps
+        run: |
+          cd addon/hass_flatmate_service
+          python -m pip install --upgrade pip
+          pip install -e '.[test]'
+
+      - name: Run backend tests
+        run: |
+          cd addon/hass_flatmate_service
+          pytest
+
+      - name: Compile custom integration
+        run: |
+          python -m compileall custom_components/hass_flatmate
+
+  sync-app-source-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Validate app source mirror sync
+        run: |
+          ./scripts/sync_app_service_src.sh
+          git diff --exit-code -- apps/hass_flatmate_service/service_src
+
+  app-build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Test Home Assistant app build
+        uses: home-assistant/builder@2025.11.0
+        with:
+          args: |
+            --test \
+            --amd64 \
+            --aarch64 \
+            --target ./apps/hass_flatmate_service \
+            --image ghcr.io/ms/hass-flatmate-service-{arch}

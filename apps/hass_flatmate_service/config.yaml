@@ -1,0 +1,24 @@
+name: Hass Flatmate Service
+slug: hass_flatmate_service
+description: Shopping and cleaning rotation backend for hass_flatmate integration.
+version: "0.1.0"
+image: "ghcr.io/ms/hass-flatmate-service-{arch}"
+url: https://github.com/ms/hass-flatmate
+startup: services
+boot: auto
+init: false
+ingress: false
+panel_icon: mdi:broom
+arch:
+  - aarch64
+  - amd64
+ports:
+  8099/tcp: null
+ports_description:
+  8099/tcp: Hass Flatmate API
+map:
+  - addon_config:rw
+options:
+  api_token: change-me
+schema:
+  api_token: str

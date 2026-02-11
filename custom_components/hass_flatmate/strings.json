@@ -1,0 +1,31 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Hass Flatmate",
+        "description": "Connect to the hass-flatmate add-on service",
+        "data": {
+          "base_url": "Service base URL",
+          "api_token": "API token",
+          "scan_interval": "Refresh interval (seconds)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to the hass-flatmate service"
+    },
+    "abort": {
+      "already_configured": "This hass-flatmate service is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Hass Flatmate options",
+        "data": {
+          "scan_interval": "Refresh interval (seconds)"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+*.pyd
+*.swp
+.DS_Store
+
+addon/hass_flatmate_service/.venv/
+addon/hass_flatmate_service/data/
+apps/hass_flatmate_service/service_src/.venv/
+apps/hass_flatmate_service/service_src/.pytest_cache/
+apps/hass_flatmate_service/service_src/data/

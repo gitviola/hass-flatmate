@@ -1,0 +1,12 @@
+{
+  "domain": "hass_flatmate",
+  "name": "Hass Flatmate",
+  "version": "0.1.0",
+  "documentation": "https://github.com/ms/hass-flatmate",
+  "issue_tracker": "https://github.com/ms/hass-flatmate/issues",
+  "codeowners": ["@ms"],
+  "config_flow": true,
+  "integration_type": "service",
+  "iot_class": "local_push",
+  "requirements": []
+}

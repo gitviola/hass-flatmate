@@ -1,0 +1,41 @@
+title: Flatmate
+views:
+  - title: Flatmate
+    path: flatmate
+    badges: []
+    cards:
+      - type: entities
+        title: Shopping
+        entities:
+          - entity: sensor.hass_flatmate_shopping_open_count
+          - entity: sensor.hass_flatmate_shopping_distribution_90d
+
+      - type: picture-entity
+        entity: image.hass_flatmate_shopping_distribution_90d
+        name: Shopping Distribution (90 days)
+        show_state: false
+        show_name: true
+
+      - type: entities
+        title: Cleaning
+        entities:
+          - entity: sensor.hass_flatmate_cleaning_current_assignee
+          - entity: sensor.hass_flatmate_cleaning_current_week_status
+          - entity: sensor.hass_flatmate_cleaning_next_assignee
+          - entity: button.hass_flatmate_mark_cleaning_done
+
+      - type: entity
+        entity: calendar.hass_flatmate_activity
+        name: Flatmate Activity Calendar
+
+      - type: markdown
+        title: Recent Activity
+        content: >
+          {% set events = state_attr('sensor.hass_flatmate_activity_recent', 'recent') or [] %}
+          {% if events | length == 0 %}
+          No recent events.
+          {% else %}
+          {% for event in events[:10] %}
+          - {{ event.created_at }} | {{ event.action }}
+          {% endfor %}
+          {% endif %}
