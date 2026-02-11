@@ -34,7 +34,7 @@ If install fails with GHCR `403 denied`, ensure package visibility is `public` i
 
 ## Validate
 
-1. Call service `hass_flatmate.sync_members`.
+1. Call service `hass_flatmate.hass_flatmate_sync_members`.
 2. Confirm entities appear:
 - `sensor.hass_flatmate_shopping_open_count`
 - `sensor.hass_flatmate_shopping_distribution_90d`

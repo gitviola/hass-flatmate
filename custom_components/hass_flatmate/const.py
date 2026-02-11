@@ -20,15 +20,15 @@ PLATFORMS: list[Platform] = [
     Platform.CALENDAR,
 ]
 
-SERVICE_ADD_SHOPPING_ITEM = "add_shopping_item"
-SERVICE_COMPLETE_SHOPPING_ITEM = "complete_shopping_item"
-SERVICE_DELETE_SHOPPING_ITEM = "delete_shopping_item"
-SERVICE_ADD_FAVORITE_ITEM = "add_favorite_item"
-SERVICE_DELETE_FAVORITE_ITEM = "delete_favorite_item"
-SERVICE_MARK_CLEANING_DONE = "mark_cleaning_done"
-SERVICE_MARK_CLEANING_TAKEOVER_DONE = "mark_cleaning_takeover_done"
-SERVICE_SWAP_CLEANING_WEEK = "swap_cleaning_week"
-SERVICE_SYNC_MEMBERS = "sync_members"
+SERVICE_ADD_SHOPPING_ITEM = "hass_flatmate_add_shopping_item"
+SERVICE_COMPLETE_SHOPPING_ITEM = "hass_flatmate_complete_shopping_item"
+SERVICE_DELETE_SHOPPING_ITEM = "hass_flatmate_delete_shopping_item"
+SERVICE_ADD_FAVORITE_ITEM = "hass_flatmate_add_favorite_item"
+SERVICE_DELETE_FAVORITE_ITEM = "hass_flatmate_delete_favorite_item"
+SERVICE_MARK_CLEANING_DONE = "hass_flatmate_mark_cleaning_done"
+SERVICE_MARK_CLEANING_TAKEOVER_DONE = "hass_flatmate_mark_cleaning_takeover_done"
+SERVICE_SWAP_CLEANING_WEEK = "hass_flatmate_swap_cleaning_week"
+SERVICE_SYNC_MEMBERS = "hass_flatmate_sync_members"
 
 SERVICE_ATTR_NAME = "name"
 SERVICE_ATTR_ITEM_ID = "item_id"
