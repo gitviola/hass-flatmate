@@ -11,6 +11,8 @@ CONF_API_TOKEN = "api_token"
 CONF_SCAN_INTERVAL = "scan_interval"
 CONF_NOTIFICATION_TEST_MODE = "notification_test_mode"
 CONF_NOTIFICATION_TEST_TARGET_MEMBER_ID = "notification_test_target_member_id"
+CONF_SHOPPING_TARGET_CALENDAR_ENTITY_ID = "shopping_target_calendar_entity_id"
+CONF_CLEANING_TARGET_CALENDAR_ENTITY_ID = "cleaning_target_calendar_entity_id"
 
 DEFAULT_BASE_URL = "http://ebc95cb1-hass-flatmate-service:8099"
 DEFAULT_SCAN_INTERVAL = 30
@@ -51,3 +53,5 @@ SERVICE_ATTR_CANCEL = "cancel"
 
 COORDINATOR_NAME = "hass_flatmate_coordinator"
 NOTIFICATION_DEDUPE_KEY = "last_notification_minute"
+CALENDAR_CURSOR_SHOPPING_KEY = "last_synced_shopping_activity_id"
+CALENDAR_CURSOR_CLEANING_KEY = "last_synced_cleaning_activity_id"

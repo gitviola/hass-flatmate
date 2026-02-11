@@ -1,5 +1,28 @@
 # Hass Flatmate Integration Changelog
 
+## [0.1.9] - 2026-02-11
+
+### Fixed
+- Calendar event timezone normalization to avoid `Expected all values to have a timezone` failures.
+- Shopping card input behavior in dashboard mode to prevent accidental entity-picker style interactions.
+
+### Added
+- Select entities to choose target calendars for mirrored activity events:
+  - `select.hass_flatmate_shopping_calendar_target`
+  - `select.hass_flatmate_cleaning_calendar_target`
+- Mirroring of new shopping/cleaning completion events to selected calendar targets.
+- Human-readable activity summaries with actor names in `sensor.hass_flatmate_activity_recent` (`recent_human`).
+- `sensor.hass_flatmate_cleaning_schedule` with concise upcoming weeks metadata for card/table rendering.
+
+### Changed
+- Shopping card redesigned as todo-style flow:
+  - Open items first
+  - Check-circle completion action
+  - Delete with confirmation
+  - Relative “added … ago” text
+  - Add-item input moved below list with suggestions
+  - “Recent items” quick-add chips (no favorites UI actions)
+
 ## [0.1.8] - 2026-02-11
 
 ### Added

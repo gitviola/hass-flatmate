@@ -46,6 +46,25 @@ views:
             entities:
               - entity: switch.hass_flatmate_notification_test_mode
               - entity: select.hass_flatmate_notification_test_target
+              - entity: select.hass_flatmate_shopping_calendar_target
+              - entity: select.hass_flatmate_cleaning_calendar_target
+
+          - type: markdown
+            title: Upcoming Cleaning Rotation
+            content: >
+              {% set weeks = state_attr('sensor.hass_flatmate_cleaning_schedule', 'weeks') or [] %}
+              {% if weeks | length == 0 %}
+              No schedule data yet.
+              {% else %}
+              | Week | Person | Dates | Note |
+              | --- | --- | --- | --- |
+              {% for row in weeks[:10] %}
+              {% set start = as_datetime(row.week_start).strftime('%b %d') %}
+              {% set finish = as_datetime(row.week_end).strftime('%b %d') %}
+              {% set note = row.note if row.note else ('current: ' ~ row.status if row.is_current and row.status else '') %}
+              | W{{ row.week_number }} | {{ row.assignee_name or ('Member ' ~ row.assignee_member_id) }} | {{ start }} - {{ finish }} | {{ note }} |
+              {% endfor %}
+              {% endif %}
 
       - type: grid
         cards:
@@ -60,11 +79,11 @@ views:
           - type: markdown
             title: Recent Activity
             content: >
-              {% set events = state_attr('sensor.hass_flatmate_activity_recent', 'recent') or [] %}
+              {% set events = state_attr('sensor.hass_flatmate_activity_recent', 'recent_human') or [] %}
               {% if events | length == 0 %}
               No recent events.
               {% else %}
               {% for event in events[:10] %}
-              - {{ event.created_at }} | {{ event.action }}
+              - {{ relative_time(as_datetime(event.created_at)) }} | {{ event.summary }}
               {% endfor %}
               {% endif %}

@@ -34,6 +34,9 @@ def _parse_event(item: dict) -> CalendarEvent | None:
     parsed = dt_util.parse_datetime(str(created))
     if parsed is None:
         return None
+    if parsed.tzinfo is None:
+        parsed = dt_util.as_utc(parsed)
+    parsed = dt_util.as_local(parsed)
 
     summary = _build_event_summary(item)
     if summary is None:

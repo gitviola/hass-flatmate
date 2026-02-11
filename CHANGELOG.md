@@ -5,10 +5,12 @@ All notable changes to this project are documented in this file.
 ## [Unreleased]
 
 ### Added
-- Auto-registration of the shopping custom card Lovelace resource in storage mode.
-- Shopping card editor support for dashboard UI card picker configuration.
-- Sections-based dashboard example aligned with modern Home Assistant layout.
-- Dedicated changelog files for the repository, integration, and app package.
+- Integration 0.1.9 updates:
+- Calendar timezone normalization for event validation.
+- Calendar target selectors and mirrored activity-event writes.
+- Human-readable recent activity summaries with actor names.
+- Todo-style shopping card refresh with relative added times and suggestions.
+- Cleaning schedule sensor and improved Sections dashboard example cards.
 
 ## [0.1.7] - 2026-02-11
 

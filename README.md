@@ -70,6 +70,8 @@ In Lovelace YAML resource mode, add this resource manually: `/hass_flatmate/stat
 Use these entities to test all flows without notifying everyone:
 - `switch.hass_flatmate_notification_test_mode`
 - `select.hass_flatmate_notification_test_target`
+- `select.hass_flatmate_shopping_calendar_target`
+- `select.hass_flatmate_cleaning_calendar_target`
 
 When test mode is enabled, all notifications are redirected to the selected target and prefixed with `[TEST]`.
 

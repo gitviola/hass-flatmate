@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity
@@ -30,6 +30,62 @@ def _member_lookup(data: Mapping[str, Any]) -> dict[int, str]:
         if member.get("id") is not None:
             result[int(member["id"])] = member.get("display_name", str(member["id"]))
     return result
+
+
+def _parse_datetime_local(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    parsed = dt_util.parse_datetime(str(value))
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        parsed = dt_util.as_utc(parsed)
+    return dt_util.as_local(parsed)
+
+
+def _parse_date(value: Any) -> date | None:
+    if isinstance(value, date):
+        return value
+    if value is None:
+        return None
+    try:
+        return date.fromisoformat(str(value))
+    except ValueError:
+        return None
+
+
+def _activity_summary(row: Mapping[str, Any], members: Mapping[int, str]) -> str:
+    action = str(row.get("action", ""))
+    payload = row.get("payload_json", {})
+    if not isinstance(payload, Mapping):
+        payload = {}
+
+    actor_name = None
+    actor_id = row.get("actor_member_id")
+    if actor_id is not None:
+        try:
+            actor_name = members.get(int(actor_id))
+        except (TypeError, ValueError):
+            actor_name = None
+
+    if action == "shopping_item_added":
+        item_name = str(payload.get("name", "item"))
+        return f"{actor_name or 'Someone'} added {item_name}"
+    if action == "shopping_item_completed":
+        item_name = str(payload.get("name", "item"))
+        return f"{actor_name or 'Someone'} bought {item_name}"
+    if action == "shopping_item_deleted":
+        item_name = str(payload.get("name", "item"))
+        return f"{actor_name or 'Someone'} removed {item_name}"
+    if action == "cleaning_done":
+        return f"{actor_name or 'Someone'} marked cleaning as done"
+    if action == "cleaning_takeover_done":
+        return f"{actor_name or 'Someone'} completed a cleaning takeover"
+    if action == "cleaning_swap_created":
+        return "A cleaning swap was created"
+    if action == "cleaning_swap_canceled":
+        return "A cleaning swap was canceled"
+    return action.replace("_", " ")
 
 
 class ShoppingOpenCountSensor(HassFlatmateCoordinatorEntity, SensorEntity):
@@ -80,20 +136,14 @@ class ShoppingDataSensor(HassFlatmateCoordinatorEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         members = _member_lookup(self.coordinator.data)
         open_items: list[dict[str, Any]] = []
-        now = dt_util.now()
 
         for item in self.coordinator.data.get("shopping_items", []):
             if item.get("status") != "open":
                 continue
 
             added_at_raw = item.get("added_at")
-            added_at = dt_util.parse_datetime(str(added_at_raw)) if added_at_raw else None
-            age_days = None
-            if isinstance(added_at, datetime):
-                try:
-                    age_days = max(0, (now - added_at).days)
-                except TypeError:
-                    age_days = None
+            added_at = _parse_datetime_local(added_at_raw)
+            added_at_local = added_at.isoformat() if isinstance(added_at, datetime) else None
 
             added_by_member_id = item.get("added_by_member_id")
             added_by_name = None
@@ -107,36 +157,47 @@ class ShoppingDataSensor(HassFlatmateCoordinatorEntity, SensorEntity):
                 {
                     "id": item.get("id"),
                     "name": item.get("name"),
-                    "added_at": added_at_raw,
+                    "added_at": added_at_local or added_at_raw,
                     "added_by_member_id": added_by_member_id,
                     "added_by_name": added_by_name,
-                    "age_days": age_days,
                 }
             )
 
         open_items.sort(
             key=lambda row: (
-                -int(row.get("age_days") or 0),
+                str(row.get("added_at") or ""),
                 str(row.get("name") or "").lower(),
             )
         )
 
         favorites = [
-            {
-                "id": item.get("id"),
-                "name": item.get("name"),
-            }
+            {"id": item.get("id"), "name": item.get("name")}
             for item in self.coordinator.data.get("shopping_favorites", [])
             if item.get("id") is not None and item.get("name")
         ]
         favorites.sort(key=lambda row: str(row["name"]).lower())
 
         recents = [str(item) for item in self.coordinator.data.get("shopping_recents", []) if item]
+        suggestions = []
+        seen: set[str] = set()
+        for row in favorites:
+            key = str(row["name"]).strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            suggestions.append(row["name"])
+        for name in recents:
+            key = str(name).strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            suggestions.append(name)
 
         return {
             "open_items": open_items,
             "favorites": favorites,
             "recents": recents,
+            "suggestions": suggestions[:40],
             "service_domain": DOMAIN,
             "service_add_item": SERVICE_ADD_SHOPPING_ITEM,
             "service_complete_item": SERVICE_COMPLETE_SHOPPING_ITEM,
@@ -218,6 +279,74 @@ class CleaningNextAssigneeSensor(HassFlatmateCoordinatorEntity, SensorEntity):
         }
 
 
+class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
+    _attr_name = "Cleaning Schedule"
+    _attr_unique_id = "hass_flatmate_cleaning_schedule"
+    _attr_icon = "mdi:calendar-range"
+
+    @property
+    def native_value(self) -> int:
+        schedule = self.coordinator.data.get("cleaning_schedule", {}).get("schedule", [])
+        return len(schedule)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        members = _member_lookup(self.coordinator.data)
+        schedule = self.coordinator.data.get("cleaning_schedule", {}).get("schedule", [])
+        current = self.coordinator.data.get("cleaning_current", {})
+        current_week_start = str(current.get("week_start") or "")
+        current_status = current.get("status")
+
+        weeks = []
+        for row in schedule:
+            week_start = _parse_date(row.get("week_start"))
+            if week_start is None:
+                continue
+
+            week_end = week_start + timedelta(days=6)
+            effective_id = row.get("effective_assignee_member_id")
+            baseline_id = row.get("baseline_assignee_member_id")
+            override_type = row.get("override_type")
+
+            assignee_name = None
+            baseline_name = None
+            if effective_id is not None:
+                try:
+                    assignee_name = members.get(int(effective_id))
+                except (TypeError, ValueError):
+                    assignee_name = None
+            if baseline_id is not None:
+                try:
+                    baseline_name = members.get(int(baseline_id))
+                except (TypeError, ValueError):
+                    baseline_name = None
+
+            note = ""
+            if override_type == "manual_swap":
+                note = "swap"
+            elif override_type == "compensation":
+                note = "compensation"
+
+            is_current = week_start.isoformat() == current_week_start
+            weeks.append(
+                {
+                    "week_start": week_start.isoformat(),
+                    "week_end": week_end.isoformat(),
+                    "week_number": week_start.isocalendar().week,
+                    "assignee_member_id": effective_id,
+                    "assignee_name": assignee_name,
+                    "baseline_assignee_member_id": baseline_id,
+                    "baseline_assignee_name": baseline_name,
+                    "override_type": override_type,
+                    "note": note,
+                    "is_current": is_current,
+                    "status": current_status if is_current else None,
+                }
+            )
+
+        return {"weeks": weeks}
+
+
 class ActivityRecentSensor(HassFlatmateCoordinatorEntity, SensorEntity):
     _attr_name = "Activity Recent"
     _attr_unique_id = "hass_flatmate_activity_recent"
@@ -232,8 +361,23 @@ class ActivityRecentSensor(HassFlatmateCoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         events = self.coordinator.data.get("activity", [])
+        members = _member_lookup(self.coordinator.data)
+        human = []
+        for row in events[:20]:
+            if not isinstance(row, Mapping):
+                continue
+            created = _parse_datetime_local(row.get("created_at"))
+            human.append(
+                {
+                    "id": row.get("id"),
+                    "created_at": created.isoformat() if created else row.get("created_at"),
+                    "summary": _activity_summary(row, members),
+                    "action": row.get("action"),
+                }
+            )
         return {
             "recent": events[:20],
+            "recent_human": human,
         }
 
 
@@ -252,6 +396,7 @@ async def async_setup_entry(
             CleaningCurrentAssigneeSensor(entry, runtime),
             CleaningCurrentStatusSensor(entry, runtime),
             CleaningNextAssigneeSensor(entry, runtime),
+            CleaningScheduleSensor(entry, runtime),
             ActivityRecentSensor(entry, runtime),
         ]
     )

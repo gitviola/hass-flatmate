@@ -1,4 +1,12 @@
 class HassFlatmateShoppingCard extends HTMLElement {
+  constructor() {
+    super();
+    this._root = this.attachShadow({ mode: "open" });
+    this._draftName = "";
+    this._busy = false;
+    this._errorMessage = "";
+  }
+
   static async getConfigElement() {
     return document.createElement("hass-flatmate-shopping-card-editor");
   }
@@ -18,14 +26,11 @@ class HassFlatmateShoppingCard extends HTMLElement {
       title: "Shopping List",
       ...config,
     };
-    if (!this._root) {
-      this._root = document.createElement("div");
-      this.appendChild(this._root);
-    }
+    this._render();
   }
 
   getCardSize() {
-    return 6;
+    return 7;
   }
 
   set hass(hass) {
@@ -48,16 +53,52 @@ class HassFlatmateShoppingCard extends HTMLElement {
       addItem: attributes.service_add_item || "hass_flatmate_add_shopping_item",
       completeItem: attributes.service_complete_item || "hass_flatmate_complete_shopping_item",
       deleteItem: attributes.service_delete_item || "hass_flatmate_delete_shopping_item",
-      addFavorite: attributes.service_add_favorite || "hass_flatmate_add_favorite_item",
-      deleteFavorite: attributes.service_delete_favorite || "hass_flatmate_delete_favorite_item",
     };
+  }
+
+  _relativeAdded(isoString) {
+    if (!isoString) {
+      return "added recently";
+    }
+    const date = new Date(isoString);
+    if (Number.isNaN(date.getTime())) {
+      return "added recently";
+    }
+
+    const diffSeconds = Math.round((Date.now() - date.getTime()) / 1000);
+    const abs = Math.abs(diffSeconds);
+    const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+
+    const units = [
+      [60, "second"],
+      [60, "minute"],
+      [24, "hour"],
+      [7, "day"],
+      [4.34524, "week"],
+      [12, "month"],
+      [Number.POSITIVE_INFINITY, "year"],
+    ];
+
+    let value = diffSeconds;
+    let unit = "second";
+    let current = abs;
+
+    for (const [base, nextUnit] of units) {
+      unit = nextUnit;
+      if (current < base) {
+        break;
+      }
+      value = Math.round(value / base);
+      current = current / base;
+    }
+
+    return `added ${rtf.format(-Math.abs(value), unit)}`;
   }
 
   async _callService(service, data) {
     if (!this._hass || !this._stateObj) {
       return;
     }
-
     const meta = this._serviceMeta(this._stateObj.attributes || {});
     await this._hass.callService(meta.domain, service, data);
     this._errorMessage = "";
@@ -84,50 +125,10 @@ class HassFlatmateShoppingCard extends HTMLElement {
     }
   }
 
-  async _addFavorite(name) {
-    const normalized = String(name || "").trim();
-    if (!normalized) {
-      return;
-    }
-
-    this._busy = true;
-    this._errorMessage = "";
-    this._render();
-    try {
-      const meta = this._serviceMeta(this._stateObj.attributes || {});
-      await this._callService(meta.addFavorite, { name: normalized });
-    } catch (error) {
-      this._errorMessage = error?.message || "Unable to add favorite";
-    } finally {
-      this._busy = false;
-      this._render();
-    }
-  }
-
-  async _deleteFavorite(id) {
-    if (!id) {
-      return;
-    }
-
-    this._busy = true;
-    this._errorMessage = "";
-    this._render();
-    try {
-      const meta = this._serviceMeta(this._stateObj.attributes || {});
-      await this._callService(meta.deleteFavorite, { favorite_id: id });
-    } catch (error) {
-      this._errorMessage = error?.message || "Unable to delete favorite";
-    } finally {
-      this._busy = false;
-      this._render();
-    }
-  }
-
   async _completeItem(id) {
     if (!id) {
       return;
     }
-
     this._busy = true;
     this._errorMessage = "";
     this._render();
@@ -135,15 +136,19 @@ class HassFlatmateShoppingCard extends HTMLElement {
       const meta = this._serviceMeta(this._stateObj.attributes || {});
       await this._callService(meta.completeItem, { item_id: id });
     } catch (error) {
-      this._errorMessage = error?.message || "Unable to complete item";
+      this._errorMessage = error?.message || "Unable to mark item as bought";
     } finally {
       this._busy = false;
       this._render();
     }
   }
 
-  async _deleteItem(id) {
+  async _deleteItem(id, name) {
     if (!id) {
+      return;
+    }
+    const confirmed = window.confirm(`Remove "${name}" from the shopping list?`);
+    if (!confirmed) {
       return;
     }
 
@@ -154,7 +159,7 @@ class HassFlatmateShoppingCard extends HTMLElement {
       const meta = this._serviceMeta(this._stateObj.attributes || {});
       await this._callService(meta.deleteItem, { item_id: id });
     } catch (error) {
-      this._errorMessage = error?.message || "Unable to delete item";
+      this._errorMessage = error?.message || "Unable to remove item";
     } finally {
       this._busy = false;
       this._render();
@@ -162,38 +167,24 @@ class HassFlatmateShoppingCard extends HTMLElement {
   }
 
   _bindEvents() {
-    const form = this._root.querySelector("#hass-flatmate-add-form");
-    const input = this._root.querySelector("#hass-flatmate-item-input");
-    const favoriteButton = this._root.querySelector("#hass-flatmate-add-favorite");
+    const form = this._root.querySelector("#hf-add-form");
+    const input = this._root.querySelector("#hf-item-input");
 
-    if (input) {
-      input.addEventListener("input", (event) => {
-        this._draftName = event.target.value;
-      });
-    }
+    input?.addEventListener("input", (event) => {
+      this._draftName = event.target.value;
+    });
+    input?.addEventListener("click", (event) => event.stopPropagation());
+    input?.addEventListener("focus", (event) => event.stopPropagation());
+    input?.addEventListener("keydown", (event) => event.stopPropagation());
 
-    if (form) {
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        await this._addItem(this._draftName);
-      });
-    }
-
-    if (favoriteButton) {
-      favoriteButton.addEventListener("click", async () => {
-        await this._addFavorite(this._draftName);
-      });
-    }
+    form?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      await this._addItem(this._draftName);
+    });
 
     this._root.querySelectorAll("[data-action='add-quick']").forEach((el) => {
       el.addEventListener("click", async () => {
         await this._addItem(el.dataset.name);
-      });
-    });
-
-    this._root.querySelectorAll("[data-action='delete-favorite']").forEach((el) => {
-      el.addEventListener("click", async () => {
-        await this._deleteFavorite(Number(el.dataset.favoriteId));
       });
     });
 
@@ -205,13 +196,13 @@ class HassFlatmateShoppingCard extends HTMLElement {
 
     this._root.querySelectorAll("[data-action='delete-item']").forEach((el) => {
       el.addEventListener("click", async () => {
-        await this._deleteItem(Number(el.dataset.itemId));
+        await this._deleteItem(Number(el.dataset.itemId), el.dataset.itemName || "item");
       });
     });
   }
 
   _render() {
-    if (!this._config || !this._root || !this._hass) {
+    if (!this._config || !this._hass || !this._root) {
       return;
     }
 
@@ -219,9 +210,7 @@ class HassFlatmateShoppingCard extends HTMLElement {
     if (!this._stateObj) {
       this._root.innerHTML = `
         <ha-card>
-          <div class="hass-flatmate-shopping-empty">
-            Entity not found: <code>${this._escape(this._config.entity)}</code>
-          </div>
+          <div class="empty">Entity not found: <code>${this._escape(this._config.entity)}</code></div>
         </ha-card>
       `;
       return;
@@ -229,208 +218,104 @@ class HassFlatmateShoppingCard extends HTMLElement {
 
     const attrs = this._stateObj.attributes || {};
     const openItems = Array.isArray(attrs.open_items) ? attrs.open_items : [];
-    const favorites = Array.isArray(attrs.favorites) ? attrs.favorites : [];
-    const recents = Array.isArray(attrs.recents) ? attrs.recents : [];
+    const recents = Array.isArray(attrs.suggestions) ? attrs.suggestions : [];
     const openCount = Number.parseInt(this._stateObj.state, 10) || openItems.length;
-
-    const favoriteChips = favorites
-      .map((item) => {
-        const id = Number(item.id);
-        const name = this._escape(item.name);
-        return `
-          <div class="chip-row">
-            <button class="chip" type="button" data-action="add-quick" data-name="${name}">${name}</button>
-            <button class="chip-delete" type="button" data-action="delete-favorite" data-favorite-id="${id}" title="Remove favorite">✕</button>
-          </div>
-        `;
-      })
-      .join("");
-
-    const recentChips = recents
-      .slice(0, 12)
-      .map((name) => {
-        const escaped = this._escape(name);
-        return `<button class="chip" type="button" data-action="add-quick" data-name="${escaped}">${escaped}</button>`;
-      })
-      .join("");
 
     const itemRows = openItems
       .map((item) => {
         const id = Number(item.id);
         const name = this._escape(item.name);
-        const age = Number(item.age_days);
-        const ageLabel = Number.isFinite(age) ? `${age}d` : "";
-        const addedBy = item.added_by_name ? this._escape(item.added_by_name) : "";
+        const relative = this._relativeAdded(item.added_at);
+        const addedBy = item.added_by_name ? ` by ${this._escape(item.added_by_name)}` : "";
         return `
           <li class="item-row">
+            <button class="todo-check" type="button" data-action="complete-item" data-item-id="${id}" title="Mark as bought" ${this._busy ? "disabled" : ""}><ha-icon icon="mdi:checkbox-blank-circle-outline"></ha-icon></button>
             <div class="item-main">
               <div class="item-name">${name}</div>
-              <div class="item-meta">${ageLabel}${addedBy ? ` · by ${addedBy}` : ""}</div>
+              <div class="item-meta">${this._escape(relative)}${addedBy}</div>
             </div>
-            <div class="item-actions">
-              <button class="action action-complete" type="button" data-action="complete-item" data-item-id="${id}">Done</button>
-              <button class="action action-delete" type="button" data-action="delete-item" data-item-id="${id}">Delete</button>
-            </div>
+            <button class="todo-delete" type="button" data-action="delete-item" data-item-id="${id}" data-item-name="${name}" title="Remove item" ${this._busy ? "disabled" : ""}><ha-icon icon="mdi:trash-can-outline"></ha-icon></button>
           </li>
         `;
+      })
+      .join("");
+
+    const quickChips = recents
+      .slice(0, 20)
+      .map((name) => {
+        const escaped = this._escape(name);
+        return `<button class="chip" type="button" data-action="add-quick" data-name="${escaped}" ${this._busy ? "disabled" : ""}>${escaped}</button>`;
       })
       .join("");
 
     const draftName = this._escape(this._draftName || "");
     const disabledAttr = this._busy ? "disabled" : "";
     const errorMessage = this._errorMessage ? this._escape(this._errorMessage) : "";
+    const suggestionOptions = recents
+      .slice(0, 40)
+      .map((name) => `<option value="${this._escape(name)}"></option>`)
+      .join("");
 
     this._root.innerHTML = `
       <ha-card>
-        <div class="hass-flatmate-shopping-card">
-          <div class="header-row">
-            <div>
-              <h2>${this._escape(this._config.title)}</h2>
-              <p>${openCount} open items</p>
-            </div>
+        <div class="card">
+          <div class="header">
+            <h2>${this._escape(this._config.title)}</h2>
+            <p>${openCount} open item${openCount === 1 ? "" : "s"}</p>
           </div>
-
-          <form id="hass-flatmate-add-form" class="add-row">
-            <input
-              id="hass-flatmate-item-input"
-              type="text"
-              placeholder="Add item"
-              value="${draftName}"
-              autocomplete="off"
-              ${disabledAttr}
-            />
-            <button class="primary" type="submit" ${disabledAttr}>Add</button>
-            <button id="hass-flatmate-add-favorite" class="secondary" type="button" ${disabledAttr}>Favorite</button>
-          </form>
-
-          ${errorMessage ? `<div class="error-banner">${errorMessage}</div>` : ""}
-
-          <section>
-            <h3>Favorites</h3>
-            <div class="chips-wrap">
-              ${favoriteChips || '<span class="empty">No favorites yet</span>'}
-            </div>
-          </section>
-
-          <section>
-            <h3>Recent</h3>
-            <div class="chips-wrap">
-              ${recentChips || '<span class="empty">No recent items yet</span>'}
-            </div>
-          </section>
 
           <section>
             <h3>Open items</h3>
             <ul class="item-list">
-              ${itemRows || '<li class="empty-list">Shopping list is empty</li>'}
+              ${itemRows || '<li class="empty-list">Nothing to buy right now</li>'}
             </ul>
           </section>
+
+          <section>
+            <h3>Add item</h3>
+            <form id="hf-add-form" class="add-row" autocomplete="off">
+              <input id="hf-item-input" type="text" list="hf-item-suggestions" placeholder="Type an item" value="${draftName}" ${disabledAttr} />
+              <datalist id="hf-item-suggestions">${suggestionOptions}</datalist>
+              <button class="add-btn" type="submit" ${disabledAttr}>Add</button>
+            </form>
+          </section>
+
+          <section>
+            <h3>Recent items</h3>
+            <div class="chips-wrap">
+              ${quickChips || '<span class="empty-list">No recent items yet</span>'}
+            </div>
+          </section>
+
+          ${errorMessage ? `<div class="error">${errorMessage}</div>` : ""}
         </div>
       </ha-card>
 
       <style>
-        .hass-flatmate-shopping-card {
+        .card {
           padding: 16px;
           display: grid;
           gap: 14px;
         }
 
-        .header-row {
-          display: flex;
-          align-items: start;
-          justify-content: space-between;
-        }
-
-        .header-row h2 {
+        .header h2 {
           margin: 0;
           font-size: 1.2rem;
           line-height: 1.3;
         }
 
-        .header-row p {
+        .header p {
           margin: 4px 0 0;
           color: var(--secondary-text-color);
-          font-size: 0.9rem;
-        }
-
-        .add-row {
-          display: grid;
-          grid-template-columns: 1fr auto auto;
-          gap: 8px;
-          align-items: center;
-        }
-
-        #hass-flatmate-item-input {
-          box-sizing: border-box;
-          width: 100%;
-          min-height: 42px;
-          border: 1px solid var(--divider-color);
-          border-radius: 12px;
-          background: var(--card-background-color);
-          color: var(--primary-text-color);
-          font: inherit;
-          padding: 10px 12px;
-        }
-
-        #hass-flatmate-item-input:focus {
-          outline: none;
-          border-color: var(--primary-color);
-          box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary-color) 55%, transparent);
+          font-size: 0.92rem;
         }
 
         section h3 {
           margin: 0 0 8px;
-          font-size: 0.95rem;
+          font-size: 0.92rem;
           color: var(--secondary-text-color);
           text-transform: uppercase;
           letter-spacing: 0.04em;
-        }
-
-        .chips-wrap {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-        }
-
-        .chip-row {
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-        }
-
-        .chip,
-        .chip-delete,
-        .action,
-        .primary,
-        .secondary {
-          border: 1px solid var(--divider-color);
-          background: var(--card-background-color);
-          color: var(--primary-text-color);
-          border-radius: 12px;
-          padding: 6px 10px;
-          cursor: pointer;
-          font: inherit;
-        }
-
-        .chip:hover,
-        .chip-delete:hover,
-        .action:hover,
-        .primary:hover,
-        .secondary:hover {
-          border-color: var(--primary-color);
-        }
-
-        .chip-delete {
-          padding: 6px 8px;
-          border-radius: 10px;
-        }
-
-        .primary {
-          background: color-mix(in srgb, var(--primary-color) 18%, var(--card-background-color));
-        }
-
-        .secondary {
-          background: color-mix(in srgb, var(--info-color, var(--primary-color)) 15%, var(--card-background-color));
         }
 
         .item-list {
@@ -442,13 +327,13 @@ class HassFlatmateShoppingCard extends HTMLElement {
         }
 
         .item-row {
-          display: flex;
-          justify-content: space-between;
+          display: grid;
+          grid-template-columns: auto 1fr auto;
+          gap: 10px;
           align-items: center;
-          gap: 12px;
-          padding: 10px;
           border: 1px solid var(--divider-color);
           border-radius: 12px;
+          padding: 10px;
         }
 
         .item-main {
@@ -457,39 +342,91 @@ class HassFlatmateShoppingCard extends HTMLElement {
 
         .item-name {
           font-weight: 600;
+          white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
-          white-space: nowrap;
         }
 
         .item-meta {
           margin-top: 2px;
           color: var(--secondary-text-color);
-          font-size: 0.82rem;
+          font-size: 0.83rem;
         }
 
-        .item-actions {
-          display: inline-flex;
-          gap: 6px;
-          flex-shrink: 0;
+        .todo-check,
+        .todo-delete,
+        .add-btn,
+        .chip {
+          border: 1px solid var(--divider-color);
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
+          border-radius: 10px;
+          padding: 6px 9px;
+          cursor: pointer;
+          font: inherit;
         }
 
-        .action-complete {
-          background: color-mix(in srgb, var(--success-color, #4caf50) 16%, var(--card-background-color));
+        .todo-check {
+          min-width: 34px;
+          min-height: 34px;
+          line-height: 0;
+          color: var(--success-color, #4caf50);
         }
 
-        .action-delete {
-          background: color-mix(in srgb, var(--error-color, #f44336) 14%, var(--card-background-color));
+        .todo-delete {
+          min-width: 34px;
+          min-height: 34px;
+          line-height: 1;
+        }
+
+        .todo-check:hover,
+        .todo-delete:hover,
+        .add-btn:hover,
+        .chip:hover {
+          border-color: var(--primary-color);
+        }
+
+        .add-row {
+          display: grid;
+          grid-template-columns: 1fr auto;
+          gap: 8px;
+        }
+
+        #hf-item-input {
+          box-sizing: border-box;
+          width: 100%;
+          min-height: 42px;
+          border-radius: 10px;
+          border: 1px solid var(--divider-color);
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
+          font: inherit;
+          padding: 10px 12px;
+        }
+
+        #hf-item-input:focus {
+          outline: none;
+          border-color: var(--primary-color);
+          box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary-color) 55%, transparent);
+        }
+
+        .add-btn {
+          background: color-mix(in srgb, var(--primary-color) 18%, var(--card-background-color));
+        }
+
+        .chips-wrap {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
         }
 
         .empty,
-        .empty-list,
-        .hass-flatmate-shopping-empty {
+        .empty-list {
           color: var(--secondary-text-color);
           font-style: italic;
         }
 
-        .error-banner {
+        .error {
           border: 1px solid color-mix(in srgb, var(--error-color, #f44336) 40%, var(--divider-color));
           color: var(--error-color, #f44336);
           background: color-mix(in srgb, var(--error-color, #f44336) 8%, var(--card-background-color));
@@ -499,21 +436,17 @@ class HassFlatmateShoppingCard extends HTMLElement {
         }
 
         @media (max-width: 700px) {
+          .item-row {
+            grid-template-columns: auto 1fr;
+          }
+
+          .todo-delete {
+            grid-column: 1 / -1;
+            justify-self: end;
+          }
+
           .add-row {
             grid-template-columns: 1fr;
-          }
-
-          .item-row {
-            flex-direction: column;
-            align-items: flex-start;
-          }
-
-          .item-actions {
-            width: 100%;
-          }
-
-          .action {
-            flex: 1;
           }
         }
       </style>
@@ -524,6 +457,11 @@ class HassFlatmateShoppingCard extends HTMLElement {
 }
 
 class HassFlatmateShoppingCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this._root = this.attachShadow({ mode: "open" });
+  }
+
   setConfig(config) {
     this._config = {
       entity: "sensor.hass_flatmate_shopping_data",
@@ -550,22 +488,17 @@ class HassFlatmateShoppingCardEditor extends HTMLElement {
   }
 
   _render() {
-    if (!this._hass || !this._config) {
+    if (!this._hass || !this._config || !this._root) {
       return;
-    }
-
-    if (!this._root) {
-      this._root = document.createElement("div");
-      this.appendChild(this._root);
     }
 
     this._root.innerHTML = `
       <div class="editor">
-        <label for="hass-flatmate-editor-title">Card title</label>
-        <input id="hass-flatmate-editor-title" type="text" value="${this._config.title || ""}" />
+        <label for="hf-editor-title">Card title</label>
+        <input id="hf-editor-title" type="text" value="${this._config.title || ""}" />
 
-        <label for="hass-flatmate-editor-entity">Data entity</label>
-        <ha-entity-picker id="hass-flatmate-editor-entity"></ha-entity-picker>
+        <label for="hf-editor-entity">Data entity</label>
+        <ha-entity-picker id="hf-editor-entity"></ha-entity-picker>
       </div>
       <style>
         .editor {
@@ -594,7 +527,7 @@ class HassFlatmateShoppingCardEditor extends HTMLElement {
       </style>
     `;
 
-    const titleInput = this._root.querySelector("#hass-flatmate-editor-title");
+    const titleInput = this._root.querySelector("#hf-editor-title");
     titleInput?.addEventListener("input", (event) => {
       this._emitConfig({
         ...this._config,
@@ -602,7 +535,7 @@ class HassFlatmateShoppingCardEditor extends HTMLElement {
       });
     });
 
-    const entityPicker = this._root.querySelector("#hass-flatmate-editor-entity");
+    const entityPicker = this._root.querySelector("#hf-editor-entity");
     if (entityPicker) {
       entityPicker.hass = this._hass;
       entityPicker.value = this._config.entity || "sensor.hass_flatmate_shopping_data";
@@ -633,7 +566,7 @@ if (!window.customCards.some((card) => card.type === "hass-flatmate-shopping-car
   window.customCards.push({
     type: "hass-flatmate-shopping-card",
     name: "Hass Flatmate Shopping Card",
-    description: "Manage the hass_flatmate shopping list with quick add, favorites, and completion actions.",
+    description: "Todo-like shopping list with quick add and completion actions.",
     preview: true,
     configurable: true,
     documentationURL: "https://github.com/gitviola/hass-flatmate#shopping-ui-card",

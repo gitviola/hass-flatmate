@@ -58,6 +58,7 @@ Use the example Sections dashboard for modern HA layout:
 - `sensor.hass_flatmate_shopping_distribution_90d`
 - `image.hass_flatmate_shopping_distribution_90d`
 - `sensor.hass_flatmate_cleaning_current_assignee`
+- `sensor.hass_flatmate_cleaning_schedule`
 - `calendar.hass_flatmate_activity`
 
 ## Safe Notification Testing
@@ -66,3 +67,7 @@ Use the example Sections dashboard for modern HA layout:
 2. Turn on `switch.hass_flatmate_notification_test_mode`.
 3. Run manual tests (swap/takeover/reminders).
 4. Turn off test mode before house rollout.
+
+Optional calendar mirroring targets:
+- `select.hass_flatmate_shopping_calendar_target`
+- `select.hass_flatmate_cleaning_calendar_target`

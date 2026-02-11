@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 import logging
 from pathlib import Path
 import re
@@ -25,10 +25,14 @@ from homeassistant.util import dt as dt_util
 
 from .api import HassFlatmateApiClient
 from .const import (
+    CALENDAR_CURSOR_CLEANING_KEY,
+    CALENDAR_CURSOR_SHOPPING_KEY,
     CONF_BASE_URL,
+    CONF_CLEANING_TARGET_CALENDAR_ENTITY_ID,
     CONF_NOTIFICATION_TEST_MODE,
     CONF_NOTIFICATION_TEST_TARGET_MEMBER_ID,
     CONF_SCAN_INTERVAL,
+    CONF_SHOPPING_TARGET_CALENDAR_ENTITY_ID,
     DEFAULT_NOTIFICATION_TEST_MODE,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
@@ -128,6 +132,153 @@ def _runtime_notification_test_target(runtime: HassFlatmateRuntime) -> dict[str,
         "display_name": member.get("display_name", str(target_member_id)),
         "notify_service": notify_service,
     }
+
+
+def _coerce_activity_id(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _event_category(action: str) -> str | None:
+    if action == "shopping_item_completed":
+        return "shopping"
+    if action in {"cleaning_done", "cleaning_takeover_done"}:
+        return "cleaning"
+    return None
+
+
+def _event_summary_and_description(row: dict[str, Any]) -> tuple[str | None, str]:
+    action = str(row.get("action", ""))
+    payload = row.get("payload_json", {})
+    if not isinstance(payload, dict):
+        payload = {}
+
+    if action == "shopping_item_completed":
+        item_name = str(payload.get("name", "item"))
+        return f"Shopping completed: {item_name}", action
+    if action == "cleaning_done":
+        return "Cleaning completed", action
+    if action == "cleaning_takeover_done":
+        return "Cleaning completed (takeover)", action
+    return None, action
+
+
+def _event_start_datetime(row: dict[str, Any]) -> Any | None:
+    created_raw = row.get("created_at")
+    if created_raw is None:
+        return None
+
+    parsed = dt_util.parse_datetime(str(created_raw))
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        parsed = dt_util.as_utc(parsed)
+    return dt_util.as_local(parsed)
+
+
+def _runtime_selected_calendar_for_category(runtime: HassFlatmateRuntime, category: str) -> str | None:
+    key = (
+        CONF_SHOPPING_TARGET_CALENDAR_ENTITY_ID
+        if category == "shopping"
+        else CONF_CLEANING_TARGET_CALENDAR_ENTITY_ID
+    )
+    selected = runtime.runtime_state.get(key)
+    if isinstance(selected, str) and selected.startswith("calendar."):
+        return selected
+    return None
+
+
+def _set_calendar_cursors_from_events(runtime: HassFlatmateRuntime) -> None:
+    shopping_cursor = _coerce_activity_id(runtime.runtime_state.get(CALENDAR_CURSOR_SHOPPING_KEY))
+    cleaning_cursor = _coerce_activity_id(runtime.runtime_state.get(CALENDAR_CURSOR_CLEANING_KEY))
+
+    for row in runtime.coordinator.data.get("activity", []):
+        if not isinstance(row, dict):
+            continue
+        row_id = _coerce_activity_id(row.get("id"))
+        if row_id is None:
+            continue
+        category = _event_category(str(row.get("action", "")))
+        if category == "shopping":
+            shopping_cursor = row_id if shopping_cursor is None else max(shopping_cursor, row_id)
+        elif category == "cleaning":
+            cleaning_cursor = row_id if cleaning_cursor is None else max(cleaning_cursor, row_id)
+
+    runtime.runtime_state[CALENDAR_CURSOR_SHOPPING_KEY] = shopping_cursor
+    runtime.runtime_state[CALENDAR_CURSOR_CLEANING_KEY] = cleaning_cursor
+
+
+async def _sync_activity_to_selected_calendars(hass: HomeAssistant, runtime: HassFlatmateRuntime) -> None:
+    rows = runtime.coordinator.data.get("activity", [])
+    if not isinstance(rows, list):
+        return
+
+    last_shopping = _coerce_activity_id(runtime.runtime_state.get(CALENDAR_CURSOR_SHOPPING_KEY))
+    last_cleaning = _coerce_activity_id(runtime.runtime_state.get(CALENDAR_CURSOR_CLEANING_KEY))
+    next_shopping = last_shopping
+    next_cleaning = last_cleaning
+
+    candidates = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        row_id = _coerce_activity_id(row.get("id"))
+        if row_id is None:
+            continue
+        category = _event_category(str(row.get("action", "")))
+        if category is None:
+            continue
+        if category == "shopping" and last_shopping is not None and row_id <= last_shopping:
+            continue
+        if category == "cleaning" and last_cleaning is not None and row_id <= last_cleaning:
+            continue
+        candidates.append((row_id, category, row))
+
+    candidates.sort(key=lambda item: item[0])
+
+    for row_id, category, row in candidates:
+        target_calendar = _runtime_selected_calendar_for_category(runtime, category)
+        summary, description = _event_summary_and_description(row)
+        start_dt = _event_start_datetime(row)
+        end_dt = start_dt + timedelta(minutes=15) if start_dt is not None else None
+
+        if target_calendar and summary and start_dt and end_dt:
+            try:
+                await hass.services.async_call(
+                    "calendar",
+                    "create_event",
+                    {
+                        "entity_id": target_calendar,
+                        "summary": summary,
+                        "description": description,
+                        "start_date_time": start_dt,
+                        "end_date_time": end_dt,
+                    },
+                    blocking=True,
+                )
+            except Exception as err:  # pragma: no cover - depends on calendar provider features
+                _LOGGER.warning(
+                    "Unable to mirror %s activity event %s to %s: %s",
+                    category,
+                    row_id,
+                    target_calendar,
+                    err,
+                )
+
+        if category == "shopping":
+            next_shopping = row_id if next_shopping is None else max(next_shopping, row_id)
+        elif category == "cleaning":
+            next_cleaning = row_id if next_cleaning is None else max(next_cleaning, row_id)
+
+    runtime.runtime_state[CALENDAR_CURSOR_SHOPPING_KEY] = next_shopping
+    runtime.runtime_state[CALENDAR_CURSOR_CLEANING_KEY] = next_cleaning
+
+
+async def _refresh_and_process_activity(hass: HomeAssistant, runtime: HassFlatmateRuntime) -> None:
+    await runtime.coordinator.async_request_refresh()
+    await _sync_activity_to_selected_calendars(hass, runtime)
 
 
 def _get_domain_data(hass: HomeAssistant) -> HassFlatmateData:
@@ -264,7 +415,7 @@ async def _register_services(hass: HomeAssistant) -> None:
             name=call.data[SERVICE_ATTR_NAME],
             actor_user_id=call.context.user_id,
         )
-        await runtime.coordinator.async_request_refresh()
+        await _refresh_and_process_activity(hass, runtime)
 
     async def complete_shopping_item(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
@@ -272,7 +423,7 @@ async def _register_services(hass: HomeAssistant) -> None:
             item_id=call.data[SERVICE_ATTR_ITEM_ID],
             actor_user_id=call.context.user_id,
         )
-        await runtime.coordinator.async_request_refresh()
+        await _refresh_and_process_activity(hass, runtime)
 
     async def delete_shopping_item(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
@@ -280,7 +431,7 @@ async def _register_services(hass: HomeAssistant) -> None:
             item_id=call.data[SERVICE_ATTR_ITEM_ID],
             actor_user_id=call.context.user_id,
         )
-        await runtime.coordinator.async_request_refresh()
+        await _refresh_and_process_activity(hass, runtime)
 
     async def add_favorite_item(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
@@ -288,7 +439,7 @@ async def _register_services(hass: HomeAssistant) -> None:
             name=call.data[SERVICE_ATTR_NAME],
             actor_user_id=call.context.user_id,
         )
-        await runtime.coordinator.async_request_refresh()
+        await _refresh_and_process_activity(hass, runtime)
 
     async def delete_favorite_item(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
@@ -296,7 +447,7 @@ async def _register_services(hass: HomeAssistant) -> None:
             favorite_id=call.data[SERVICE_ATTR_FAVORITE_ID],
             actor_user_id=call.context.user_id,
         )
-        await runtime.coordinator.async_request_refresh()
+        await _refresh_and_process_activity(hass, runtime)
 
     async def mark_cleaning_done(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
@@ -305,7 +456,7 @@ async def _register_services(hass: HomeAssistant) -> None:
             week_start=week_start,
             actor_user_id=call.context.user_id,
         )
-        await runtime.coordinator.async_request_refresh()
+        await _refresh_and_process_activity(hass, runtime)
 
     async def mark_cleaning_takeover_done(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
@@ -317,7 +468,7 @@ async def _register_services(hass: HomeAssistant) -> None:
             actor_user_id=call.context.user_id,
         )
         await _dispatch_notifications(hass, runtime, response.get("notifications", []))
-        await runtime.coordinator.async_request_refresh()
+        await _refresh_and_process_activity(hass, runtime)
 
     async def swap_cleaning_week(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
@@ -330,12 +481,12 @@ async def _register_services(hass: HomeAssistant) -> None:
             cancel=call.data.get(SERVICE_ATTR_CANCEL, False),
         )
         await _dispatch_notifications(hass, runtime, response.get("notifications", []))
-        await runtime.coordinator.async_request_refresh()
+        await _refresh_and_process_activity(hass, runtime)
 
     async def sync_members(_call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
         await _sync_members_from_ha(runtime, hass)
-        await runtime.coordinator.async_request_refresh()
+        await _refresh_and_process_activity(hass, runtime)
 
     hass.services.async_register(
         DOMAIN,
@@ -572,9 +723,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     runtime.runtime_state[CONF_NOTIFICATION_TEST_TARGET_MEMBER_ID] = _coerce_member_id(
         entry.options.get(CONF_NOTIFICATION_TEST_TARGET_MEMBER_ID)
     )
+    runtime.runtime_state[CONF_SHOPPING_TARGET_CALENDAR_ENTITY_ID] = entry.options.get(
+        CONF_SHOPPING_TARGET_CALENDAR_ENTITY_ID
+    )
+    runtime.runtime_state[CONF_CLEANING_TARGET_CALENDAR_ENTITY_ID] = entry.options.get(
+        CONF_CLEANING_TARGET_CALENDAR_ENTITY_ID
+    )
 
     await _sync_members_from_ha(runtime, hass)
     await coordinator.async_request_refresh()
+    _set_calendar_cursors_from_events(runtime)
 
     async def _time_listener(now) -> None:
         del now
