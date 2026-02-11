@@ -5,11 +5,17 @@ class HassFlatmateCleaningCard extends HTMLElement {
     this._stateSnapshot = "";
     this._errorMessage = "";
     this._pendingDoneWeeks = new Set();
+    this._pendingSwapWeeks = new Set();
     this._modalOpen = false;
     this._modalWeekStart = "";
     this._modalChoice = "confirm_assignee";
     this._modalAssigneeMemberId = "";
     this._modalCleanerMemberId = "";
+    this._swapModalOpen = false;
+    this._swapModalWeekStart = "";
+    this._swapModalAction = "swap";
+    this._swapOriginalAssigneeMemberId = "";
+    this._swapTargetMemberId = "";
   }
 
   static async getConfigElement() {
@@ -72,13 +78,20 @@ class HassFlatmateCleaningCard extends HTMLElement {
       service_mark_done: attrs.service_mark_done || "",
       service_mark_undone: attrs.service_mark_undone || "",
       service_mark_takeover_done: attrs.service_mark_takeover_done || "",
+      service_swap_week: attrs.service_swap_week || "",
       layout: this._layout(),
       modal_open: this._modalOpen,
       modal_week_start: this._modalWeekStart,
       modal_choice: this._modalChoice,
       modal_assignee_member_id: this._modalAssigneeMemberId,
       modal_cleaner_member_id: this._modalCleanerMemberId,
+      swap_modal_open: this._swapModalOpen,
+      swap_modal_week_start: this._swapModalWeekStart,
+      swap_modal_action: this._swapModalAction,
+      swap_original_assignee_member_id: this._swapOriginalAssigneeMemberId,
+      swap_target_member_id: this._swapTargetMemberId,
       pending_done: [...this._pendingDoneWeeks],
+      pending_swap: [...this._pendingSwapWeeks],
     });
   }
 
@@ -98,6 +111,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
       markUndone: attributes.service_mark_undone || "hass_flatmate_mark_cleaning_undone",
       markTakeoverDone:
         attributes.service_mark_takeover_done || "hass_flatmate_mark_cleaning_takeover_done",
+      swapWeek: attributes.service_swap_week || "hass_flatmate_swap_cleaning_week",
     };
   }
 
@@ -120,6 +134,13 @@ class HassFlatmateCleaningCard extends HTMLElement {
       }
     }
     return map;
+  }
+
+  _memberName(memberMap, memberId) {
+    if (!Number.isInteger(memberId) || memberId <= 0) {
+      return "Unknown";
+    }
+    return memberMap.get(memberId) || `Member ${memberId}`;
   }
 
   _currentMemberId(members) {
@@ -182,12 +203,76 @@ class HassFlatmateCleaningCard extends HTMLElement {
     return weeks.find((row) => row.week_start === this._modalWeekStart) || null;
   }
 
+  _resolveSwapModalWeek(weeks) {
+    if (!this._swapModalWeekStart) {
+      return null;
+    }
+    return weeks.find((row) => row.week_start === this._swapModalWeekStart) || null;
+  }
+
+  _parseWeekDate(value) {
+    if (!value) {
+      return null;
+    }
+    const parsed = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) {
+      return null;
+    }
+    return parsed;
+  }
+
+  _findCompensationPreviewWeek(weeks, cleanerMemberId, sourceWeekStart) {
+    if (!Number.isInteger(cleanerMemberId) || cleanerMemberId <= 0 || !sourceWeekStart) {
+      return null;
+    }
+
+    const sourceDate = this._parseWeekDate(sourceWeekStart);
+    if (!sourceDate) {
+      return null;
+    }
+
+    const sortedWeeks = weeks
+      .slice()
+      .sort((a, b) => String(a?.week_start || "").localeCompare(String(b?.week_start || "")));
+
+    for (const row of sortedWeeks) {
+      const rowDate = this._parseWeekDate(row?.week_start);
+      if (!rowDate || rowDate <= sourceDate) {
+        continue;
+      }
+
+      const baselineId = Number(
+        row?.original_assignee_member_id ?? row?.baseline_assignee_member_id ?? row?.assignee_member_id
+      );
+      if (!Number.isInteger(baselineId) || baselineId !== cleanerMemberId) {
+        continue;
+      }
+
+      if (row?.override_type) {
+        continue;
+      }
+
+      return row;
+    }
+
+    return null;
+  }
+
   _closeDoneModal() {
     this._modalOpen = false;
     this._modalWeekStart = "";
     this._modalChoice = "confirm_assignee";
     this._modalAssigneeMemberId = "";
     this._modalCleanerMemberId = "";
+    this._render();
+  }
+
+  _closeSwapModal() {
+    this._swapModalOpen = false;
+    this._swapModalWeekStart = "";
+    this._swapModalAction = "swap";
+    this._swapOriginalAssigneeMemberId = "";
+    this._swapTargetMemberId = "";
     this._render();
   }
 
@@ -210,10 +295,55 @@ class HassFlatmateCleaningCard extends HTMLElement {
         : fallbackCleaner;
 
     this._modalOpen = true;
+    this._swapModalOpen = false;
     this._modalWeekStart = weekRow.week_start;
     this._modalChoice = "confirm_assignee";
     this._modalAssigneeMemberId = String(assigneeMemberId);
     this._modalCleanerMemberId = defaultCleaner ? String(defaultCleaner) : "";
+    this._errorMessage = "";
+    this._render();
+  }
+
+  _openSwapModal(weekRow, members) {
+    if (!weekRow || !weekRow.week_start) {
+      return;
+    }
+
+    const originalAssigneeId = Number(weekRow.original_assignee_member_id || weekRow.assignee_member_id);
+    if (!Number.isInteger(originalAssigneeId) || originalAssigneeId <= 0) {
+      return;
+    }
+
+    const availableTargets = members
+      .map((member) => Number(member?.member_id))
+      .filter((memberId) => Number.isInteger(memberId) && memberId > 0 && memberId !== originalAssigneeId);
+
+    if (availableTargets.length === 0) {
+      this._errorMessage = "No other active flatmate is available for a swap.";
+      this._render();
+      return;
+    }
+
+    const actorMemberId = this._currentMemberId(members);
+    const currentEffectiveId = Number(weekRow.assignee_member_id);
+    const defaultTarget =
+      weekRow.override_type === "manual_swap" &&
+      Number.isInteger(currentEffectiveId) &&
+      currentEffectiveId > 0 &&
+      currentEffectiveId !== originalAssigneeId
+        ? currentEffectiveId
+        : Number.isInteger(actorMemberId) &&
+            actorMemberId > 0 &&
+            actorMemberId !== originalAssigneeId
+          ? actorMemberId
+          : availableTargets[0];
+
+    this._swapModalOpen = true;
+    this._modalOpen = false;
+    this._swapModalWeekStart = String(weekRow.week_start);
+    this._swapModalAction = "swap";
+    this._swapOriginalAssigneeMemberId = String(originalAssigneeId);
+    this._swapTargetMemberId = String(defaultTarget);
     this._errorMessage = "";
     this._render();
   }
@@ -322,6 +452,47 @@ class HassFlatmateCleaningCard extends HTMLElement {
     );
   }
 
+  async _runSwapAction(weekStart, action, fallbackError) {
+    if (!weekStart || this._pendingSwapWeeks.has(weekStart)) {
+      return false;
+    }
+
+    this._pendingSwapWeeks.add(weekStart);
+    this._errorMessage = "";
+    this._render();
+
+    let ok = false;
+    try {
+      await action();
+      await this._requestEntityRefresh();
+      ok = true;
+    } catch (error) {
+      this._errorMessage = error?.message || fallbackError;
+      this._render();
+    } finally {
+      this._pendingSwapWeeks.delete(weekStart);
+      this._render();
+    }
+
+    return ok;
+  }
+
+  async _swapWeek(weekStart, memberAId, memberBId, cancel = false) {
+    const meta = this._serviceMeta(this._stateObj?.attributes || {});
+    return this._runSwapAction(
+      weekStart,
+      async () => {
+        await this._callService(meta.swapWeek, {
+          week_start: weekStart,
+          member_a_id: memberAId,
+          member_b_id: memberBId,
+          cancel,
+        });
+      },
+      cancel ? "Unable to cancel swap" : "Unable to apply swap"
+    );
+  }
+
   async _toggleDone(row, members) {
     if (!row || !row.week_start) {
       return;
@@ -378,6 +549,62 @@ class HassFlatmateCleaningCard extends HTMLElement {
     }
   }
 
+  async _submitSwapModal(weeks, _members) {
+    const row = this._resolveSwapModalWeek(weeks);
+    if (!row || !row.week_start) {
+      this._closeSwapModal();
+      return;
+    }
+
+    const originalAssigneeId = Number(
+      this._swapOriginalAssigneeMemberId || row.original_assignee_member_id || row.assignee_member_id
+    );
+    if (!Number.isInteger(originalAssigneeId) || originalAssigneeId <= 0) {
+      this._errorMessage = "Cannot resolve the original assignee for this week.";
+      this._render();
+      return;
+    }
+
+    const isCancel = this._swapModalAction === "cancel";
+    let ok = false;
+
+    if (isCancel) {
+      if (row.override_type !== "manual_swap") {
+        this._errorMessage = "No manual swap exists for this week.";
+        this._render();
+        return;
+      }
+      const swappedWithId = Number(row.assignee_member_id);
+      if (
+        !Number.isInteger(swappedWithId) ||
+        swappedWithId <= 0 ||
+        swappedWithId === originalAssigneeId
+      ) {
+        this._errorMessage = "Cannot resolve the existing swap participants.";
+        this._render();
+        return;
+      }
+      ok = await this._swapWeek(String(row.week_start), originalAssigneeId, swappedWithId, true);
+    } else {
+      const swapWithId = Number(this._swapTargetMemberId);
+      if (!Number.isInteger(swapWithId) || swapWithId <= 0) {
+        this._errorMessage = "Select a flatmate to swap with.";
+        this._render();
+        return;
+      }
+      if (swapWithId === originalAssigneeId) {
+        this._errorMessage = "Swap requires two different flatmates.";
+        this._render();
+        return;
+      }
+      ok = await this._swapWeek(String(row.week_start), originalAssigneeId, swapWithId, false);
+    }
+
+    if (ok) {
+      this._closeSwapModal();
+    }
+  }
+
   _bindEvents(weeks, members) {
     if (this._isCompact()) {
       return;
@@ -390,6 +617,14 @@ class HassFlatmateCleaningCard extends HTMLElement {
         const weekStart = String(el.dataset.weekStart || "");
         const row = weekMap.get(weekStart);
         await this._toggleDone(row, members);
+      });
+    });
+
+    this._root.querySelectorAll("[data-action='open-swap-modal']").forEach((el) => {
+      el.addEventListener("click", () => {
+        const weekStart = String(el.dataset.weekStart || "");
+        const row = weekMap.get(weekStart);
+        this._openSwapModal(row, members);
       });
     });
 
@@ -415,9 +650,37 @@ class HassFlatmateCleaningCard extends HTMLElement {
       await this._submitDoneModal(weeks, members);
     });
 
-    this._root.querySelector(".modal-backdrop")?.addEventListener("click", (event) => {
+    this._root.querySelector(".done-modal-backdrop")?.addEventListener("click", (event) => {
       if (event.target?.classList?.contains("modal-backdrop")) {
         this._closeDoneModal();
+      }
+    });
+
+    this._root.querySelectorAll("[data-action='close-swap-modal']").forEach((el) => {
+      el.addEventListener("click", () => {
+        this._closeSwapModal();
+      });
+    });
+
+    this._root.querySelectorAll("[name='hf-swap-action']").forEach((el) => {
+      el.addEventListener("change", (event) => {
+        this._swapModalAction = event.target.value === "cancel" ? "cancel" : "swap";
+        this._render();
+      });
+    });
+
+    this._root.querySelector("#hf-swap-target")?.addEventListener("change", (event) => {
+      this._swapTargetMemberId = event.target.value;
+      this._render();
+    });
+
+    this._root.querySelector("[data-action='submit-swap-modal']")?.addEventListener("click", async () => {
+      await this._submitSwapModal(weeks, members);
+    });
+
+    this._root.querySelector(".swap-modal-backdrop")?.addEventListener("click", (event) => {
+      if (event.target?.classList?.contains("modal-backdrop")) {
+        this._closeSwapModal();
       }
     });
   }
@@ -448,6 +711,11 @@ class HassFlatmateCleaningCard extends HTMLElement {
         this._pendingDoneWeeks.delete(weekStart);
       }
     }
+    for (const weekStart of [...this._pendingSwapWeeks]) {
+      if (!activeWeekStarts.has(weekStart)) {
+        this._pendingSwapWeeks.delete(weekStart);
+      }
+    }
 
     const weeksToShow = this._coerceWeeks(this._config.weeks);
     const weeks = rawWeeks
@@ -473,8 +741,16 @@ class HassFlatmateCleaningCard extends HTMLElement {
         const isCurrent = !!row.is_current;
         const isPrevious = !!row.is_previous;
         const isPast = !!row.is_past;
+        const isFuture = !isCurrent && !isPast;
         const canToggle = isCurrent || isPrevious;
-        const isSaving = this._pendingDoneWeeks.has(String(row.week_start || ""));
+        const weekStart = String(row.week_start || "");
+        const isDoneSaving = this._pendingDoneWeeks.has(weekStart);
+        const isSwapSaving = this._pendingSwapWeeks.has(weekStart);
+        const canSwap =
+          members.length > 1 &&
+          !isPast &&
+          !isDone &&
+          row.override_type !== "compensation";
 
         const assigneeName = this._escape(
           row.assignee_name || (row.assignee_member_id ? `Member ${row.assignee_member_id}` : "Unassigned")
@@ -508,20 +784,42 @@ class HassFlatmateCleaningCard extends HTMLElement {
               ? '<span class="meta-note">Compensation override</span>'
               : "";
 
-        const actionControl = canToggle
-          ? `<button
+        const actionParts = [];
+        if (canToggle) {
+          actionParts.push(`<button
                class="action ${isDone ? "undo" : "done"}"
                type="button"
                data-action="toggle-done"
                data-week-start="${this._escape(row.week_start)}"
-               ${isSaving ? "disabled" : ""}
+               ${isDoneSaving || isSwapSaving ? "disabled" : ""}
              >
                <ha-icon icon="${isDone ? "mdi:undo-variant" : "mdi:check-circle-outline"}"></ha-icon>
-               <span>${isSaving ? "Saving..." : isDone ? "Undo" : "Mark done"}</span>
-             </button>`
-          : `<span class="status-chip ${isDone ? "done" : isMissed ? "missed" : "pending"}">
-               ${isDone ? "Done" : isMissed ? "Missed" : "Pending"}
-             </span>`;
+               <span>${isDoneSaving ? "Saving..." : isDone ? "Undo" : "Mark done"}</span>
+             </button>`);
+        } else {
+          const futureLabel = isFuture ? "Upcoming" : "Pending";
+          if (!canSwap || isDone || isMissed) {
+            actionParts.push(`<span class="status-chip ${isDone ? "done" : isMissed ? "missed" : "pending"}">
+                 ${isDone ? "Done" : isMissed ? "Missed" : futureLabel}
+               </span>`);
+          }
+        }
+
+        if (canSwap) {
+          const swapLabel = row.override_type === "manual_swap" ? "Edit swap" : "Swap";
+          actionParts.push(`<button
+               class="action swap"
+               type="button"
+               data-action="open-swap-modal"
+               data-week-start="${this._escape(row.week_start)}"
+               ${isDoneSaving || isSwapSaving ? "disabled" : ""}
+             >
+               <ha-icon icon="mdi:swap-horizontal"></ha-icon>
+               <span>${isSwapSaving ? "Saving..." : swapLabel}</span>
+             </button>`);
+        }
+
+        const actionControl = actionParts.join("");
 
         return `
           <li class="week-row ${isCurrent ? "current" : ""} ${isPast ? "past" : ""} ${isDone ? "done" : ""} ${isMissed ? "missed" : ""}">
@@ -552,20 +850,107 @@ class HassFlatmateCleaningCard extends HTMLElement {
     const errorMessage = this._errorMessage ? this._escape(this._errorMessage) : "";
     const modalWeek = this._resolveModalWeek(weeks);
     const modalAssigneeId = Number(this._modalAssigneeMemberId || modalWeek?.assignee_member_id);
-    const modalAssigneeName =
-      memberMap.get(modalAssigneeId) ||
-      (Number.isInteger(modalAssigneeId) && modalAssigneeId > 0 ? `Member ${modalAssigneeId}` : "Unknown");
+    const modalAssigneeName = this._memberName(memberMap, modalAssigneeId);
+    const modalCleanerId = Number(this._modalCleanerMemberId);
+    const hasValidModalCleaner =
+      Number.isInteger(modalCleanerId) && modalCleanerId > 0 && modalCleanerId !== modalAssigneeId;
+    const modalCleanerName = hasValidModalCleaner
+      ? this._memberName(memberMap, modalCleanerId)
+      : "the selected flatmate";
+    const modalCompensationWeek =
+      this._modalChoice === "takeover" && hasValidModalCleaner
+        ? this._findCompensationPreviewWeek(weeks, modalCleanerId, modalWeek?.week_start)
+        : null;
+    const modalCompensationWeekIndex = modalCompensationWeek
+      ? weeks.findIndex((row) => row.week_start === modalCompensationWeek.week_start)
+      : -1;
+    const modalCompensationWeekLabel = modalCompensationWeek
+      ? `${this._weekTitle(
+          modalCompensationWeek,
+          modalCompensationWeekIndex >= 0 ? modalCompensationWeekIndex : 0
+        )} (${this._rowDateRange(modalCompensationWeek)})`
+      : "the next eligible original shift in the visible schedule";
 
-    const cleanerOptions = members
-      .map((member) => {
+    const doneEffectsHtml =
+      this._modalChoice === "takeover"
+        ? `
+          <ul class="effect-list">
+            <li>Record that <strong>${this._escape(modalCleanerName)}</strong> took over this shift from <strong>${this._escape(modalAssigneeName)}</strong>.</li>
+            <li>Automatically assign <strong>${this._escape(modalAssigneeName)}</strong> to <strong>${this._escape(modalCleanerName)}</strong>'s next original turn in <strong>${this._escape(modalCompensationWeekLabel)}</strong>.</li>
+            <li>Send a notification to both flatmates with the takeover and compensation details.</li>
+          </ul>
+        `
+        : `
+          <ul class="effect-list">
+            <li>Mark this shift as done for <strong>${this._escape(modalAssigneeName)}</strong>.</li>
+            <li>Send a notification to <strong>${this._escape(modalAssigneeName)}</strong> that you confirmed completion.</li>
+          </ul>
+        `;
+
+    const cleanerOptions = [
+      `<option value="" ${hasValidModalCleaner ? "" : "selected"} disabled>Select who cleaned</option>`,
+      ...members.map((member) => {
         const memberId = Number(member?.member_id);
         if (!Number.isInteger(memberId) || memberId <= 0 || memberId === modalAssigneeId) {
           return "";
         }
         const name = this._escape(member?.name || `Member ${memberId}`);
         return `<option value="${memberId}">${name}</option>`;
-      })
-      .join("");
+      }),
+    ].join("");
+
+    const swapModalWeek = this._resolveSwapModalWeek(weeks);
+    const swapOriginalAssigneeId = Number(
+      this._swapOriginalAssigneeMemberId ||
+      swapModalWeek?.original_assignee_member_id ||
+      swapModalWeek?.assignee_member_id
+    );
+    const swapOriginalAssigneeName = this._memberName(memberMap, swapOriginalAssigneeId);
+    const swapHasExistingManualSwap = swapModalWeek?.override_type === "manual_swap";
+    const swapExistingPartnerId = Number(swapModalWeek?.assignee_member_id);
+    const swapTargetId = Number(this._swapTargetMemberId || "");
+    const hasValidSwapTarget =
+      Number.isInteger(swapTargetId) && swapTargetId > 0 && swapTargetId !== swapOriginalAssigneeId;
+    const swapTargetName = hasValidSwapTarget
+      ? this._memberName(memberMap, swapTargetId)
+      : "the selected flatmate";
+    const swapWeekIndex = swapModalWeek
+      ? weeks.findIndex((row) => row.week_start === swapModalWeek.week_start)
+      : -1;
+    const swapWeekLabel = swapModalWeek
+      ? `${this._weekTitle(swapModalWeek, swapWeekIndex >= 0 ? swapWeekIndex : 0)} (${this._rowDateRange(swapModalWeek)})`
+      : "the selected week";
+    const swapCancelPartnerName =
+      Number.isInteger(swapExistingPartnerId) &&
+      swapExistingPartnerId > 0 &&
+      swapExistingPartnerId !== swapOriginalAssigneeId
+        ? this._memberName(memberMap, swapExistingPartnerId)
+        : "the swap partner";
+    const swapEffectsHtml =
+      this._swapModalAction === "cancel"
+        ? `
+          <ul class="effect-list">
+            <li>Restore the original assignment for <strong>${this._escape(swapOriginalAssigneeName)}</strong> in <strong>${this._escape(swapWeekLabel)}</strong>.</li>
+            <li>Send a notification to <strong>${this._escape(swapOriginalAssigneeName)}</strong> and <strong>${this._escape(swapCancelPartnerName)}</strong> that the swap was canceled.</li>
+          </ul>
+        `
+        : `
+          <ul class="effect-list">
+            <li>Swap <strong>${this._escape(swapOriginalAssigneeName)}</strong> with <strong>${this._escape(swapTargetName)}</strong> for <strong>${this._escape(swapWeekLabel)}</strong>.</li>
+            <li>Send a notification to both flatmates with the week and original assignee details.</li>
+          </ul>
+        `;
+    const swapTargetOptions = [
+      `<option value="" ${hasValidSwapTarget ? "" : "selected"} disabled>Select flatmate</option>`,
+      ...members.map((member) => {
+        const memberId = Number(member?.member_id);
+        if (!Number.isInteger(memberId) || memberId <= 0 || memberId === swapOriginalAssigneeId) {
+          return "";
+        }
+        const name = this._escape(member?.name || `Member ${memberId}`);
+        return `<option value="${memberId}">${name}</option>`;
+      }),
+    ].join("");
 
     const compactRows = weeks
       .map((row, index) => {
@@ -651,7 +1036,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
         </div>
 
         ${!compactMode && this._modalOpen && modalWeek ? `
-          <div class="modal-backdrop">
+          <div class="modal-backdrop done-modal-backdrop">
             <div class="modal" role="dialog" aria-modal="true">
               <div class="modal-header">
                 <h3>Confirm cleaning completion</h3>
@@ -661,30 +1046,30 @@ class HassFlatmateCleaningCard extends HTMLElement {
               </div>
 
               <p class="modal-week">${this._escape(this._weekTitle(modalWeek, 0))} • ${this._escape(this._rowDateRange(modalWeek))}</p>
-              <p class="modal-preview">Assigned flatmate: <strong>${this._escape(modalAssigneeName)}</strong></p>
+              <p class="modal-preview">Original assignee: <strong>${this._escape(modalAssigneeName)}</strong></p>
 
               <div class="choice-group">
                 <label class="choice-option">
                   <input type="radio" name="hf-modal-choice" value="confirm_assignee" ${this._modalChoice !== "takeover" ? "checked" : ""} />
-                  <span>${this._escape(modalAssigneeName)} cleaned, I am only confirming it.</span>
+                  <span>${this._escape(modalAssigneeName)} cleaned. I am confirming it for them.</span>
                 </label>
                 <p class="choice-help">
-                  Marks this week as done for ${this._escape(modalAssigneeName)} and notifies them that you confirmed it.
+                  Use this if you are only confirming completion on their behalf.
                 </p>
 
                 <label class="choice-option">
                   <input type="radio" name="hf-modal-choice" value="takeover" ${this._modalChoice === "takeover" ? "checked" : ""} />
-                  <span>Someone else took over this shift.</span>
+                  <span>Someone else cleaned and took over this shift.</span>
                 </label>
                 <p class="choice-help">
-                  Records a takeover and automatically schedules compensation. Both involved flatmates are notified.
+                  Use takeover when another flatmate actually cleaned so compensation is planned automatically.
                 </p>
               </div>
 
               ${
                 this._modalChoice === "takeover"
                   ? `
-                    <label for="hf-modal-cleaner">Who cleaned</label>
+                    <label for="hf-modal-cleaner">Who cleaned this week?</label>
                     <select id="hf-modal-cleaner">
                       ${cleanerOptions}
                     </select>
@@ -692,10 +1077,71 @@ class HassFlatmateCleaningCard extends HTMLElement {
                   : ""
               }
 
+              <div class="effect-panel">
+                <p class="effect-title">What this will do</p>
+                ${doneEffectsHtml}
+              </div>
+
               <div class="modal-actions">
                 <button class="btn secondary" type="button" data-action="close-done-modal">Close</button>
                 <button class="btn primary" type="button" data-action="submit-done-modal">
-                  ${this._modalChoice === "takeover" ? "Record takeover" : "Confirm done"}
+                  ${this._modalChoice === "takeover" ? "Confirm takeover" : "Confirm done"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ` : ""}
+
+        ${!compactMode && this._swapModalOpen && swapModalWeek ? `
+          <div class="modal-backdrop swap-modal-backdrop">
+            <div class="modal" role="dialog" aria-modal="true">
+              <div class="modal-header">
+                <h3>${swapHasExistingManualSwap ? "Edit weekly swap" : "Schedule weekly swap"}</h3>
+                <button class="icon-btn" type="button" data-action="close-swap-modal" aria-label="Close swap dialog">
+                  <ha-icon icon="mdi:close"></ha-icon>
+                </button>
+              </div>
+
+              <p class="modal-week">${this._escape(swapWeekLabel)}</p>
+              <p class="modal-preview">Original assignee: <strong>${this._escape(swapOriginalAssigneeName)}</strong></p>
+
+              <label for="hf-swap-target">Swap with</label>
+              <select id="hf-swap-target" ${this._swapModalAction === "cancel" ? "disabled" : ""}>
+                ${swapTargetOptions}
+              </select>
+
+              <div class="choice-group">
+                <label class="choice-option">
+                  <input type="radio" name="hf-swap-action" value="swap" ${this._swapModalAction !== "cancel" ? "checked" : ""} />
+                  <span>${swapHasExistingManualSwap ? "Update swap for this week" : "Create swap for this week"}</span>
+                </label>
+                <p class="choice-help">
+                  Both involved flatmates will be notified immediately.
+                </p>
+                ${
+                  swapHasExistingManualSwap
+                    ? `
+                      <label class="choice-option">
+                        <input type="radio" name="hf-swap-action" value="cancel" ${this._swapModalAction === "cancel" ? "checked" : ""} />
+                        <span>Cancel existing swap</span>
+                      </label>
+                      <p class="choice-help">
+                        Restores the original assignment and notifies both flatmates.
+                      </p>
+                    `
+                    : ""
+                }
+              </div>
+
+              <div class="effect-panel">
+                <p class="effect-title">What this will do</p>
+                ${swapEffectsHtml}
+              </div>
+
+              <div class="modal-actions">
+                <button class="btn secondary" type="button" data-action="close-swap-modal">Close</button>
+                <button class="btn primary" type="button" data-action="submit-swap-modal">
+                  ${this._swapModalAction === "cancel" ? "Cancel swap" : swapHasExistingManualSwap ? "Save swap changes" : "Create swap"}
                 </button>
               </div>
             </div>
@@ -986,6 +1432,12 @@ class HassFlatmateCleaningCard extends HTMLElement {
           color: var(--secondary-text-color);
         }
 
+        .action.swap {
+          color: var(--primary-color);
+          border-color: color-mix(in srgb, var(--primary-color) 35%, var(--divider-color));
+          background: color-mix(in srgb, var(--primary-color) 8%, var(--card-background-color));
+        }
+
         .status-chip {
           display: inline-flex;
           align-items: center;
@@ -1099,6 +1551,11 @@ class HassFlatmateCleaningCard extends HTMLElement {
           padding: 8px 10px;
         }
 
+        select:disabled {
+          opacity: 0.65;
+          cursor: default;
+        }
+
         .modal-preview {
           margin: 2px 0 0;
           font-size: 0.88rem;
@@ -1130,6 +1587,36 @@ class HassFlatmateCleaningCard extends HTMLElement {
           color: var(--secondary-text-color);
           font-size: 0.82rem;
           padding-left: 26px;
+        }
+
+        .effect-panel {
+          border: 1px solid var(--divider-color);
+          border-radius: 10px;
+          padding: 10px;
+          background: color-mix(in srgb, var(--divider-color) 8%, var(--card-background-color));
+          display: grid;
+          gap: 6px;
+        }
+
+        .effect-title {
+          margin: 0;
+          color: var(--secondary-text-color);
+          font-size: 0.8rem;
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
+        }
+
+        .effect-list {
+          margin: 0;
+          padding-left: 18px;
+          display: grid;
+          gap: 4px;
+          font-size: 0.9rem;
+          line-height: 1.35;
+        }
+
+        .effect-list strong {
+          font-weight: 700;
         }
 
         .modal-actions {
@@ -1190,6 +1677,10 @@ class HassFlatmateCleaningCard extends HTMLElement {
     const modalCleanerSelect = this._root.querySelector("#hf-modal-cleaner");
     if (modalCleanerSelect && this._modalCleanerMemberId) {
       modalCleanerSelect.value = this._modalCleanerMemberId;
+    }
+    const swapTargetSelect = this._root.querySelector("#hf-swap-target");
+    if (swapTargetSelect && this._swapTargetMemberId) {
+      swapTargetSelect.value = this._swapTargetMemberId;
     }
 
     this._bindEvents(weeks, members);

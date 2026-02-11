@@ -196,31 +196,40 @@ class HassFlatmateDistributionCard extends HTMLElement {
       .join("");
 
     const layout = this._layout();
+    const titleText = String(this._config.title || "").trim();
+    const showHeader = titleText.length > 0;
     const compactList = compactRowsHtml || '<li class="empty-list compact-empty">No flatmates synced yet.</li>';
     const bodyHtml = layout === "compact"
       ? `
-          <div class="compact-wrap">
+          <div class="body compact-body">
             <ul class="compact-list">
               ${compactList}
             </ul>
           </div>
         `
       : `
-          <ul class="list">
-            ${rowsHtml || emptyState}
-          </ul>
+          <div class="body bars-body">
+            <ul class="list">
+              ${rowsHtml || emptyState}
+            </ul>
+          </div>
         `;
-
-    this._root.innerHTML = `
-      <ha-card>
-        <div class="card">
+    const headerHtml = showHeader
+      ? `
           <div class="header">
             <div>
-              <h2>${this._escape(this._config.title)}</h2>
+              <h2>${this._escape(titleText)}</h2>
               <p>Based on data of the last ${windowDays} days</p>
             </div>
             <span class="total-chip">${totalCompleted} purchase${totalCompleted === 1 ? "" : "s"}</span>
           </div>
+        `
+      : "";
+
+    this._root.innerHTML = `
+      <ha-card>
+        <div class="card ${layout === "compact" ? "compact-layout" : "bars-layout"} ${showHeader ? "with-header" : "without-header"}">
+          ${headerHtml}
 
           ${metaRowHtml}
 
@@ -230,7 +239,6 @@ class HassFlatmateDistributionCard extends HTMLElement {
 
       <style>
         .card {
-          padding: 16px;
           display: grid;
           gap: 12px;
         }
@@ -240,6 +248,7 @@ class HassFlatmateDistributionCard extends HTMLElement {
           justify-content: space-between;
           align-items: center;
           gap: 10px;
+          padding: 16px 16px 0;
         }
 
         .header h2 {
@@ -275,11 +284,20 @@ class HassFlatmateDistributionCard extends HTMLElement {
           display: flex;
           flex-wrap: wrap;
           gap: 8px;
+          padding: 0 16px;
         }
 
         .chip {
           color: var(--secondary-text-color);
           background: color-mix(in srgb, var(--divider-color) 10%, var(--card-background-color));
+        }
+
+        .body {
+          min-width: 0;
+        }
+
+        .bars-body {
+          padding: 0 16px 16px;
         }
 
         .list {
@@ -337,16 +355,14 @@ class HassFlatmateDistributionCard extends HTMLElement {
           font-style: italic;
         }
 
-        .compact-wrap {
-          overflow: hidden;
-        }
-
         .compact-list {
           list-style: none;
           margin: 0;
           padding: 0;
           border: 1px solid var(--divider-color);
-          border-radius: 10px;
+          border-left: 0;
+          border-right: 0;
+          border-radius: 0;
           overflow: hidden;
           background: var(--card-background-color);
           display: flex;
@@ -369,11 +385,13 @@ class HassFlatmateDistributionCard extends HTMLElement {
 
         .compact-name {
           font-weight: 600;
-          line-height: 1.1;
-          font-size: clamp(0.68rem, 1.8vw, 0.95rem);
-          white-space: normal;
-          word-break: break-word;
-          overflow-wrap: anywhere;
+          line-height: 1;
+          font-size: clamp(0.56rem, 1.1vw, 0.76rem);
+          white-space: nowrap;
+          text-overflow: ellipsis;
+          overflow: hidden;
+          word-break: normal;
+          overflow-wrap: normal;
         }
 
         .compact-count {
@@ -384,6 +402,15 @@ class HassFlatmateDistributionCard extends HTMLElement {
 
         .compact-empty {
           padding: 10px 12px;
+        }
+
+        .without-header {
+          gap: 0;
+        }
+
+        .without-header .meta-row {
+          padding-top: 12px;
+          padding-bottom: 8px;
         }
       </style>
     `;

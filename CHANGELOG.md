@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-02-11
+
+### Changed
+- Cleaning interactive card restored in-card swap controls for upcoming/current weeks, including `Swap` and `Edit swap` actions with optimistic save states.
+- Cleaning completion modal wording is now user-focused and consequence-driven, with dynamic takeover preview text that explains compensation and notifications.
+- Cleaning swap modal now includes dynamic "What this will do" previews, selectable target flatmate flow, and explicit cancel-swap guidance.
+- Distribution compact layout now keeps member names on a single line with responsive truncation instead of multi-line wrapping.
+- Distribution compact diagram now renders edge-to-edge across the card width for e-ink/compact dashboard usage.
+
+### Fixed
+- Interactive cleaning rows no longer lose swap capability behind a static `Pending` status for future weeks.
+- Distribution card hides subtitle/total-purchases header chrome when title is intentionally empty, so compact embeds can render chart-only.
+
 ## [0.1.15] - 2026-02-11
 
 ### Fixed
