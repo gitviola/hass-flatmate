@@ -19,8 +19,9 @@ class ShoppingDistributionImage(HassFlatmateCoordinatorEntity, ImageEntity):
     _attr_unique_id = "hass_flatmate_shopping_distribution_90d"
     _attr_content_type = "image/svg+xml"
 
-    def __init__(self, config_entry: ConfigEntry, runtime) -> None:
-        super().__init__(config_entry, runtime)
+    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry, runtime) -> None:
+        HassFlatmateCoordinatorEntity.__init__(self, config_entry, runtime)
+        ImageEntity.__init__(self, hass)
         self._svg_version: str | None = ""
         self._image_bytes: bytes = b""
         self._last_updated: datetime | None = None
@@ -48,4 +49,4 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     runtime = get_runtime(entry, hass)
-    async_add_entities([ShoppingDistributionImage(entry, runtime)])
+    async_add_entities([ShoppingDistributionImage(hass, entry, runtime)])

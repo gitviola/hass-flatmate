@@ -287,12 +287,14 @@ class HassFlatmateShoppingCard extends HTMLElement {
           </div>
 
           <form id="hass-flatmate-add-form" class="add-row">
-            <ha-textfield
+            <input
               id="hass-flatmate-item-input"
-              label="Add item"
+              type="text"
+              placeholder="Add item"
               value="${draftName}"
+              autocomplete="off"
               ${disabledAttr}
-            ></ha-textfield>
+            />
             <button class="primary" type="submit" ${disabledAttr}>Add</button>
             <button id="hass-flatmate-add-favorite" class="secondary" type="button" ${disabledAttr}>Favorite</button>
           </form>
@@ -352,6 +354,24 @@ class HassFlatmateShoppingCard extends HTMLElement {
           grid-template-columns: 1fr auto auto;
           gap: 8px;
           align-items: center;
+        }
+
+        #hass-flatmate-item-input {
+          box-sizing: border-box;
+          width: 100%;
+          min-height: 42px;
+          border: 1px solid var(--divider-color);
+          border-radius: 12px;
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
+          font: inherit;
+          padding: 10px 12px;
+        }
+
+        #hass-flatmate-item-input:focus {
+          outline: none;
+          border-color: var(--primary-color);
+          box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary-color) 55%, transparent);
         }
 
         section h3 {
