@@ -67,6 +67,22 @@ Features:
 
 The card uses integration services, so actor attribution stays correct.
 
+## Shopping Compact UI Card
+
+Use the dedicated read-only compact card for e-ink/non-touch displays:
+
+```yaml
+type: custom:hass-flatmate-shopping-compact-card
+entity: sensor.hass_flatmate_shopping_data
+title: Shopping List
+```
+
+Features:
+- Dense, bullet-free list layout
+- Relative age labels like `added 5 hours ago` / `added 2 weeks ago`
+- Read-only rendering optimized for passive displays
+- Available in the card picker (no manual YAML required)
+
 ## Cleaning UI Card
 
 Use the dedicated cleaning card in any dashboard:
@@ -93,6 +109,7 @@ Manual swap override remains available via service:
 
 In Lovelace YAML resource mode, add both resources manually as `module`:
 - `/hass_flatmate/static/hass-flatmate-shopping-card.js`
+- `/hass_flatmate/static/hass-flatmate-shopping-compact-card.js`
 - `/hass_flatmate/static/hass-flatmate-cleaning-card.js`
 
 Compact e-ink example:

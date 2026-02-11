@@ -4,6 +4,11 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Added
+- New e-ink focused custom card: `custom:hass-flatmate-shopping-compact-card`.
+- Compact shopping card renders a dense read-only list from `sensor.hass_flatmate_shopping_data` with relative age labels such as `added 5 hours ago`.
+- Frontend auto-registration now includes `/hass_flatmate/static/hass-flatmate-shopping-compact-card.js` in storage mode.
+
 ## [0.1.16] - 2026-02-11
 
 ### Changed

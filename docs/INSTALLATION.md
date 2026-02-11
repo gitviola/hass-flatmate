@@ -41,6 +41,7 @@ Lovelace YAML resources mode:
 1. Open dashboard resources.
 2. Add resources:
 - URL: `/hass_flatmate/static/hass-flatmate-shopping-card.js` | Type: `module`
+- URL: `/hass_flatmate/static/hass-flatmate-shopping-compact-card.js` | Type: `module`
 - URL: `/hass_flatmate/static/hass-flatmate-cleaning-card.js` | Type: `module`
 - URL: `/hass_flatmate/static/hass-flatmate-distribution-card.js` | Type: `module`
 3. Save.
@@ -52,6 +53,7 @@ Use the example Sections dashboard for modern HA layout:
 
 Custom cards available in the dashboard card picker:
 - `custom:hass-flatmate-shopping-card`
+- `custom:hass-flatmate-shopping-compact-card`
 - `custom:hass-flatmate-cleaning-card`
 - `custom:hass-flatmate-distribution-card`
 

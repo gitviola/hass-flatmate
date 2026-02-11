@@ -44,6 +44,7 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     FRONTEND_SHOPPING_CARD_FILENAME,
+    FRONTEND_SHOPPING_COMPACT_CARD_FILENAME,
     FRONTEND_CLEANING_CARD_FILENAME,
     FRONTEND_DISTRIBUTION_CARD_FILENAME,
     FRONTEND_CLEANING_CARD_RESOURCE_TYPE,
@@ -52,6 +53,8 @@ from .const import (
     FRONTEND_DISTRIBUTION_CARD_RESOURCE_URL,
     FRONTEND_SHOPPING_CARD_RESOURCE_TYPE,
     FRONTEND_SHOPPING_CARD_RESOURCE_URL,
+    FRONTEND_SHOPPING_COMPACT_CARD_RESOURCE_TYPE,
+    FRONTEND_SHOPPING_COMPACT_CARD_RESOURCE_URL,
     FRONTEND_STATIC_PATH,
     NOTIFICATION_DEDUPE_KEY,
     PLATFORMS,
@@ -892,6 +895,7 @@ async def _register_frontend_static_assets(hass: HomeAssistant) -> None:
 
     targets = [
         (FRONTEND_SHOPPING_CARD_FILENAME, FRONTEND_SHOPPING_CARD_RESOURCE_URL),
+        (FRONTEND_SHOPPING_COMPACT_CARD_FILENAME, FRONTEND_SHOPPING_COMPACT_CARD_RESOURCE_URL),
         (FRONTEND_CLEANING_CARD_FILENAME, FRONTEND_CLEANING_CARD_RESOURCE_URL),
         (FRONTEND_DISTRIBUTION_CARD_FILENAME, FRONTEND_DISTRIBUTION_CARD_RESOURCE_URL),
     ]
@@ -914,7 +918,7 @@ async def _register_frontend_static_assets(hass: HomeAssistant) -> None:
 
 
 async def _register_lovelace_card_resource(hass: HomeAssistant) -> None:
-    """Auto-register the shopping card resource for Lovelace storage mode."""
+    """Auto-register hass-flatmate card resources for Lovelace storage mode."""
     try:
         from homeassistant.components.lovelace.const import (
             CONF_RESOURCE_TYPE_WS,
@@ -933,6 +937,11 @@ async def _register_lovelace_card_resource(hass: HomeAssistant) -> None:
             CONF_URL: FRONTEND_SHOPPING_CARD_RESOURCE_URL,
             CONF_TYPE: FRONTEND_SHOPPING_CARD_RESOURCE_TYPE,
             CONF_RESOURCE_TYPE_WS: FRONTEND_SHOPPING_CARD_RESOURCE_TYPE,
+        },
+        {
+            CONF_URL: FRONTEND_SHOPPING_COMPACT_CARD_RESOURCE_URL,
+            CONF_TYPE: FRONTEND_SHOPPING_COMPACT_CARD_RESOURCE_TYPE,
+            CONF_RESOURCE_TYPE_WS: FRONTEND_SHOPPING_COMPACT_CARD_RESOURCE_TYPE,
         },
         {
             CONF_URL: FRONTEND_CLEANING_CARD_RESOURCE_URL,

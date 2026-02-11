@@ -1,4 +1,5 @@
 # Resources `/hass_flatmate/static/hass-flatmate-shopping-card.js` and
+# `/hass_flatmate/static/hass-flatmate-shopping-compact-card.js` and
 # `/hass_flatmate/static/hass-flatmate-cleaning-card.js` and
 # `/hass_flatmate/static/hass-flatmate-distribution-card.js` are auto-added in
 # Lovelace storage mode. Add them manually only if you use YAML resources mode.
@@ -18,6 +19,10 @@ views:
           - type: custom:hass-flatmate-shopping-card
             entity: sensor.hass_flatmate_shopping_data
             title: Shared Shopping
+
+          - type: custom:hass-flatmate-shopping-compact-card
+            entity: sensor.hass_flatmate_shopping_data
+            title: Shopping List (Compact)
 
           - type: tile
             entity: sensor.hass_flatmate_shopping_open_count
