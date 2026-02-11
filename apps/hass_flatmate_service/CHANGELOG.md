@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+- Shopping complete/delete actions are idempotent for already-updated items.
+- Shopping distribution SVG always includes all active flatmates in the rendered chart, including zero-count members.
+
 ## [0.1.10] - 2026-02-11
 
 ### Added

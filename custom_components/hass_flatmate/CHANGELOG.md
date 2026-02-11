@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+- Shopping service actions now return faster by running refresh/activity-calendar sync in a background coalesced task.
+- Shopping card now optimistically hides pending completed/deleted items to avoid repeated clicks during backend updates.
+
 ## [0.1.10] - 2026-02-11
 
 ### Added

@@ -65,6 +65,8 @@ from .coordinator import HassFlatmateCoordinator
 from .discovery import async_discover_service_base_url
 
 _LOGGER = logging.getLogger(__name__)
+REFRESH_TASK_KEY = "_refresh_activity_task"
+REFRESH_PENDING_KEY = "_refresh_activity_pending"
 
 
 def _is_loopback_base_url(value: str) -> bool:
@@ -281,6 +283,26 @@ async def _refresh_and_process_activity(hass: HomeAssistant, runtime: HassFlatma
     await _sync_activity_to_selected_calendars(hass, runtime)
 
 
+def _schedule_refresh_and_process_activity(hass: HomeAssistant, runtime: HassFlatmateRuntime) -> None:
+    existing_task = runtime.runtime_state.get(REFRESH_TASK_KEY)
+    if existing_task is not None and not existing_task.done():
+        runtime.runtime_state[REFRESH_PENDING_KEY] = True
+        return
+
+    runtime.runtime_state[REFRESH_PENDING_KEY] = True
+
+    async def _runner() -> None:
+        try:
+            while runtime.runtime_state.pop(REFRESH_PENDING_KEY, False):
+                await _refresh_and_process_activity(hass, runtime)
+        except Exception:  # pragma: no cover - defensive logging
+            _LOGGER.exception("Background refresh/activity sync failed")
+        finally:
+            runtime.runtime_state.pop(REFRESH_TASK_KEY, None)
+
+    runtime.runtime_state[REFRESH_TASK_KEY] = hass.async_create_task(_runner())
+
+
 def _get_domain_data(hass: HomeAssistant) -> HassFlatmateData:
     return hass.data.setdefault(DOMAIN, HassFlatmateData())
 
@@ -415,7 +437,7 @@ async def _register_services(hass: HomeAssistant) -> None:
             name=call.data[SERVICE_ATTR_NAME],
             actor_user_id=call.context.user_id,
         )
-        await _refresh_and_process_activity(hass, runtime)
+        _schedule_refresh_and_process_activity(hass, runtime)
 
     async def complete_shopping_item(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
@@ -423,7 +445,7 @@ async def _register_services(hass: HomeAssistant) -> None:
             item_id=call.data[SERVICE_ATTR_ITEM_ID],
             actor_user_id=call.context.user_id,
         )
-        await _refresh_and_process_activity(hass, runtime)
+        _schedule_refresh_and_process_activity(hass, runtime)
 
     async def delete_shopping_item(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
@@ -431,7 +453,7 @@ async def _register_services(hass: HomeAssistant) -> None:
             item_id=call.data[SERVICE_ATTR_ITEM_ID],
             actor_user_id=call.context.user_id,
         )
-        await _refresh_and_process_activity(hass, runtime)
+        _schedule_refresh_and_process_activity(hass, runtime)
 
     async def add_favorite_item(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
@@ -439,7 +461,7 @@ async def _register_services(hass: HomeAssistant) -> None:
             name=call.data[SERVICE_ATTR_NAME],
             actor_user_id=call.context.user_id,
         )
-        await _refresh_and_process_activity(hass, runtime)
+        _schedule_refresh_and_process_activity(hass, runtime)
 
     async def delete_favorite_item(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
@@ -447,7 +469,7 @@ async def _register_services(hass: HomeAssistant) -> None:
             favorite_id=call.data[SERVICE_ATTR_FAVORITE_ID],
             actor_user_id=call.context.user_id,
         )
-        await _refresh_and_process_activity(hass, runtime)
+        _schedule_refresh_and_process_activity(hass, runtime)
 
     async def mark_cleaning_done(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
@@ -486,7 +508,7 @@ async def _register_services(hass: HomeAssistant) -> None:
     async def sync_members(_call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
         await _sync_members_from_ha(runtime, hass)
-        await _refresh_and_process_activity(hass, runtime)
+        _schedule_refresh_and_process_activity(hass, runtime)
 
     hass.services.async_register(
         DOMAIN,

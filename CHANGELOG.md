@@ -4,6 +4,11 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Shopping interactions are now much faster in the dashboard by decoupling post-action coordinator/calendar sync from service call completion.
+- Duplicate shopping complete/delete clicks are now idempotent instead of returning HTTP 400 for already-updated items.
+- Shopping distribution SVG now always renders all active flatmates, including zero-count members, even when one member has all completions.
+
 ## [0.1.10] - 2026-02-11
 
 ### Added

@@ -6,6 +6,7 @@ class HassFlatmateShoppingCard extends HTMLElement {
     this._busy = false;
     this._errorMessage = "";
     this._stateSnapshot = "";
+    this._pendingItemIds = new Set();
   }
 
   static async getConfigElement() {
@@ -139,7 +140,7 @@ class HassFlatmateShoppingCard extends HTMLElement {
 
   async _addItem(name) {
     const normalized = String(name || "").trim();
-    if (!normalized) {
+    if (!normalized || this._busy) {
       return;
     }
 
@@ -159,25 +160,24 @@ class HassFlatmateShoppingCard extends HTMLElement {
   }
 
   async _completeItem(id) {
-    if (!id) {
+    if (!id || this._pendingItemIds.has(id)) {
       return;
     }
-    this._busy = true;
     this._errorMessage = "";
+    this._pendingItemIds.add(id);
     this._render();
     try {
       const meta = this._serviceMeta(this._stateObj.attributes || {});
       await this._callService(meta.completeItem, { item_id: id });
     } catch (error) {
+      this._pendingItemIds.delete(id);
       this._errorMessage = error?.message || "Unable to mark item as bought";
-    } finally {
-      this._busy = false;
       this._render();
     }
   }
 
   async _deleteItem(id, name) {
-    if (!id) {
+    if (!id || this._pendingItemIds.has(id)) {
       return;
     }
     const confirmed = window.confirm(`Remove "${name}" from the shopping list?`);
@@ -185,16 +185,15 @@ class HassFlatmateShoppingCard extends HTMLElement {
       return;
     }
 
-    this._busy = true;
     this._errorMessage = "";
+    this._pendingItemIds.add(id);
     this._render();
     try {
       const meta = this._serviceMeta(this._stateObj.attributes || {});
       await this._callService(meta.deleteItem, { item_id: id });
     } catch (error) {
+      this._pendingItemIds.delete(id);
       this._errorMessage = error?.message || "Unable to remove item";
-    } finally {
-      this._busy = false;
       this._render();
     }
   }
@@ -264,9 +263,24 @@ class HassFlatmateShoppingCard extends HTMLElement {
 
     const attrs = this._stateObj.attributes || {};
     const openItems = Array.isArray(attrs.open_items) ? attrs.open_items : [];
+    const openIdSet = new Set(
+      openItems
+        .map((item) => Number(item?.id))
+        .filter((id) => Number.isInteger(id) && id > 0)
+    );
+    for (const pendingId of [...this._pendingItemIds]) {
+      if (!openIdSet.has(pendingId)) {
+        this._pendingItemIds.delete(pendingId);
+      }
+    }
+
+    const visibleOpenItems = openItems.filter(
+      (item) => !this._pendingItemIds.has(Number(item?.id))
+    );
+
     const rawRecents = Array.isArray(attrs.suggestions) ? attrs.suggestions : [];
     const openNameSet = new Set(
-      openItems
+      visibleOpenItems
         .map((item) => String(item?.name || "").trim().toLowerCase())
         .filter((name) => name.length > 0)
     );
@@ -283,9 +297,9 @@ class HassFlatmateShoppingCard extends HTMLElement {
         return true;
       })
       .filter((name) => !openNameSet.has(name.toLowerCase()));
-    const openCount = Number.parseInt(this._stateObj.state, 10) || openItems.length;
+    const openCount = visibleOpenItems.length;
 
-    const itemRows = openItems
+    const itemRows = visibleOpenItems
       .map((item) => {
         const id = Number(item.id);
         const itemName = String(item.name || "");

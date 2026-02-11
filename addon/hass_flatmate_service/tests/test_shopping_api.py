@@ -70,6 +70,13 @@ def test_shopping_lifecycle_and_stats(client, auth_headers) -> None:
     )
     assert complete_rice.status_code == 200
 
+    complete_rice_again = client.post(
+        f"/v1/shopping/items/{rice_id}/complete",
+        headers=auth_headers,
+        json={"actor_user_id": "u1"},
+    )
+    assert complete_rice_again.status_code == 200
+
     complete_unknown = client.post(
         f"/v1/shopping/items/{unknown_id}/complete",
         headers=auth_headers,
@@ -84,6 +91,14 @@ def test_shopping_lifecycle_and_stats(client, auth_headers) -> None:
         json={"actor_user_id": "u2"},
     )
     assert delete_pasta.status_code == 200
+
+    delete_pasta_again = client.request(
+        "DELETE",
+        f"/v1/shopping/items/{pasta_id}",
+        headers=auth_headers,
+        json={"actor_user_id": "u2"},
+    )
+    assert delete_pasta_again.status_code == 200
 
     stats = client.get("/v1/stats/buys?window_days=90", headers=auth_headers)
     assert stats.status_code == 200
@@ -160,8 +175,25 @@ def test_recents_and_favorites(client, auth_headers) -> None:
 
 def test_distribution_svg_endpoint(client, auth_headers) -> None:
     _sync_members(client, auth_headers)
+    add_response = client.post(
+        "/v1/shopping/items",
+        headers=auth_headers,
+        json={"name": "Dish Soap", "actor_user_id": "u1"},
+    )
+    assert add_response.status_code == 200
+    item_id = add_response.json()["id"]
+    complete_response = client.post(
+        f"/v1/shopping/items/{item_id}/complete",
+        headers=auth_headers,
+        json={"actor_user_id": "u1"},
+    )
+    assert complete_response.status_code == 200
+
     response = client.get("/v1/stats/buys.svg?window_days=90", headers=auth_headers)
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("image/svg+xml")
     assert "<svg" in response.text
     assert "Martin" in response.text
+    assert "Martina" in response.text
+    assert "Gianmarco" in response.text
+    assert "Maria" in response.text

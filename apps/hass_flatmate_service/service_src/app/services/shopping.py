@@ -52,6 +52,8 @@ def complete_item(session: Session, item_id: int, actor_user_id: str | None) -> 
     item = session.get(ShoppingItem, item_id)
     if item is None:
         raise ValueError("Shopping item not found")
+    if item.status == ShoppingStatus.COMPLETED:
+        return item
     if item.status != ShoppingStatus.OPEN:
         raise ValueError("Only open items can be completed")
 
@@ -80,6 +82,8 @@ def delete_item(session: Session, item_id: int, actor_user_id: str | None) -> Sh
     item = session.get(ShoppingItem, item_id)
     if item is None:
         raise ValueError("Shopping item not found")
+    if item.status == ShoppingStatus.DELETED:
+        return item
     if item.status != ShoppingStatus.OPEN:
         raise ValueError("Only open items can be deleted")
 
@@ -242,17 +246,17 @@ def distribution_svg(stats: dict) -> str:
     ]
 
     total = sum(int(row["count"]) for row in rows)
-    has_total = total > 0
-    base_width = outer_w / max(len(rows), 1)
+    member_count = max(len(rows), 1)
+    min_segment_width = min(90.0, outer_w / member_count)
+    remaining_width = max(outer_w - (min_segment_width * member_count), 0.0)
 
     segments: list[str] = []
     x = outer_x
     for idx, row in enumerate(rows):
-        if has_total:
-            raw_width = outer_w * (float(row["count"]) / total)
-            seg_w = max(raw_width, 90.0)
+        if total > 0:
+            seg_w = min_segment_width + (remaining_width * (float(row["count"]) / total))
         else:
-            seg_w = max(base_width, 90.0)
+            seg_w = outer_w / member_count
 
         if idx == len(rows) - 1:
             seg_w = (outer_x + outer_w) - x
