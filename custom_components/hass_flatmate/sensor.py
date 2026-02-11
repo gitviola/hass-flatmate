@@ -18,6 +18,7 @@ from .const import (
     SERVICE_ADD_FAVORITE_ITEM,
     SERVICE_ADD_SHOPPING_ITEM,
     SERVICE_MARK_CLEANING_DONE,
+    SERVICE_MARK_CLEANING_TAKEOVER_DONE,
     SERVICE_MARK_CLEANING_UNDONE,
     SERVICE_SWAP_CLEANING_WEEK,
     SERVICE_COMPLETE_SHOPPING_ITEM,
@@ -294,11 +295,26 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         members = _member_lookup(self.coordinator.data)
         members_payload = [
-            {"member_id": int(member.get("id")), "name": member.get("display_name")}
+            {
+                "member_id": int(member.get("id")),
+                "name": member.get("display_name"),
+                "ha_user_id": member.get("ha_user_id"),
+            }
             for member in self.coordinator.data.get("members", [])
             if member.get("id") is not None and member.get("display_name")
         ]
         members_payload.sort(key=lambda row: str(row["name"]).lower())
+
+        member_user_lookup: dict[int, str | None] = {}
+        for member in self.coordinator.data.get("members", []):
+            if member.get("id") is None:
+                continue
+            try:
+                member_id = int(member.get("id"))
+            except (TypeError, ValueError):
+                continue
+            user_id = member.get("ha_user_id")
+            member_user_lookup[member_id] = str(user_id) if user_id is not None else None
 
         schedule = self.coordinator.data.get("cleaning_schedule", {}).get("schedule", [])
         current = self.coordinator.data.get("cleaning_current", {})
@@ -365,6 +381,18 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
                 current_week_start_date is not None
                 and week_start == (current_week_start_date + timedelta(days=7))
             )
+            assignee_user_id = None
+            if effective_id is not None:
+                try:
+                    assignee_user_id = member_user_lookup.get(int(effective_id))
+                except (TypeError, ValueError):
+                    assignee_user_id = None
+            original_assignee_user_id = None
+            if baseline_id is not None:
+                try:
+                    original_assignee_user_id = member_user_lookup.get(int(baseline_id))
+                except (TypeError, ValueError):
+                    original_assignee_user_id = None
             weeks.append(
                 {
                     "week_start": week_start.isoformat(),
@@ -372,8 +400,10 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
                     "week_number": week_start.isocalendar().week,
                     "assignee_member_id": effective_id,
                     "assignee_name": assignee_name,
+                    "assignee_user_id": assignee_user_id,
                     "original_assignee_member_id": baseline_id,
                     "original_assignee_name": baseline_name,
+                    "original_assignee_user_id": original_assignee_user_id,
                     "baseline_assignee_member_id": baseline_id,
                     "baseline_assignee_name": baseline_name,
                     "override_type": override_type,
@@ -395,6 +425,7 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
             "service_domain": DOMAIN,
             "service_mark_done": SERVICE_MARK_CLEANING_DONE,
             "service_mark_undone": SERVICE_MARK_CLEANING_UNDONE,
+            "service_mark_takeover_done": SERVICE_MARK_CLEANING_TAKEOVER_DONE,
             "service_swap_week": SERVICE_SWAP_CLEANING_WEEK,
         }
 

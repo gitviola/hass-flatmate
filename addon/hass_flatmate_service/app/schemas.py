@@ -83,6 +83,7 @@ class ActivityEventResponse(BaseModel):
 class CleaningMarkDoneRequest(BaseModel):
     week_start: date
     actor_user_id: str | None = None
+    completed_by_member_id: int | None = None
 
 
 class CleaningMarkUndoneRequest(BaseModel):

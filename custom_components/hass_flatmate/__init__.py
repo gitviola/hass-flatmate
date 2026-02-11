@@ -52,6 +52,7 @@ from .const import (
     SERVICE_ADD_SHOPPING_ITEM,
     SERVICE_ATTR_CANCEL,
     SERVICE_ATTR_CLEANER_MEMBER_ID,
+    SERVICE_ATTR_COMPLETED_BY_MEMBER_ID,
     SERVICE_ATTR_FAVORITE_ID,
     SERVICE_ATTR_ITEM_ID,
     SERVICE_ATTR_CLEANING_HISTORY_ROWS,
@@ -490,10 +491,12 @@ async def _register_services(hass: HomeAssistant) -> None:
     async def mark_cleaning_done(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
         week_start = date.fromisoformat(call.data[SERVICE_ATTR_WEEK_START])
-        await runtime.api.mark_cleaning_done(
+        response = await runtime.api.mark_cleaning_done(
             week_start=week_start,
             actor_user_id=call.context.user_id,
+            completed_by_member_id=call.data.get(SERVICE_ATTR_COMPLETED_BY_MEMBER_ID),
         )
+        await _dispatch_notifications(hass, runtime, response.get("notifications", []))
         await _refresh_and_process_activity(hass, runtime)
 
     async def mark_cleaning_undone(call: ServiceCall) -> None:
@@ -580,7 +583,12 @@ async def _register_services(hass: HomeAssistant) -> None:
         DOMAIN,
         SERVICE_MARK_CLEANING_DONE,
         mark_cleaning_done,
-        schema=vol.Schema({vol.Required(SERVICE_ATTR_WEEK_START): cv.string}),
+        schema=vol.Schema(
+            {
+                vol.Required(SERVICE_ATTR_WEEK_START): cv.string,
+                vol.Optional(SERVICE_ATTR_COMPLETED_BY_MEMBER_ID): cv.positive_int,
+            }
+        ),
     )
     hass.services.async_register(
         DOMAIN,

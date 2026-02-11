@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-02-11
+
 ### Changed
 - Distribution card now supports `layout: compact` for a single-row boxed style and keeps `layout: bars` as default.
 - Distribution card wording updated to purchases (`N purchases`) with subtitle `Based on data of the last 90 days`.
@@ -11,6 +13,11 @@
 - Shopping card add-item flow now uses optimistic UI (pending rows shown instantly while save completes).
 - Shopping suggestions now follow backend-ranked recents/favorites ordering (frequency-first) instead of local favorites-first merging.
 - Shopping remove service wording now clarifies "remove from list" (historical trace kept).
+- Cleaning card done flow now supports non-assignee confirmation via modal:
+  - confirm assignee completed
+  - record takeover completion with compensation behavior
+- Cleaning card no longer exposes swap actions in the UI (swap still available via service calls/automations).
+- Compact cleaning card now renders responsively with stacked rows, `Upcoming` status for future weeks, and reduced redundant header text.
 
 ### Added
 - New HA service `hass_flatmate_import_flatastic_data` for pasted Flatastic migration rows:

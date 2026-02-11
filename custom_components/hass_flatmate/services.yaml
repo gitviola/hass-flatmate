@@ -60,6 +60,12 @@ hass_flatmate_mark_cleaning_done:
       example: "2026-02-16"
       selector:
         text:
+    completed_by_member_id:
+      required: false
+      example: 1
+      selector:
+        number:
+          min: 1
 
 hass_flatmate_mark_cleaning_undone:
   name: Mark cleaning undone

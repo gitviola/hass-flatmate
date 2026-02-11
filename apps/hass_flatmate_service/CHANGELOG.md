@@ -2,8 +2,12 @@
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-02-11
+
 ### Changed
 - Shopping recents ranking now prioritizes historically bought items by purchase count, includes active favorites, and excludes names currently open on the shopping list.
+- `POST /v1/cleaning/mark_done` now supports assignee confirmation by another actor via `completed_by_member_id` and returns assignee notification payloads.
+- `POST /v1/cleaning/mark_done` now rejects non-assignee `completed_by_member_id` values and directs callers to `mark_takeover_done`.
 
 ## [0.1.11] - 2026-02-11
 

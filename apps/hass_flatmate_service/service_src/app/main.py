@@ -50,7 +50,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="hass-flatmate-service", version="0.1.10", lifespan=lifespan)
+app = FastAPI(title="hass-flatmate-service", version="0.1.12", lifespan=lifespan)
 
 
 def require_token(x_flatmate_token: str | None = Header(default=None)) -> None:
@@ -321,14 +321,15 @@ def post_mark_done(
     session: Session = Depends(get_session),
 ) -> OperationResponse:
     try:
-        cleaning.mark_cleaning_done(
+        notifications = cleaning.mark_cleaning_done(
             session,
             week_start=payload.week_start,
             actor_user_id=payload.actor_user_id,
+            completed_by_member_id=payload.completed_by_member_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return OperationResponse(ok=True)
+    return OperationResponse(ok=True, notifications=notifications)
 
 
 @app.post(

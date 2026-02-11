@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-02-11
+
 ### Changed
 - Distribution custom card now supports two layouts via config:
   - `layout: bars` (default app-style bars)
@@ -19,6 +21,11 @@ All notable changes to this project are documented in this file.
 - Shopping card add-item UX is now optimistic/instant with temporary pending rows while backend save completes.
 - Shopping quick suggestions now prioritize names by historical purchase frequency and include favorited items, excluding names currently open on the shopping list.
 - Shopping remove action wording now explicitly reflects "remove from list" behavior rather than hard deletion semantics.
+- Cleaning completion now supports assignee confirmation by another member using `completed_by_member_id`, with notification to the assignee.
+- Cleaning completion now rejects non-assignee confirmation payloads and requires takeover flow for actual takeovers.
+- Cleaning card interactive flow now opens a non-assignee completion modal with explicit options for "confirm for assignee" vs. "takeover with compensation".
+- Cleaning card no longer exposes swap controls in-card; swap remains available via the existing service.
+- Cleaning compact layout is now fully responsive with stacked row content, `Upcoming` labels for future weeks, and no redundant current-assignee/header status text.
 
 ### Added
 - New Flatastic migration import service flow:

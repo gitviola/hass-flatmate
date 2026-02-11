@@ -341,6 +341,65 @@ def test_mark_done_then_undone(client, auth_headers) -> None:
     assert current_row["completed_by_member_id"] is None
 
 
+def test_mark_done_can_be_confirmed_for_assignee_by_other_member(client, auth_headers) -> None:
+    _sync_members(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    current_payload = current.json()
+    week_start = date.fromisoformat(current_payload["week_start"])
+    assignee_member_id = int(current_payload["effective_assignee_member_id"])
+
+    actor_user_id = "u2" if assignee_member_id != 2 else "u1"
+
+    done = client.post(
+        "/v1/cleaning/mark_done",
+        headers=auth_headers,
+        json={
+            "week_start": week_start.isoformat(),
+            "actor_user_id": actor_user_id,
+            "completed_by_member_id": assignee_member_id,
+        },
+    )
+    assert done.status_code == 200
+    notifications = done.json().get("notifications", [])
+    assert len(notifications) == 1
+    assert "marked your cleaning shift as done" in notifications[0]["message"]
+
+    schedule = client.get("/v1/cleaning/schedule?weeks_ahead=2", headers=auth_headers)
+    assert schedule.status_code == 200
+    current_row = schedule.json()["schedule"][0]
+    assert current_row["status"] == "done"
+    assert current_row["completed_by_member_id"] == assignee_member_id
+    assert current_row["completion_mode"] == "own"
+
+
+def test_mark_done_rejects_completed_by_member_when_not_assignee(client, auth_headers) -> None:
+    _sync_members(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    current_payload = current.json()
+    week_start = date.fromisoformat(current_payload["week_start"])
+    assignee_member_id = int(current_payload["effective_assignee_member_id"])
+
+    non_assignee_member_id = next(
+        member_id for member_id in (1, 2, 3) if member_id != assignee_member_id
+    )
+
+    response = client.post(
+        "/v1/cleaning/mark_done",
+        headers=auth_headers,
+        json={
+            "week_start": week_start.isoformat(),
+            "actor_user_id": "u1",
+            "completed_by_member_id": non_assignee_member_id,
+        },
+    )
+    assert response.status_code == 400
+    assert "use mark_takeover_done" in response.json()["detail"]
+
+
 def test_schedule_can_include_previous_week(client, auth_headers) -> None:
     _sync_members(client, auth_headers)
 

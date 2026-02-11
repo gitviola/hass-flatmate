@@ -331,14 +331,30 @@ def mark_cleaning_done(
     *,
     week_start: date,
     actor_user_id: str | None,
-) -> None:
+    completed_by_member_id: int | None = None,
+) -> list[dict]:
     _ensure_week_start_is_monday(week_start)
     actor_member = resolve_actor_member(session, actor_user_id)
     assignment = ensure_assignment(session, week_start)
+    notifications: list[dict] = []
+
+    completed_by_member = actor_member
+    if completed_by_member_id is not None:
+        completed_by_member = get_member_by_id(session, completed_by_member_id)
+        if completed_by_member is None:
+            raise ValueError("completed_by_member_id not found")
+        if (
+            assignment.assignee_member_id is not None
+            and completed_by_member.id != assignment.assignee_member_id
+        ):
+            raise ValueError(
+                "completed_by_member_id must match the assignee for mark_done; "
+                "use mark_takeover_done for takeover completion"
+            )
 
     now = now_utc()
     assignment.status = CleaningAssignmentStatus.DONE
-    assignment.completed_by_member_id = actor_member.id if actor_member else None
+    assignment.completed_by_member_id = completed_by_member.id if completed_by_member else None
     assignment.completion_mode = "own"
     assignment.completed_at = now
 
@@ -356,11 +372,29 @@ def mark_cleaning_done(
             "week_start": week_start.isoformat(),
             "completed_by_member_id": assignment.completed_by_member_id,
             "completion_mode": "own",
+            "confirmed_by_member_id": actor_member.id if actor_member else None,
         },
         created_at=now,
     )
 
+    if (
+        actor_member is not None
+        and completed_by_member is not None
+        and actor_member.id != completed_by_member.id
+    ):
+        notifications.append(
+            _member_notification(
+                completed_by_member,
+                "Weekly Cleaning Shift",
+                (
+                    f"{actor_member.display_name} marked your cleaning shift as done for week "
+                    f"{week_start.isoformat()}."
+                ),
+            )
+        )
+
     session.commit()
+    return notifications
 
 
 def _latest_takeover_event_for_week(session: Session, week_start: date) -> ActivityEvent | None:

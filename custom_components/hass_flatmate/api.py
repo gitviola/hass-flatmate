@@ -151,11 +151,21 @@ class HassFlatmateApiClient:
             },
         )
 
-    async def mark_cleaning_done(self, *, week_start: date, actor_user_id: str | None) -> dict[str, Any]:
+    async def mark_cleaning_done(
+        self,
+        *,
+        week_start: date,
+        actor_user_id: str | None,
+        completed_by_member_id: int | None = None,
+    ) -> dict[str, Any]:
         return await self._request(
             "POST",
             "/v1/cleaning/mark_done",
-            json={"week_start": week_start.isoformat(), "actor_user_id": actor_user_id},
+            json={
+                "week_start": week_start.isoformat(),
+                "actor_user_id": actor_user_id,
+                "completed_by_member_id": completed_by_member_id,
+            },
         )
 
     async def mark_cleaning_undone(self, *, week_start: date, actor_user_id: str | None) -> dict[str, Any]:
