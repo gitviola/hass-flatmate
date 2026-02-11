@@ -122,4 +122,4 @@ hass_flatmate_swap_cleaning_week:
 
 hass_flatmate_sync_members:
   name: Sync members
-  description: Sync Home Assistant users/persons into hass-flatmate members.
+  description: Sync Home Assistant users/persons into hass-flatmate members (deactivates departed members and auto-cancels impacted planned overrides).

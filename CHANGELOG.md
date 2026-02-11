@@ -13,6 +13,9 @@ All notable changes to this project are documented in this file.
   - `Based on data of the last 90 days` subtitle
   - Removed explicit `Window: 90d` chip
 - Bar layout no longer shows percentage labels.
+- Cleaning card now supports `layout: compact` read-only mode for e-ink/non-touch displays.
+- Member sync now deactivates departed members in rotation planning and auto-cancels impacted planned overrides.
+- Auto-canceled overrides from member departures now emit notifications for remaining affected flatmates.
 
 ## [0.1.11] - 2026-02-11
 

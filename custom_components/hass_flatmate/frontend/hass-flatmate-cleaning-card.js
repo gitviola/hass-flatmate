@@ -21,6 +21,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
       entity: "sensor.hass_flatmate_cleaning_schedule",
       title: "Cleaning Rotation",
       weeks: 5,
+      layout: "interactive",
     };
   }
 
@@ -31,6 +32,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
     this._config = {
       title: "Cleaning Rotation",
       weeks: 5,
+      layout: "interactive",
       ...config,
     };
     this._stateSnapshot = "";
@@ -38,7 +40,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
   }
 
   getCardSize() {
-    return 8;
+    return this._isCompact() ? 5 : 8;
   }
 
   set hass(hass) {
@@ -70,6 +72,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
       service_mark_done: attrs.service_mark_done || "",
       service_mark_undone: attrs.service_mark_undone || "",
       service_swap_week: attrs.service_swap_week || "",
+      layout: this._layout(),
       modal_open: this._modalOpen,
       selected_week: this._selectedWeekStart,
       selected_a: this._selectedMemberA,
@@ -95,6 +98,15 @@ class HassFlatmateCleaningCard extends HTMLElement {
       markUndone: attributes.service_mark_undone || "hass_flatmate_mark_cleaning_undone",
       swapWeek: attributes.service_swap_week || "hass_flatmate_swap_cleaning_week",
     };
+  }
+
+  _layout() {
+    const value = String(this._config?.layout || "interactive").toLowerCase();
+    return value === "compact" ? "compact" : "interactive";
+  }
+
+  _isCompact() {
+    return this._layout() === "compact";
   }
 
   _memberMap(members) {
@@ -305,6 +317,10 @@ class HassFlatmateCleaningCard extends HTMLElement {
   }
 
   _bindEvents(weeks, members) {
+    if (this._isCompact()) {
+      return;
+    }
+
     this._root.querySelectorAll("[data-action='mark-done']").forEach((el) => {
       el.addEventListener("click", async () => {
         await this._markDone(el.dataset.weekStart || "");
@@ -508,6 +524,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
     const selectedWeekRange = selectedWeek ? this._rowDateRange(selectedWeek) : "";
     const selectedWeekTitle = selectedWeek ? this._weekTitle(selectedWeek, 0) : "";
     const hasManualSwap = selectedWeek?.override_type === "manual_swap";
+    const compactMode = this._isCompact();
 
     const memberOptions = members
       .map((member) => {
@@ -525,9 +542,45 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
     const errorMessage = this._errorMessage ? this._escape(this._errorMessage) : "";
 
+    const compactRows = weeks
+      .map((row, index) => {
+        const status = String(row?.status || "pending");
+        const isDone = status === "done";
+        const isMissed = status === "missed";
+        const statusLabel = isDone ? "Done" : isMissed ? "Missed" : "Pending";
+
+        const assigneeName = this._escape(
+          row.assignee_name || (row.assignee_member_id ? `Member ${row.assignee_member_id}` : "Unassigned")
+        );
+        const baselineName = row.original_assignee_name
+          ? this._escape(row.original_assignee_name)
+          : (row.original_assignee_member_id ? `Member ${row.original_assignee_member_id}` : "");
+
+        let compactNote = "";
+        if (row.override_type === "manual_swap" && baselineName && baselineName !== assigneeName) {
+          compactNote = `Swap with ${baselineName}`;
+        } else if (row.override_type === "compensation") {
+          compactNote = "Compensation week";
+        } else if (isDone && row.completed_by_name) {
+          compactNote = `Done by ${this._escape(row.completed_by_name)}`;
+        } else if (isMissed) {
+          compactNote = "Not confirmed";
+        }
+
+        return `
+          <li class="compact-week-row ${row.is_current ? "current" : ""} ${isDone ? "done" : ""} ${isMissed ? "missed" : ""}">
+            <span class="compact-week">${this._escape(this._weekTitle(row, index))} • ${this._escape(this._rowDateRange(row))}</span>
+            <span class="compact-assignee">${assigneeName}</span>
+            <span class="compact-status">${statusLabel}</span>
+            <span class="compact-note">${this._escape(compactNote)}</span>
+          </li>
+        `;
+      })
+      .join("");
+
     this._root.innerHTML = `
       <ha-card>
-        <div class="card">
+        <div class="card ${compactMode ? "compact" : ""}">
           <div class="header">
             <div>
               <h2>${this._escape(this._config.title)}</h2>
@@ -538,15 +591,25 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
           <section>
             <h3>Schedule</h3>
-            <ul class="week-list">
-              ${weekRows || '<li class="empty-list">No schedule data yet</li>'}
-            </ul>
+            ${
+              compactMode
+                ? `
+                  <ul class="compact-week-list">
+                    ${compactRows || '<li class="empty-list">No schedule data yet</li>'}
+                  </ul>
+                `
+                : `
+                  <ul class="week-list">
+                    ${weekRows || '<li class="empty-list">No schedule data yet</li>'}
+                  </ul>
+                `
+            }
           </section>
 
-          ${errorMessage ? `<div class="error">${errorMessage}</div>` : ""}
+          ${!compactMode && errorMessage ? `<div class="error">${errorMessage}</div>` : ""}
         </div>
 
-        ${this._modalOpen && selectedWeek ? `
+        ${!compactMode && this._modalOpen && selectedWeek ? `
           <div class="modal-backdrop">
             <div class="modal" role="dialog" aria-modal="true">
               <div class="modal-header">
@@ -596,6 +659,11 @@ class HassFlatmateCleaningCard extends HTMLElement {
           gap: 14px;
         }
 
+        .card.compact {
+          padding: 12px;
+          gap: 10px;
+        }
+
         .header {
           display: flex;
           justify-content: space-between;
@@ -609,10 +677,18 @@ class HassFlatmateCleaningCard extends HTMLElement {
           line-height: 1.25;
         }
 
+        .card.compact .header h2 {
+          font-size: 1.05rem;
+        }
+
         .header p {
           margin: 4px 0 0;
           color: var(--secondary-text-color);
           font-size: 0.9rem;
+        }
+
+        .card.compact .header p {
+          font-size: 0.82rem;
         }
 
         .header-status {
@@ -622,6 +698,11 @@ class HassFlatmateCleaningCard extends HTMLElement {
           border: 1px solid var(--divider-color);
           text-transform: uppercase;
           letter-spacing: 0.03em;
+        }
+
+        .card.compact .header-status {
+          font-size: 0.72rem;
+          padding: 5px 8px;
         }
 
         .header-status.done {
@@ -664,6 +745,70 @@ class HassFlatmateCleaningCard extends HTMLElement {
           border: 1px solid var(--divider-color);
           border-radius: 12px;
           padding: 10px;
+        }
+
+        .compact-week-list {
+          list-style: none;
+          margin: 0;
+          padding: 0;
+          border: 1px solid var(--divider-color);
+          border-radius: 12px;
+          overflow: hidden;
+          background: var(--card-background-color);
+          display: grid;
+        }
+
+        .compact-week-row {
+          display: grid;
+          grid-template-columns: minmax(140px, 2fr) minmax(120px, 1.2fr) auto minmax(90px, 1fr);
+          gap: 8px;
+          align-items: center;
+          padding: 8px 10px;
+          border-bottom: 1px solid var(--divider-color);
+          font-size: 0.83rem;
+          line-height: 1.25;
+        }
+
+        .compact-week-row:last-child {
+          border-bottom: none;
+        }
+
+        .compact-week-row.current {
+          font-weight: 600;
+        }
+
+        .compact-week-row.done .compact-assignee {
+          text-decoration: line-through;
+        }
+
+        .compact-week {
+          color: var(--secondary-text-color);
+        }
+
+        .compact-assignee {
+          font-weight: 600;
+        }
+
+        .compact-status {
+          border: 1px solid var(--divider-color);
+          border-radius: 999px;
+          padding: 2px 8px;
+          text-transform: uppercase;
+          font-size: 0.72rem;
+          white-space: nowrap;
+        }
+
+        .compact-week-row.done .compact-status {
+          color: var(--success-color, #4caf50);
+        }
+
+        .compact-week-row.missed .compact-status {
+          color: var(--warning-color, #f57c00);
+        }
+
+        .compact-note {
+          color: var(--secondary-text-color);
+          text-align: right;
         }
 
         .week-row.current {
@@ -948,6 +1093,15 @@ class HassFlatmateCleaningCard extends HTMLElement {
           .btn {
             flex: 1 1 auto;
           }
+
+          .compact-week-row {
+            grid-template-columns: 1fr;
+            gap: 2px;
+          }
+
+          .compact-note {
+            text-align: left;
+          }
         }
       </style>
     `;
@@ -976,6 +1130,7 @@ class HassFlatmateCleaningCardEditor extends HTMLElement {
       entity: "sensor.hass_flatmate_cleaning_schedule",
       title: "Cleaning Rotation",
       weeks: 5,
+      layout: "interactive",
       ...config,
     };
     this._render();
@@ -1012,6 +1167,12 @@ class HassFlatmateCleaningCardEditor extends HTMLElement {
 
         <label for="hf-editor-weeks">Weeks shown (3-12)</label>
         <input id="hf-editor-weeks" type="number" min="3" max="12" value="${Number.parseInt(this._config.weeks, 10) || 5}" />
+
+        <label for="hf-editor-layout">Card style</label>
+        <select id="hf-editor-layout">
+          <option value="interactive" ${this._config.layout === "compact" ? "" : "selected"}>Interactive</option>
+          <option value="compact" ${this._config.layout === "compact" ? "selected" : ""}>Compact (read-only)</option>
+        </select>
       </div>
 
       <style>
@@ -1028,6 +1189,18 @@ class HassFlatmateCleaningCardEditor extends HTMLElement {
         }
 
         .editor input {
+          box-sizing: border-box;
+          width: 100%;
+          min-height: 40px;
+          border-radius: 10px;
+          border: 1px solid var(--divider-color);
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
+          font: inherit;
+          padding: 8px 10px;
+        }
+
+        .editor select {
           box-sizing: border-box;
           width: 100%;
           min-height: 40px;
@@ -1075,6 +1248,14 @@ class HassFlatmateCleaningCardEditor extends HTMLElement {
         });
       });
     }
+
+    const layoutInput = this._root.querySelector("#hf-editor-layout");
+    layoutInput?.addEventListener("change", (event) => {
+      this._emitConfig({
+        ...this._config,
+        layout: event.target.value || "interactive",
+      });
+    });
   }
 }
 
@@ -1090,7 +1271,7 @@ if (!window.customCards.some((card) => card.type === "hass-flatmate-cleaning-car
   window.customCards.push({
     type: "hass-flatmate-cleaning-card",
     name: "Hass Flatmate Cleaning Card",
-    description: "Cleaning schedule with week status, mark-done flow, and swap overrides.",
+    description: "Cleaning schedule card with interactive and compact read-only layouts.",
     preview: true,
     configurable: true,
     documentationURL: "https://github.com/gitviola/hass-flatmate#cleaning-ui-card",

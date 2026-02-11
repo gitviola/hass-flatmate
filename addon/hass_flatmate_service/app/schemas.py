@@ -112,6 +112,11 @@ class NotificationItem(BaseModel):
     message: str
 
 
+class MembersSyncResponse(BaseModel):
+    members: list[MemberResponse]
+    notifications: list[NotificationItem] = Field(default_factory=list)
+
+
 class CleaningNotificationDueResponse(BaseModel):
     notifications: list[NotificationItem]
 

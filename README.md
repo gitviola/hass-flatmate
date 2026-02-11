@@ -73,6 +73,7 @@ type: custom:hass-flatmate-cleaning-card
 entity: sensor.hass_flatmate_cleaning_schedule
 title: Weekly Cleaning
 weeks: 5
+layout: interactive
 ```
 
 Features:
@@ -81,10 +82,22 @@ Features:
 - Strike-through visual once completed
 - Mark-done action in-card
 - Swap override modal with week preview and member selectors
+- Optional `layout: compact` read-only mode for e-ink/non-touch dashboards
+- Compact mode still shows swap/compensation annotations and who is assigned
 
 In Lovelace YAML resource mode, add both resources manually as `module`:
 - `/hass_flatmate/static/hass-flatmate-shopping-card.js`
 - `/hass_flatmate/static/hass-flatmate-cleaning-card.js`
+
+Compact e-ink example:
+
+```yaml
+type: custom:hass-flatmate-cleaning-card
+entity: sensor.hass_flatmate_cleaning_schedule
+title: Cleaning (E-Ink)
+weeks: 5
+layout: compact
+```
 
 ## Distribution UI Card
 

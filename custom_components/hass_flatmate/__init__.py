@@ -416,7 +416,12 @@ async def _dispatch_notifications(
 
 async def _sync_members_from_ha(runtime: HassFlatmateRuntime, hass: HomeAssistant) -> None:
     payload = await _build_member_sync_payload(hass)
-    await runtime.api.sync_members(payload)
+    response = await runtime.api.sync_members(payload)
+    if not isinstance(response, dict):
+        return
+    notifications = response.get("notifications", [])
+    if isinstance(notifications, list) and notifications:
+        await _dispatch_notifications(hass, runtime, notifications)
 
 
 async def _handle_due_notifications(hass: HomeAssistant, runtime: HassFlatmateRuntime) -> None:

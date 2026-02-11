@@ -43,6 +43,13 @@ views:
             entity: sensor.hass_flatmate_cleaning_schedule
             title: Weekly Cleaning
             weeks: 5
+            layout: interactive
+
+          - type: custom:hass-flatmate-cleaning-card
+            entity: sensor.hass_flatmate_cleaning_schedule
+            title: Weekly Cleaning (Compact)
+            weeks: 5
+            layout: compact
 
           - type: entities
             title: Notification Test Mode

@@ -466,6 +466,132 @@ def _build_compensation_notifications(
     ]
 
 
+def _cancel_override_without_status_collision(
+    session: Session,
+    *,
+    override: CleaningOverride,
+    actor_member_id: int | None,
+) -> None:
+    existing_canceled = session.execute(
+        select(CleaningOverride).where(
+            CleaningOverride.week_start == override.week_start,
+            CleaningOverride.status == OverrideStatus.CANCELED,
+            CleaningOverride.id != override.id,
+        )
+    ).scalar_one_or_none()
+
+    if existing_canceled is not None:
+        existing_canceled.type = override.type
+        existing_canceled.source = override.source
+        existing_canceled.source_event_id = override.source_event_id
+        existing_canceled.member_from_id = override.member_from_id
+        existing_canceled.member_to_id = override.member_to_id
+        existing_canceled.created_by_member_id = actor_member_id
+        session.delete(override)
+        return
+
+    override.status = OverrideStatus.CANCELED
+
+
+def _build_inactive_member_override_notifications(
+    session: Session,
+    *,
+    override: CleaningOverride,
+    inactive_member_ids: set[int],
+) -> list[dict]:
+    inactive_names = [
+        member.display_name
+        for member_id in sorted(inactive_member_ids)
+        for member in [get_member_by_id(session, member_id)]
+        if member is not None
+    ]
+    inactive_label = ", ".join(inactive_names) if inactive_names else "a former flatmate"
+
+    if override.type == OverrideType.MANUAL_SWAP:
+        message = (
+            f"A planned cleaning swap for week {override.week_start.isoformat()} was canceled because "
+            f"{inactive_label} is no longer active in the flat."
+        )
+    else:
+        message = (
+            f"A planned cleaning compensation for week {override.week_start.isoformat()} was canceled because "
+            f"{inactive_label} is no longer active in the flat."
+        )
+
+    notifications: list[dict] = []
+    for member_id in sorted({override.member_from_id, override.member_to_id} - inactive_member_ids):
+        member = get_member_by_id(session, member_id)
+        if member is None or not member.active:
+            continue
+        notifications.append(_member_notification(member, "Weekly Cleaning Shift", message))
+
+    return notifications
+
+
+def cancel_overrides_for_inactive_members(
+    session: Session,
+    *,
+    inactive_member_ids: set[int],
+    actor_user_id: str | None = None,
+) -> list[dict]:
+    if not inactive_member_ids:
+        return []
+
+    actor_member = resolve_actor_member(session, actor_user_id)
+    overrides = session.execute(
+        select(CleaningOverride)
+        .where(
+            CleaningOverride.status == OverrideStatus.PLANNED,
+        )
+        .order_by(CleaningOverride.week_start.asc(), CleaningOverride.created_at.asc())
+    ).scalars().all()
+
+    notifications: list[dict] = []
+    affected_weeks: set[date] = set()
+
+    for override in overrides:
+        impacted_inactive = {override.member_from_id, override.member_to_id} & inactive_member_ids
+        if not impacted_inactive:
+            continue
+
+        notifications.extend(
+            _build_inactive_member_override_notifications(
+                session,
+                override=override,
+                inactive_member_ids=impacted_inactive,
+            )
+        )
+
+        _cancel_override_without_status_collision(
+            session,
+            override=override,
+            actor_member_id=actor_member.id if actor_member else None,
+        )
+        affected_weeks.add(override.week_start)
+
+        log_event(
+            session,
+            domain="cleaning",
+            action="cleaning_override_auto_canceled_member_inactive",
+            actor_member_id=actor_member.id if actor_member else None,
+            actor_user_id_raw=actor_user_id,
+            payload={
+                "week_start": override.week_start.isoformat(),
+                "override_type": override.type.value,
+                "member_from_id": override.member_from_id,
+                "member_to_id": override.member_to_id,
+                "inactive_member_ids": sorted(impacted_inactive),
+            },
+            created_at=now_utc(),
+        )
+
+    for week_start in sorted(affected_weeks):
+        ensure_assignment(session, week_start)
+
+    session.commit()
+    return notifications
+
+
 def mark_cleaning_takeover_done(
     session: Session,
     *,

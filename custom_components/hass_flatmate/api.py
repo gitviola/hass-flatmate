@@ -58,7 +58,7 @@ class HassFlatmateApiClient:
     async def get_members(self) -> list[dict[str, Any]]:
         return await self._request("GET", "/v1/members")
 
-    async def sync_members(self, members: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    async def sync_members(self, members: list[dict[str, Any]]) -> dict[str, Any] | list[dict[str, Any]]:
         return await self._request("PUT", "/v1/members/sync", json={"members": members})
 
     async def get_shopping_items(self) -> list[dict[str, Any]]:

@@ -24,6 +24,7 @@ from .schemas import (
     CleaningSwapRequest,
     FavoritesResponse,
     MemberResponse,
+    MembersSyncResponse,
     MembersSyncRequest,
     OperationResponse,
     RecentsResponse,
@@ -76,24 +77,32 @@ def get_members(session: Session = Depends(get_session)) -> list[MemberResponse]
     ]
 
 
-@app.put("/v1/members/sync", response_model=list[MemberResponse], dependencies=[Depends(require_token)])
+@app.put("/v1/members/sync", response_model=MembersSyncResponse, dependencies=[Depends(require_token)])
 def put_members_sync(
     payload: MembersSyncRequest,
     session: Session = Depends(get_session),
-) -> list[MemberResponse]:
-    rows = sync_members(session, payload.members)
+) -> MembersSyncResponse:
+    rows, deactivated_member_ids = sync_members(session, payload.members)
     cleaning.sync_rotation_members(session)
-    return [
-        MemberResponse(
-            id=row.id,
-            display_name=row.display_name,
-            ha_user_id=row.ha_user_id,
-            ha_person_entity_id=row.ha_person_entity_id,
-            notify_service=row.notify_service,
-            active=row.active,
-        )
-        for row in rows
-    ]
+    notifications = cleaning.cancel_overrides_for_inactive_members(
+        session,
+        inactive_member_ids=set(deactivated_member_ids),
+        actor_user_id=None,
+    )
+    return MembersSyncResponse(
+        members=[
+            MemberResponse(
+                id=row.id,
+                display_name=row.display_name,
+                ha_user_id=row.ha_user_id,
+                ha_person_entity_id=row.ha_person_entity_id,
+                notify_service=row.notify_service,
+                active=row.active,
+            )
+            for row in rows
+        ],
+        notifications=notifications,
+    )
 
 
 @app.get("/v1/shopping/items", response_model=list[ShoppingItemResponse], dependencies=[Depends(require_token)])

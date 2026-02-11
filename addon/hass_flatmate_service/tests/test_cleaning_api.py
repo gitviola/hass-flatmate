@@ -17,6 +17,18 @@ def _sync_members(client, headers) -> None:
     assert response.status_code == 200
 
 
+def _sync_members_without_u2(client, headers) -> dict:
+    payload = {
+        "members": [
+            {"display_name": "Alex", "ha_user_id": "u1", "notify_service": "notify.mobile_app_alex", "active": True},
+            {"display_name": "Pat", "ha_user_id": "u3", "notify_service": "notify.mobile_app_pat", "active": True},
+        ]
+    }
+    response = client.put("/v1/members/sync", headers=headers, json=payload)
+    assert response.status_code == 200
+    return response.json()
+
+
 def _iso_at(day: date, hh: int, mm: int = 0) -> str:
     return datetime.combine(day, time(hour=hh, minute=mm)).isoformat()
 
@@ -345,3 +357,52 @@ def test_schedule_can_include_previous_week(client, auth_headers) -> None:
     rows = schedule.json()["schedule"]
     starts = [date.fromisoformat(row["week_start"]) for row in rows]
     assert previous_week in starts
+
+
+def test_member_sync_removes_inactive_members_from_rotation_and_cancels_overrides(client, auth_headers) -> None:
+    _sync_members(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    week_start = date.fromisoformat(current.json()["week_start"])
+
+    swap = client.post(
+        "/v1/cleaning/overrides/swap",
+        headers=auth_headers,
+        json={
+            "week_start": week_start.isoformat(),
+            "member_a_id": 1,
+            "member_b_id": 2,
+            "actor_user_id": "u1",
+            "cancel": False,
+        },
+    )
+    assert swap.status_code == 200
+
+    sync_payload = _sync_members_without_u2(client, auth_headers)
+    members = sync_payload["members"]
+    notifications = sync_payload["notifications"]
+
+    removed = next((member for member in members if member["id"] == 2), None)
+    assert removed is not None
+    assert removed["active"] is False
+
+    assert len(notifications) == 1
+    assert notifications[0]["member_id"] == 1
+    assert "no longer active" in notifications[0]["message"]
+
+    schedule = client.get("/v1/cleaning/schedule?weeks_ahead=8", headers=auth_headers)
+    assert schedule.status_code == 200
+    rows = schedule.json()["schedule"]
+
+    current_row = next(
+        row for row in rows if date.fromisoformat(row["week_start"]) == week_start
+    )
+    assert current_row["override_type"] is None
+
+    baseline_member_ids = {
+        row["baseline_assignee_member_id"]
+        for row in rows
+        if row.get("baseline_assignee_member_id") is not None
+    }
+    assert 2 not in baseline_member_ids

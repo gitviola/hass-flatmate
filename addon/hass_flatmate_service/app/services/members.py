@@ -9,7 +9,7 @@ from ..models import Member
 from ..schemas import MemberSyncItem
 
 
-def sync_members(session: Session, items: list[MemberSyncItem]) -> list[Member]:
+def sync_members(session: Session, items: list[MemberSyncItem]) -> tuple[list[Member], list[int]]:
     """Upsert members from Home Assistant mappings."""
 
     existing = {
@@ -18,6 +18,7 @@ def sync_members(session: Session, items: list[MemberSyncItem]) -> list[Member]:
     }
 
     seen_user_ids: set[str] = set()
+    deactivated_member_ids: set[int] = set()
 
     for item in items:
         member = existing.get(item.ha_user_id) if item.ha_user_id else None
@@ -31,21 +32,27 @@ def sync_members(session: Session, items: list[MemberSyncItem]) -> list[Member]:
             )
             session.add(member)
         else:
+            was_active = bool(member.active)
             member.display_name = item.display_name.strip()
             member.ha_person_entity_id = item.ha_person_entity_id
             member.notify_service = item.notify_service
             member.active = item.active
+            if was_active and not member.active:
+                deactivated_member_ids.add(member.id)
 
         if item.ha_user_id:
             seen_user_ids.add(item.ha_user_id)
 
     for member in existing.values():
         if member.ha_user_id and member.ha_user_id not in seen_user_ids:
-            member.active = False
+            if member.active:
+                member.active = False
+                deactivated_member_ids.add(member.id)
 
     session.commit()
 
-    return session.execute(select(Member).order_by(Member.display_name.asc())).scalars().all()
+    rows = session.execute(select(Member).order_by(Member.display_name.asc())).scalars().all()
+    return rows, sorted(deactivated_member_ids)
 
 
 def resolve_actor_member(session: Session, actor_user_id: str | None) -> Member | None:

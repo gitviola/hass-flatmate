@@ -88,6 +88,8 @@ def _activity_summary(row: Mapping[str, Any], members: Mapping[int, str]) -> str
         return "A cleaning swap was created"
     if action == "cleaning_swap_canceled":
         return "A cleaning swap was canceled"
+    if action == "cleaning_override_auto_canceled_member_inactive":
+        return "A cleaning override was canceled because a flatmate left"
     return action.replace("_", " ")
 
 
