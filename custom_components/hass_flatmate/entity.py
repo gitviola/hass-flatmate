@@ -20,10 +20,11 @@ class HassFlatmateCoordinatorEntity(CoordinatorEntity):
         # Keep stable, integration-prefixed entity ids for first registration.
         unique_id = getattr(self, "_attr_unique_id", None)
         if isinstance(unique_id, str) and unique_id:
-            if unique_id.startswith(f"{DOMAIN}_"):
-                self._attr_suggested_object_id = unique_id
-            else:
-                self._attr_suggested_object_id = f"{DOMAIN}_{unique_id}"
+            object_id = unique_id if unique_id.startswith(f"{DOMAIN}_") else f"{DOMAIN}_{unique_id}"
+            # Set both explicit object_id and suggested object_id so entity ids are
+            # stable and integration-prefixed even on platforms that ignore one hint.
+            self._attr_object_id = object_id
+            self._attr_suggested_object_id = object_id
 
     @property
     def runtime(self) -> HassFlatmateRuntime:

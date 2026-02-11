@@ -18,6 +18,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
@@ -425,6 +426,44 @@ async def _register_frontend_static_assets(hass: HomeAssistant) -> None:
     data.frontend_registered = True
 
 
+async def _migrate_legacy_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Migrate old unprefixed hass_flatmate entity ids to prefixed object ids."""
+    registry = er.async_get(hass)
+    migrated = 0
+
+    for entity_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if entity_entry.platform != DOMAIN:
+            continue
+
+        unique_id = entity_entry.unique_id
+        if not isinstance(unique_id, str) or not unique_id.startswith(f"{DOMAIN}_"):
+            continue
+
+        # Legacy installs used object ids derived from entity names, i.e. without
+        # domain prefix (shopping_open_count instead of hass_flatmate_shopping_open_count).
+        legacy_object_id = unique_id[len(f"{DOMAIN}_") :]
+        current_object_id = entity_entry.entity_id.split(".", 1)[1]
+        if current_object_id != legacy_object_id:
+            continue
+
+        new_entity_id = f"{entity_entry.entity_id.split('.', 1)[0]}.{unique_id}"
+        if new_entity_id == entity_entry.entity_id:
+            continue
+
+        try:
+            registry.async_update_entity(entity_entry.entity_id, new_entity_id=new_entity_id)
+            migrated += 1
+        except ValueError:
+            _LOGGER.warning(
+                "Could not migrate entity id %s to %s (target already exists)",
+                entity_entry.entity_id,
+                new_entity_id,
+            )
+
+    if migrated:
+        _LOGGER.info("Migrated %s hass_flatmate entity id(s) to prefixed object ids", migrated)
+
+
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     del config
     _get_domain_data(hass)
@@ -484,6 +523,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = _get_domain_data(hass)
     data.entries[entry.entry_id] = runtime
 
+    await _migrate_legacy_entity_ids(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
