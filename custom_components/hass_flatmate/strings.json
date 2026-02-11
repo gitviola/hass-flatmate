@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Hass Flatmate",
-        "description": "Connect to the hass-flatmate add-on service",
+        "description": "Connect to the hass-flatmate service",
         "data": {
           "base_url": "Service base URL",
           "api_token": "API token",

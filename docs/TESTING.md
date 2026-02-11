@@ -19,6 +19,7 @@ Current suite covers:
 - Monday/Sunday notification schedule behavior
 
 CI additionally runs a Home Assistant app test build using `home-assistant/builder@2025.11.0` for `amd64` and `aarch64`.
+CI also validates custom shopping card JavaScript syntax.
 
 ## Fast feedback workflow
 

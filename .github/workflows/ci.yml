@@ -45,6 +45,21 @@ jobs:
           ./scripts/sync_app_service_src.sh
           git diff --exit-code -- apps/hass_flatmate_service/service_src
 
+  frontend-card-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      - name: Validate shopping card syntax
+        run: |
+          node --check custom_components/hass_flatmate/frontend/hass-flatmate-shopping-card.js
+
   app-build-test:
     runs-on: ubuntu-latest
     steps:

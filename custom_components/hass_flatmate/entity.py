@@ -29,6 +29,10 @@ class HassFlatmateCoordinatorEntity(CoordinatorEntity):
     def runtime(self) -> HassFlatmateRuntime:
         return self._runtime
 
+    @property
+    def config_entry(self) -> ConfigEntry:
+        return self._config_entry
+
 
 def get_runtime(config_entry: ConfigEntry, hass) -> HassFlatmateRuntime:
     return hass.data[DOMAIN].entries[config_entry.entry_id]

@@ -5,11 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 import logging
+from pathlib import Path
 import re
 from typing import Any
 
 import voluptuous as vol
 
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_TOKEN
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -23,9 +25,14 @@ from homeassistant.util import dt as dt_util
 from .api import HassFlatmateApiClient
 from .const import (
     CONF_BASE_URL,
+    CONF_NOTIFICATION_TEST_MODE,
+    CONF_NOTIFICATION_TEST_TARGET_MEMBER_ID,
     CONF_SCAN_INTERVAL,
+    DEFAULT_NOTIFICATION_TEST_MODE,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
+    FRONTEND_SHOPPING_CARD_FILENAME,
+    FRONTEND_STATIC_PATH,
     NOTIFICATION_DEDUPE_KEY,
     PLATFORMS,
     SERVICE_ADD_FAVORITE_ITEM,
@@ -58,6 +65,13 @@ def _is_loopback_base_url(value: str) -> bool:
     return normalized.startswith("http://127.0.0.1") or normalized.startswith("http://localhost")
 
 
+def _coerce_member_id(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 @dataclass
 class HassFlatmateRuntime:
     """Runtime object per config entry."""
@@ -74,10 +88,43 @@ class HassFlatmateData:
 
     entries: dict[str, HassFlatmateRuntime] = field(default_factory=dict)
     services_registered: bool = False
+    frontend_registered: bool = False
 
 
 def _normalize_name(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", value.strip().lower()).strip("_")
+
+
+def _runtime_members_by_id(runtime: HassFlatmateRuntime) -> dict[int, dict[str, Any]]:
+    result: dict[int, dict[str, Any]] = {}
+    for member in runtime.coordinator.data.get("members", []):
+        if not isinstance(member, dict):
+            continue
+        member_id = _coerce_member_id(member.get("id"))
+        if member_id is None:
+            continue
+        result[member_id] = member
+    return result
+
+
+def _runtime_notification_test_target(runtime: HassFlatmateRuntime) -> dict[str, Any] | None:
+    target_member_id = _coerce_member_id(runtime.runtime_state.get(CONF_NOTIFICATION_TEST_TARGET_MEMBER_ID))
+    if target_member_id is None:
+        return None
+
+    member = _runtime_members_by_id(runtime).get(target_member_id)
+    if member is None:
+        return None
+
+    notify_service = member.get("notify_service")
+    if not isinstance(notify_service, str) or not notify_service:
+        return None
+
+    return {
+        "member_id": target_member_id,
+        "display_name": member.get("display_name", str(target_member_id)),
+        "notify_service": notify_service,
+    }
 
 
 def _get_domain_data(hass: HomeAssistant) -> HassFlatmateData:
@@ -127,9 +174,40 @@ async def _build_member_sync_payload(hass: HomeAssistant) -> list[dict[str, Any]
     return payload
 
 
-async def _dispatch_notifications(hass: HomeAssistant, notifications: list[dict[str, Any]]) -> None:
+async def _dispatch_notifications(
+    hass: HomeAssistant,
+    runtime: HassFlatmateRuntime,
+    notifications: list[dict[str, Any]],
+) -> None:
+    test_mode_enabled = bool(runtime.runtime_state.get(CONF_NOTIFICATION_TEST_MODE, DEFAULT_NOTIFICATION_TEST_MODE))
+    test_target = _runtime_notification_test_target(runtime) if test_mode_enabled else None
+    if test_mode_enabled and test_target is None:
+        _LOGGER.warning(
+            "Notification test mode is enabled but no valid target member is configured; "
+            "suppressing %s notifications",
+            len(notifications),
+        )
+        return
+
+    members_by_id = _runtime_members_by_id(runtime)
+
     for item in notifications:
         notify_service = item.get("notify_service")
+        title = item.get("title", "Weekly Cleaning Shift")
+        message = item.get("message", "")
+
+        if test_mode_enabled and test_target is not None:
+            notify_service = test_target["notify_service"]
+            title = f"[TEST] {title}"
+
+            original_member_id = _coerce_member_id(item.get("member_id"))
+            if original_member_id is not None:
+                original_name = members_by_id.get(original_member_id, {}).get("display_name")
+                if original_name:
+                    message = f"[Intended for {original_name}] {message}"
+                else:
+                    message = f"[Intended for member {original_member_id}] {message}"
+
         if not notify_service:
             continue
 
@@ -146,8 +224,8 @@ async def _dispatch_notifications(hass: HomeAssistant, notifications: list[dict[
             domain,
             service,
             {
-                "title": item.get("title", "Weekly Cleaning Shift"),
-                "message": item.get("message", ""),
+                "title": title,
+                "message": message,
             },
             blocking=False,
         )
@@ -169,7 +247,7 @@ async def _handle_due_notifications(hass: HomeAssistant, runtime: HassFlatmateRu
     response = await runtime.api.get_due_notifications(at=now)
     notifications = response.get("notifications", [])
     if notifications:
-        await _dispatch_notifications(hass, notifications)
+        await _dispatch_notifications(hass, runtime, notifications)
 
 
 async def _register_services(hass: HomeAssistant) -> None:
@@ -235,7 +313,7 @@ async def _register_services(hass: HomeAssistant) -> None:
             cleaner_member_id=call.data[SERVICE_ATTR_CLEANER_MEMBER_ID],
             actor_user_id=call.context.user_id,
         )
-        await _dispatch_notifications(hass, response.get("notifications", []))
+        await _dispatch_notifications(hass, runtime, response.get("notifications", []))
         await runtime.coordinator.async_request_refresh()
 
     async def swap_cleaning_week(call: ServiceCall) -> None:
@@ -248,7 +326,7 @@ async def _register_services(hass: HomeAssistant) -> None:
             actor_user_id=call.context.user_id,
             cancel=call.data.get(SERVICE_ATTR_CANCEL, False),
         )
-        await _dispatch_notifications(hass, response.get("notifications", []))
+        await _dispatch_notifications(hass, runtime, response.get("notifications", []))
         await runtime.coordinator.async_request_refresh()
 
     async def sync_members(_call: ServiceCall) -> None:
@@ -322,9 +400,35 @@ async def _register_services(hass: HomeAssistant) -> None:
     data.services_registered = True
 
 
+async def _register_frontend_static_assets(hass: HomeAssistant) -> None:
+    data = _get_domain_data(hass)
+    if data.frontend_registered:
+        return
+
+    static_file = Path(__file__).parent / "frontend" / FRONTEND_SHOPPING_CARD_FILENAME
+    if not static_file.exists():
+        _LOGGER.warning(
+            "Frontend asset not found, skipping static registration: %s",
+            static_file,
+        )
+        return
+
+    await hass.http.async_register_static_paths(
+        [
+            StaticPathConfig(
+                f"{FRONTEND_STATIC_PATH}/{FRONTEND_SHOPPING_CARD_FILENAME}",
+                str(static_file),
+                False,
+            )
+        ]
+    )
+    data.frontend_registered = True
+
+
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     del config
     _get_domain_data(hass)
+    await _register_frontend_static_assets(hass)
     await _register_services(hass)
     return True
 
@@ -361,6 +465,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_config_entry_first_refresh()
 
     runtime = HassFlatmateRuntime(api=api, coordinator=coordinator)
+    runtime.runtime_state[CONF_NOTIFICATION_TEST_MODE] = bool(
+        entry.options.get(CONF_NOTIFICATION_TEST_MODE, DEFAULT_NOTIFICATION_TEST_MODE)
+    )
+    runtime.runtime_state[CONF_NOTIFICATION_TEST_TARGET_MEMBER_ID] = _coerce_member_id(
+        entry.options.get(CONF_NOTIFICATION_TEST_TARGET_MEMBER_ID)
+    )
+
     await _sync_members_from_ha(runtime, hass)
     await coordinator.async_request_refresh()
 

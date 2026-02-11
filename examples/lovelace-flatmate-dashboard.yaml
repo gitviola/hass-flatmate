@@ -1,14 +1,18 @@
+# Add this Lovelace resource first:
+# /hass_flatmate/static/hass-flatmate-shopping-card.js (type: module)
 title: Flatmate
 views:
   - title: Flatmate
     path: flatmate
     badges: []
     cards:
-      - type: entities
-        title: Shopping
-        entities:
-          - entity: sensor.hass_flatmate_shopping_open_count
-          - entity: sensor.hass_flatmate_shopping_distribution_90d
+      - type: custom:hass-flatmate-shopping-card
+        entity: sensor.hass_flatmate_shopping_data
+        title: Shared Shopping
+
+      - type: tile
+        entity: sensor.hass_flatmate_shopping_open_count
+        name: Shopping Open Items
 
       - type: picture-entity
         entity: image.hass_flatmate_shopping_distribution_90d
@@ -17,7 +21,7 @@ views:
         show_name: true
 
       - type: entities
-        title: Cleaning
+        title: Cleaning Rotation
         entities:
           - entity: sensor.hass_flatmate_cleaning_current_assignee
           - entity: sensor.hass_flatmate_cleaning_current_week_status
@@ -27,6 +31,12 @@ views:
       - type: entity
         entity: calendar.hass_flatmate_activity
         name: Flatmate Activity Calendar
+
+      - type: entities
+        title: Notification Test Mode
+        entities:
+          - entity: switch.hass_flatmate_notification_test_mode
+          - entity: select.hass_flatmate_notification_test_target
 
       - type: markdown
         title: Recent Activity

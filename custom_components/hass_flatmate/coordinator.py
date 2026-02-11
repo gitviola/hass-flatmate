@@ -33,9 +33,20 @@ class HassFlatmateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
-            members, shopping_items, shopping_stats, cleaning_current, cleaning_schedule, activity = await asyncio.gather(
+            (
+                members,
+                shopping_items,
+                shopping_recents,
+                shopping_favorites,
+                shopping_stats,
+                cleaning_current,
+                cleaning_schedule,
+                activity,
+            ) = await asyncio.gather(
                 self.api.get_members(),
                 self.api.get_shopping_items(),
+                self.api.get_recents(limit=20),
+                self.api.get_favorites(),
                 self.api.get_buy_stats(window_days=90),
                 self.api.get_cleaning_current(),
                 self.api.get_cleaning_schedule(weeks_ahead=12),
@@ -47,6 +58,8 @@ class HassFlatmateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return {
             "members": members,
             "shopping_items": shopping_items,
+            "shopping_recents": shopping_recents.get("recents", []),
+            "shopping_favorites": shopping_favorites.get("favorites", []),
             "shopping_stats": shopping_stats,
             "cleaning_current": cleaning_current,
             "cleaning_schedule": cleaning_schedule,

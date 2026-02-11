@@ -13,6 +13,7 @@ It replaces the used Flatastic features with:
 - Takeover completion with automatic compensation override
 - Home Assistant calendar activity events
 - Built-in notification scheduling (Monday + Sunday reminders)
+- Safe notification test mode (redirect all notifications to one selected user)
 
 ## One-Click Install
 
@@ -38,9 +39,38 @@ It replaces the used Flatastic features with:
 2. Set app option `api_token`.
 3. Install custom integration via HACS from this repository.
 4. Configure integration with:
-   - `base_url`: service URL (typically `http://<home-assistant-host>:8099`)
+   - `base_url`: service URL (default `http://ebc95cb1-hass-flatmate-service:8099`)
    - `api_token`: same value from app config
-5. Add entities/cards from `examples/lovelace-flatmate-dashboard.yaml`.
+5. Add Lovelace resource:
+   - URL: `/hass_flatmate/static/hass-flatmate-shopping-card.js`
+   - Type: `module`
+6. Add cards/entities from `examples/lovelace-flatmate-dashboard.yaml`.
+
+## Shopping UI Card
+
+Use the custom card in any dashboard:
+
+```yaml
+type: custom:hass-flatmate-shopping-card
+entity: sensor.hass_flatmate_shopping_data
+title: Shared Shopping
+```
+
+Features:
+- Add shopping items fast
+- Mark item done / delete item
+- Quick add from favorites and recents
+- Add/remove favorites
+
+The card uses integration services, so actor attribution stays correct.
+
+## Notification Test Mode
+
+Use these entities to test all flows without notifying everyone:
+- `switch.hass_flatmate_notification_test_mode`
+- `select.hass_flatmate_notification_test_target`
+
+When test mode is enabled, all notifications are redirected to the selected target and prefixed with `[TEST]`.
 
 ## Automated Tests
 
@@ -57,6 +87,7 @@ pytest
 CI also runs on every push/PR:
 - Backend test suite
 - Integration compile check
+- Shopping custom card JavaScript syntax check
 - Home Assistant app test build (via `home-assistant/builder`)
 - Sync guard for `apps/hass_flatmate_service/service_src`
 

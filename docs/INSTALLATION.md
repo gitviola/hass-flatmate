@@ -29,15 +29,31 @@ If install fails with GHCR `403 denied`, ensure package visibility is `public` i
 2. Install integration `Hass Flatmate`.
 3. Restart Home Assistant.
 4. Add integration via UI and configure:
-- Base URL of backend (for example `http://homeassistant.local:8099`)
+- Base URL of backend (default `http://ebc95cb1-hass-flatmate-service:8099`)
 - Same `api_token` used in app.
+
+## Add Shopping Card Resource
+
+1. Open dashboard resources.
+2. Add resource:
+- URL: `/hass_flatmate/static/hass-flatmate-shopping-card.js`
+- Type: `module`
+3. Save.
 
 ## Validate
 
 1. Call service `hass_flatmate.hass_flatmate_sync_members`.
 2. Confirm entities appear:
 - `sensor.hass_flatmate_shopping_open_count`
+- `sensor.hass_flatmate_shopping_data`
 - `sensor.hass_flatmate_shopping_distribution_90d`
 - `image.hass_flatmate_shopping_distribution_90d`
 - `sensor.hass_flatmate_cleaning_current_assignee`
 - `calendar.hass_flatmate_activity`
+
+## Safe Notification Testing
+
+1. Set `select.hass_flatmate_notification_test_target` to your member.
+2. Turn on `switch.hass_flatmate_notification_test_mode`.
+3. Run manual tests (swap/takeover/reminders).
+4. Turn off test mode before house rollout.

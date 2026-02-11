@@ -9,15 +9,22 @@ DOMAIN = "hass_flatmate"
 CONF_BASE_URL = "base_url"
 CONF_API_TOKEN = "api_token"
 CONF_SCAN_INTERVAL = "scan_interval"
+CONF_NOTIFICATION_TEST_MODE = "notification_test_mode"
+CONF_NOTIFICATION_TEST_TARGET_MEMBER_ID = "notification_test_target_member_id"
 
-DEFAULT_BASE_URL = "http://127.0.0.1:8099"
+DEFAULT_BASE_URL = "http://ebc95cb1-hass-flatmate-service:8099"
 DEFAULT_SCAN_INTERVAL = 30
+DEFAULT_NOTIFICATION_TEST_MODE = False
+FRONTEND_STATIC_PATH = "/hass_flatmate/static"
+FRONTEND_SHOPPING_CARD_FILENAME = "hass-flatmate-shopping-card.js"
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
     Platform.BUTTON,
     Platform.IMAGE,
     Platform.CALENDAR,
+    Platform.SWITCH,
+    Platform.SELECT,
 ]
 
 SERVICE_ADD_SHOPPING_ITEM = "hass_flatmate_add_shopping_item"

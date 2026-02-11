@@ -46,7 +46,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="hass-flatmate-service", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="hass-flatmate-service", version="0.1.5", lifespan=lifespan)
 
 
 def require_token(x_flatmate_token: str | None = Header(default=None)) -> None:

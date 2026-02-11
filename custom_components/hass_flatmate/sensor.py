@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity
@@ -10,7 +11,16 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
+from .const import (
+    DOMAIN,
+    SERVICE_ADD_FAVORITE_ITEM,
+    SERVICE_ADD_SHOPPING_ITEM,
+    SERVICE_COMPLETE_SHOPPING_ITEM,
+    SERVICE_DELETE_SHOPPING_ITEM,
+    SERVICE_DELETE_FAVORITE_ITEM,
+)
 from .entity import HassFlatmateCoordinatorEntity, get_runtime
 
 
@@ -52,6 +62,87 @@ class ShoppingDistributionSensor(HassFlatmateCoordinatorEntity, SensorEntity):
             "unknown_excluded_count": int(stats.get("unknown_excluded_count", 0)),
             "distribution": stats.get("distribution", []),
             "svg_render_version": stats.get("svg_render_version", ""),
+        }
+
+
+class ShoppingDataSensor(HassFlatmateCoordinatorEntity, SensorEntity):
+    _attr_name = "Shopping Data"
+    _attr_unique_id = "hass_flatmate_shopping_data"
+    _attr_icon = "mdi:format-list-bulleted-square"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def native_value(self) -> int:
+        items = self.coordinator.data.get("shopping_items", [])
+        return sum(1 for item in items if item.get("status") == "open")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        members = _member_lookup(self.coordinator.data)
+        open_items: list[dict[str, Any]] = []
+        now = dt_util.now()
+
+        for item in self.coordinator.data.get("shopping_items", []):
+            if item.get("status") != "open":
+                continue
+
+            added_at_raw = item.get("added_at")
+            added_at = dt_util.parse_datetime(str(added_at_raw)) if added_at_raw else None
+            age_days = None
+            if isinstance(added_at, datetime):
+                try:
+                    age_days = max(0, (now - added_at).days)
+                except TypeError:
+                    age_days = None
+
+            added_by_member_id = item.get("added_by_member_id")
+            added_by_name = None
+            if added_by_member_id is not None:
+                try:
+                    added_by_name = members.get(int(added_by_member_id))
+                except (TypeError, ValueError):
+                    added_by_name = None
+
+            open_items.append(
+                {
+                    "id": item.get("id"),
+                    "name": item.get("name"),
+                    "added_at": added_at_raw,
+                    "added_by_member_id": added_by_member_id,
+                    "added_by_name": added_by_name,
+                    "age_days": age_days,
+                }
+            )
+
+        open_items.sort(
+            key=lambda row: (
+                -int(row.get("age_days") or 0),
+                str(row.get("name") or "").lower(),
+            )
+        )
+
+        favorites = [
+            {
+                "id": item.get("id"),
+                "name": item.get("name"),
+            }
+            for item in self.coordinator.data.get("shopping_favorites", [])
+            if item.get("id") is not None and item.get("name")
+        ]
+        favorites.sort(key=lambda row: str(row["name"]).lower())
+
+        recents = [str(item) for item in self.coordinator.data.get("shopping_recents", []) if item]
+
+        return {
+            "open_items": open_items,
+            "favorites": favorites,
+            "recents": recents,
+            "service_domain": DOMAIN,
+            "service_add_item": SERVICE_ADD_SHOPPING_ITEM,
+            "service_complete_item": SERVICE_COMPLETE_SHOPPING_ITEM,
+            "service_delete_item": SERVICE_DELETE_SHOPPING_ITEM,
+            "service_add_favorite": SERVICE_ADD_FAVORITE_ITEM,
+            "service_delete_favorite": SERVICE_DELETE_FAVORITE_ITEM,
         }
 
 
@@ -157,6 +248,7 @@ async def async_setup_entry(
         [
             ShoppingOpenCountSensor(entry, runtime),
             ShoppingDistributionSensor(entry, runtime),
+            ShoppingDataSensor(entry, runtime),
             CleaningCurrentAssigneeSensor(entry, runtime),
             CleaningCurrentStatusSensor(entry, runtime),
             CleaningNextAssigneeSensor(entry, runtime),

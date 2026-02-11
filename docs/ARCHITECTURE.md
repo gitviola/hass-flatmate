@@ -11,6 +11,8 @@
 - Exposes HA services/entities/image/calendar.
 - Syncs HA users/persons into service members.
 - Dispatches notifications through HA notify services.
+- Hosts static frontend asset for custom shopping card.
+- Provides notification test mode switch/select to redirect notifications safely.
 
 ## Data Ownership
 
