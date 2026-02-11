@@ -18,5 +18,5 @@ Backend API for the `hass_flatmate` custom integration.
 - SQLite DB at `/config/hass_flatmate_service/hass_flatmate.db`
 
 ## Images
-- `ghcr.io/ms/hass-flatmate-service-amd64`
-- `ghcr.io/ms/hass-flatmate-service-aarch64`
+- `ghcr.io/gitviola/hass-flatmate-service-amd64`
+- `ghcr.io/gitviola/hass-flatmate-service-aarch64`

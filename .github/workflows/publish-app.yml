@@ -60,5 +60,5 @@ jobs:
             --amd64 \
             --aarch64 \
             --target ./apps/hass_flatmate_service \
-            --image ghcr.io/ms/hass-flatmate-service-{arch} \
+            --image ghcr.io/gitviola/hass-flatmate-service-{arch} \
             --version ${{ steps.version.outputs.version }}

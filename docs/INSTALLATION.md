@@ -9,8 +9,8 @@
 4. Start app.
 
 Prebuilt images are pulled from:
-- `ghcr.io/ms/hass-flatmate-service-amd64`
-- `ghcr.io/ms/hass-flatmate-service-aarch64`
+- `ghcr.io/gitviola/hass-flatmate-service-amd64`
+- `ghcr.io/gitviola/hass-flatmate-service-aarch64`
 
 ## Install HACS Integration
 
