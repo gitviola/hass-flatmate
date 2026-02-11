@@ -13,6 +13,7 @@ class HassFlatmateDistributionCard extends HTMLElement {
     return {
       entity: "sensor.hass_flatmate_shopping_distribution_90d",
       title: "Shopping Distribution",
+      layout: "bars",
     };
   }
 
@@ -22,6 +23,7 @@ class HassFlatmateDistributionCard extends HTMLElement {
     }
     this._config = {
       title: "Shopping Distribution",
+      layout: "bars",
       ...config,
     };
     this._stateSnapshot = "";
@@ -29,7 +31,7 @@ class HassFlatmateDistributionCard extends HTMLElement {
   }
 
   getCardSize() {
-    return 6;
+    return this._layout() === "compact" ? 3 : 6;
   }
 
   set hass(hass) {
@@ -59,7 +61,13 @@ class HassFlatmateDistributionCard extends HTMLElement {
       unknown_excluded_count: attrs.unknown_excluded_count,
       window_days: attrs.window_days,
       distribution: attrs.distribution,
+      layout: this._layout(),
     });
+  }
+
+  _layout() {
+    const raw = String(this._config?.layout || "bars").toLowerCase();
+    return raw === "compact" ? "compact" : "bars";
   }
 
   _escape(value) {
@@ -96,9 +104,8 @@ class HassFlatmateDistributionCard extends HTMLElement {
     const distribution = rawDistribution.map((row) => {
       const name = String(row?.name || "Unknown");
       const count = Math.max(0, Math.round(this._number(row?.count, 0)));
-      const percent = Math.max(0, Math.min(100, this._number(row?.percent, 0)));
       const memberId = row?.member_id;
-      return { name, count, percent, memberId };
+      return { name, count, memberId };
     });
 
     const totalCompleted = Math.max(
@@ -129,19 +136,17 @@ class HassFlatmateDistributionCard extends HTMLElement {
 
     const rowsHtml = distribution
       .map((row, idx) => {
-        const percentFromCount = totalCompleted > 0 ? (row.count / totalCompleted) * 100 : 0;
-        const effectivePercent = totalCompleted > 0 ? Math.max(row.percent, percentFromCount) : 0;
+        const relativeWidth = maxCount > 0 ? (row.count / maxCount) * 100 : 0;
         const barWidth = row.count > 0
-          ? Math.max(6, Math.min(100, effectivePercent))
+          ? Math.max(6, Math.min(100, relativeWidth))
           : 0;
-        const countRatio = row.count / maxCount;
         const accent = palette[idx % palette.length];
 
         return `
-          <li class="row" style="--accent:${accent}; --bar-width:${barWidth}%; --count-ratio:${countRatio};">
+          <li class="row" style="--accent:${accent}; --bar-width:${barWidth}%;">
             <div class="row-head">
               <span class="name">${this._escape(row.name)}</span>
-              <span class="metrics">${row.count} • ${effectivePercent.toFixed(totalCompleted > 0 ? 1 : 0)}%</span>
+              <span class="metrics">${row.count} purchase${row.count === 1 ? "" : "s"}</span>
             </div>
             <div class="track">
               <div class="fill"></div>
@@ -158,6 +163,36 @@ class HassFlatmateDistributionCard extends HTMLElement {
     const unknownBadge = unknownExcluded > 0
       ? `<span class="chip">Unknown excluded: ${unknownExcluded}</span>`
       : "";
+    const metaRowHtml = unknownBadge
+      ? `<div class="meta-row">${unknownBadge}</div>`
+      : "";
+
+    const compactRowsHtml = distribution
+      .map(
+        (row) => `
+          <li class="compact-cell">
+            <span class="compact-name">${this._escape(row.name)}</span>
+            <span class="compact-count">${row.count}</span>
+          </li>
+        `
+      )
+      .join("");
+
+    const layout = this._layout();
+    const compactList = compactRowsHtml || '<li class="empty-list compact-empty">No flatmates synced yet.</li>';
+    const bodyHtml = layout === "compact"
+      ? `
+          <div class="compact-wrap">
+            <ul class="compact-list">
+              ${compactList}
+            </ul>
+          </div>
+        `
+      : `
+          <ul class="list">
+            ${rowsHtml || emptyState}
+          </ul>
+        `;
 
     this._root.innerHTML = `
       <ha-card>
@@ -165,19 +200,14 @@ class HassFlatmateDistributionCard extends HTMLElement {
           <div class="header">
             <div>
               <h2>${this._escape(this._config.title)}</h2>
-              <p>Last ${windowDays} days</p>
+              <p>Based on data of the last ${windowDays} days</p>
             </div>
-            <span class="total-chip">${totalCompleted} done</span>
+            <span class="total-chip">${totalCompleted} purchase${totalCompleted === 1 ? "" : "s"}</span>
           </div>
 
-          <div class="meta-row">
-            <span class="chip">Window: ${windowDays}d</span>
-            ${unknownBadge}
-          </div>
+          ${metaRowHtml}
 
-          <ul class="list">
-            ${rowsHtml || emptyState}
-          </ul>
+          ${bodyHtml}
         </div>
       </ha-card>
 
@@ -289,6 +319,54 @@ class HassFlatmateDistributionCard extends HTMLElement {
           color: var(--secondary-text-color);
           font-style: italic;
         }
+
+        .compact-wrap {
+          overflow-x: auto;
+          scrollbar-width: thin;
+        }
+
+        .compact-list {
+          list-style: none;
+          margin: 0;
+          padding: 0;
+          border: 1px solid var(--divider-color);
+          border-radius: 10px;
+          overflow: hidden;
+          background: var(--card-background-color);
+          display: grid;
+          grid-auto-flow: column;
+          grid-auto-columns: minmax(110px, 1fr);
+          min-width: max-content;
+        }
+
+        .compact-cell {
+          display: grid;
+          gap: 4px;
+          text-align: center;
+          padding: 10px 12px;
+          border-right: 1px solid var(--divider-color);
+        }
+
+        .compact-cell:last-child {
+          border-right: none;
+        }
+
+        .compact-name {
+          font-weight: 600;
+          line-height: 1.1;
+          font-size: 0.95rem;
+        }
+
+        .compact-count {
+          color: var(--secondary-text-color);
+          line-height: 1.1;
+          font-size: 0.9rem;
+        }
+
+        .compact-empty {
+          padding: 10px 12px;
+          min-width: 220px;
+        }
       </style>
     `;
   }
@@ -304,6 +382,7 @@ class HassFlatmateDistributionCardEditor extends HTMLElement {
     this._config = {
       entity: "sensor.hass_flatmate_shopping_distribution_90d",
       title: "Shopping Distribution",
+      layout: "bars",
       ...config,
     };
     this._render();
@@ -337,6 +416,12 @@ class HassFlatmateDistributionCardEditor extends HTMLElement {
 
         <label for="hf-editor-entity">Distribution entity</label>
         <ha-entity-picker id="hf-editor-entity"></ha-entity-picker>
+
+        <label for="hf-editor-layout">Layout style</label>
+        <select id="hf-editor-layout">
+          <option value="bars" ${this._config.layout === "compact" ? "" : "selected"}>Bars</option>
+          <option value="compact" ${this._config.layout === "compact" ? "selected" : ""}>Compact boxes</option>
+        </select>
       </div>
 
       <style>
@@ -353,6 +438,18 @@ class HassFlatmateDistributionCardEditor extends HTMLElement {
         }
 
         .editor input {
+          box-sizing: border-box;
+          width: 100%;
+          min-height: 40px;
+          border-radius: 10px;
+          border: 1px solid var(--divider-color);
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
+          font: inherit;
+          padding: 8px 10px;
+        }
+
+        .editor select {
           box-sizing: border-box;
           width: 100%;
           min-height: 40px;
@@ -390,6 +487,14 @@ class HassFlatmateDistributionCardEditor extends HTMLElement {
         });
       });
     }
+
+    const layoutPicker = this._root.querySelector("#hf-editor-layout");
+    layoutPicker?.addEventListener("change", (event) => {
+      this._emitConfig({
+        ...this._config,
+        layout: event.target.value || "bars",
+      });
+    });
   }
 }
 
@@ -405,7 +510,7 @@ if (!window.customCards.some((card) => card.type === "hass-flatmate-distribution
   window.customCards.push({
     type: "hass-flatmate-distribution-card",
     name: "Hass Flatmate Distribution Card",
-    description: "Shopping fairness bars for all flatmates without relying on SVG image cards.",
+    description: "Shopping fairness card with bars or compact single-row boxes.",
     preview: true,
     configurable: true,
     documentationURL: "https://github.com/gitviola/hass-flatmate#distribution-ui-card",

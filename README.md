@@ -94,15 +94,27 @@ Use the dedicated distribution card instead of the SVG image entity card:
 type: custom:hass-flatmate-distribution-card
 entity: sensor.hass_flatmate_shopping_distribution_90d
 title: Shopping Distribution (90d)
+layout: bars
 ```
 
 Features:
-- Stable native bar-chart rendering in the card
+- Stable native rendering in two styles:
+  - `layout: bars` (default)
+  - `layout: compact` (single-row boxes, e-ink friendly)
 - Shows all flatmates from distribution payload (including zero-count members)
-- Total completed and unknown-excluded context badges
+- Uses purchase wording (`N purchases`) and last-90-days context text
 
 In Lovelace YAML resource mode, also add:
 - `/hass_flatmate/static/hass-flatmate-distribution-card.js`
+
+Compact example:
+
+```yaml
+type: custom:hass-flatmate-distribution-card
+entity: sensor.hass_flatmate_shopping_distribution_90d
+title: Shopping Distribution (Compact)
+layout: compact
+```
 
 ## Notification Test Mode
 

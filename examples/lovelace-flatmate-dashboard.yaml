@@ -1,5 +1,6 @@
 # Resources `/hass_flatmate/static/hass-flatmate-shopping-card.js` and
-# `/hass_flatmate/static/hass-flatmate-cleaning-card.js` are auto-added in
+# `/hass_flatmate/static/hass-flatmate-cleaning-card.js` and
+# `/hass_flatmate/static/hass-flatmate-distribution-card.js` are auto-added in
 # Lovelace storage mode. Add them manually only if you use YAML resources mode.
 title: Flatmate
 views:
@@ -25,6 +26,12 @@ views:
           - type: custom:hass-flatmate-distribution-card
             entity: sensor.hass_flatmate_shopping_distribution_90d
             title: Shopping Distribution (90d)
+            layout: bars
+
+          - type: custom:hass-flatmate-distribution-card
+            entity: sensor.hass_flatmate_shopping_distribution_90d
+            title: Shopping Distribution (Compact)
+            layout: compact
 
       - type: grid
         cards:

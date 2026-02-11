@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+- Distribution card now supports `layout: compact` for a single-row boxed style and keeps `layout: bars` as default.
+- Distribution card wording updated to purchases (`N purchases`) with subtitle `Based on data of the last 90 days`.
+- Removed percentage labels and `Window: 90d` chip from distribution card UI.
+
 ## [0.1.11] - 2026-02-11
 
 ### Fixed

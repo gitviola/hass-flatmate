@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Distribution custom card now supports two layouts via config:
+  - `layout: bars` (default app-style bars)
+  - `layout: compact` (single-row boxed layout for compact/e-ink dashboards)
+- Distribution card text updated to purchase-focused wording:
+  - `N purchases` instead of `N done`
+  - `Based on data of the last 90 days` subtitle
+  - Removed explicit `Window: 90d` chip
+- Bar layout no longer shows percentage labels.
+
 ## [0.1.11] - 2026-02-11
 
 ### Fixed
