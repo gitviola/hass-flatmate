@@ -17,9 +17,7 @@
 - `api_token`: shared token used by integration.
 4. Start app.
 
-Prebuilt images are pulled from:
-- `ghcr.io/gitviola/hass-flatmate-service-amd64`
-- `ghcr.io/gitviola/hass-flatmate-service-aarch64`
+The app is built locally from this repository Dockerfile during installation/update.
 
 ## Install HACS Integration
 

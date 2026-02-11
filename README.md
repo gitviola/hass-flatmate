@@ -42,6 +42,8 @@ It replaces the used Flatastic features with:
    - `api_token`: same value from app config
 5. Add entities/cards from `examples/lovelace-flatmate-dashboard.yaml`.
 
+Note: The app currently builds locally from this repository Dockerfile at install time (no GHCR pull required).
+
 ## Automated Tests
 
 Backend tests run locally without Home Assistant:
@@ -68,7 +70,7 @@ App images are published automatically to GHCR by GitHub Actions:
 - Registry image: `ghcr.io/gitviola/hass-flatmate-service-{arch}`
 - Architectures: `amd64`, `aarch64`
 
-Release/tag version must match `apps/hass_flatmate_service/config.yaml` `version`.
+This is optional distribution infrastructure; Home Assistant app installs from this repository do not require GHCR images.
 
 ## Syncing App Build Source
 
