@@ -167,10 +167,27 @@ class HassFlatmateDistributionCard extends HTMLElement {
       ? `<div class="meta-row">${unknownBadge}</div>`
       : "";
 
+    const compactShares = (() => {
+      const memberCount = distribution.length;
+      if (memberCount === 0) {
+        return [];
+      }
+      const minShare = Math.max(4, Math.min(10, 36 / memberCount));
+      const rawShares = distribution.map((item) => {
+        if (totalCompleted <= 0) {
+          return 100 / memberCount;
+        }
+        return (item.count / totalCompleted) * 100;
+      });
+      const flooredShares = rawShares.map((share) => Math.max(minShare, share));
+      const flooredTotal = flooredShares.reduce((sum, share) => sum + share, 0) || 1;
+      return flooredShares.map((share) => (share / flooredTotal) * 100);
+    })();
+
     const compactRowsHtml = distribution
       .map(
-        (row) => `
-          <li class="compact-cell">
+        (row, idx) => `
+          <li class="compact-cell" style="--compact-share:${compactShares[idx] || 0};">
             <span class="compact-name">${this._escape(row.name)}</span>
             <span class="compact-count">${row.count}</span>
           </li>
@@ -321,8 +338,7 @@ class HassFlatmateDistributionCard extends HTMLElement {
         }
 
         .compact-wrap {
-          overflow-x: auto;
-          scrollbar-width: thin;
+          overflow: hidden;
         }
 
         .compact-list {
@@ -333,17 +349,17 @@ class HassFlatmateDistributionCard extends HTMLElement {
           border-radius: 10px;
           overflow: hidden;
           background: var(--card-background-color);
-          display: grid;
-          grid-auto-flow: column;
-          grid-auto-columns: minmax(110px, 1fr);
-          min-width: max-content;
+          display: flex;
+          width: 100%;
         }
 
         .compact-cell {
+          flex: var(--compact-share, 1) 1 0;
+          min-width: 0;
           display: grid;
           gap: 4px;
           text-align: center;
-          padding: 10px 12px;
+          padding: 10px 6px;
           border-right: 1px solid var(--divider-color);
         }
 
@@ -354,18 +370,20 @@ class HassFlatmateDistributionCard extends HTMLElement {
         .compact-name {
           font-weight: 600;
           line-height: 1.1;
-          font-size: 0.95rem;
+          font-size: clamp(0.68rem, 1.8vw, 0.95rem);
+          white-space: normal;
+          word-break: break-word;
+          overflow-wrap: anywhere;
         }
 
         .compact-count {
           color: var(--secondary-text-color);
           line-height: 1.1;
-          font-size: 0.9rem;
+          font-size: clamp(0.66rem, 1.7vw, 0.9rem);
         }
 
         .compact-empty {
           padding: 10px 12px;
-          min-width: 220px;
         }
       </style>
     `;
