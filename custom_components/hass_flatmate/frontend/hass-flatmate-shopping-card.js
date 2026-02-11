@@ -5,6 +5,7 @@ class HassFlatmateShoppingCard extends HTMLElement {
     this._draftName = "";
     this._busy = false;
     this._errorMessage = "";
+    this._stateSnapshot = "";
   }
 
   static async getConfigElement() {
@@ -26,6 +27,7 @@ class HassFlatmateShoppingCard extends HTMLElement {
       title: "Shopping List",
       ...config,
     };
+    this._stateSnapshot = "";
     this._render();
   }
 
@@ -34,8 +36,39 @@ class HassFlatmateShoppingCard extends HTMLElement {
   }
 
   set hass(hass) {
+    const nextSnapshot = this._buildStateSnapshot(hass);
+    const inputIsFocused = this._root?.activeElement?.id === "hf-item-input";
     this._hass = hass;
-    this._render();
+    if (!this._config) {
+      return;
+    }
+    if (inputIsFocused && nextSnapshot === this._stateSnapshot) {
+      return;
+    }
+    if (nextSnapshot !== this._stateSnapshot) {
+      this._stateSnapshot = nextSnapshot;
+      this._render();
+    }
+  }
+
+  _buildStateSnapshot(hass) {
+    if (!hass || !this._config?.entity) {
+      return "";
+    }
+    const stateObj = hass.states[this._config.entity];
+    if (!stateObj) {
+      return "missing";
+    }
+    const attrs = stateObj.attributes || {};
+    return JSON.stringify({
+      state: stateObj.state,
+      open_items: attrs.open_items || [],
+      suggestions: attrs.suggestions || [],
+      service_domain: attrs.service_domain || "",
+      service_add_item: attrs.service_add_item || "",
+      service_complete_item: attrs.service_complete_item || "",
+      service_delete_item: attrs.service_delete_item || "",
+    });
   }
 
   _escape(value) {
@@ -169,13 +202,21 @@ class HassFlatmateShoppingCard extends HTMLElement {
   _bindEvents() {
     const form = this._root.querySelector("#hf-add-form");
     const input = this._root.querySelector("#hf-item-input");
+    const stopBubble = (event) => event.stopPropagation();
 
     input?.addEventListener("input", (event) => {
       this._draftName = event.target.value;
     });
-    input?.addEventListener("click", (event) => event.stopPropagation());
-    input?.addEventListener("focus", (event) => event.stopPropagation());
-    input?.addEventListener("keydown", (event) => event.stopPropagation());
+    input?.addEventListener("click", stopBubble);
+    input?.addEventListener("focus", stopBubble);
+    input?.addEventListener("mousedown", stopBubble);
+    input?.addEventListener("pointerdown", stopBubble);
+    input?.addEventListener("keydown", stopBubble);
+    input?.addEventListener("keyup", stopBubble);
+    input?.addEventListener("keypress", stopBubble);
+    form?.addEventListener("click", stopBubble);
+    form?.addEventListener("mousedown", stopBubble);
+    form?.addEventListener("pointerdown", stopBubble);
 
     form?.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -216,25 +257,51 @@ class HassFlatmateShoppingCard extends HTMLElement {
       return;
     }
 
+    const activeElement = this._root.activeElement;
+    const shouldRestoreInputFocus = activeElement?.id === "hf-item-input";
+    const selectionStart = shouldRestoreInputFocus ? activeElement.selectionStart : null;
+    const selectionEnd = shouldRestoreInputFocus ? activeElement.selectionEnd : null;
+
     const attrs = this._stateObj.attributes || {};
     const openItems = Array.isArray(attrs.open_items) ? attrs.open_items : [];
-    const recents = Array.isArray(attrs.suggestions) ? attrs.suggestions : [];
+    const rawRecents = Array.isArray(attrs.suggestions) ? attrs.suggestions : [];
+    const openNameSet = new Set(
+      openItems
+        .map((item) => String(item?.name || "").trim().toLowerCase())
+        .filter((name) => name.length > 0)
+    );
+    const seenRecentNames = new Set();
+    const recents = rawRecents
+      .map((name) => String(name || "").trim())
+      .filter((name) => name.length > 0)
+      .filter((name) => {
+        const key = name.toLowerCase();
+        if (seenRecentNames.has(key)) {
+          return false;
+        }
+        seenRecentNames.add(key);
+        return true;
+      })
+      .filter((name) => !openNameSet.has(name.toLowerCase()));
     const openCount = Number.parseInt(this._stateObj.state, 10) || openItems.length;
 
     const itemRows = openItems
       .map((item) => {
         const id = Number(item.id);
-        const name = this._escape(item.name);
+        const itemName = String(item.name || "");
+        const name = this._escape(itemName);
         const relative = this._relativeAdded(item.added_at);
         const addedBy = item.added_by_name ? ` by ${this._escape(item.added_by_name)}` : "";
         return `
           <li class="item-row">
-            <button class="todo-check" type="button" data-action="complete-item" data-item-id="${id}" title="Mark as bought" ${this._busy ? "disabled" : ""}><ha-icon icon="mdi:checkbox-blank-circle-outline"></ha-icon></button>
             <div class="item-main">
               <div class="item-name">${name}</div>
               <div class="item-meta">${this._escape(relative)}${addedBy}</div>
             </div>
-            <button class="todo-delete" type="button" data-action="delete-item" data-item-id="${id}" data-item-name="${name}" title="Remove item" ${this._busy ? "disabled" : ""}><ha-icon icon="mdi:trash-can-outline"></ha-icon></button>
+            <div class="item-actions">
+              <button class="todo-check" type="button" data-action="complete-item" data-item-id="${id}" title="Mark as bought" aria-label="Mark ${name} as bought" ${this._busy ? "disabled" : ""}><ha-icon icon="mdi:check-circle-outline"></ha-icon></button>
+              <button class="todo-delete" type="button" data-action="delete-item" data-item-id="${id}" data-item-name="${name}" title="Remove item" aria-label="Remove ${name} from shopping list" ${this._busy ? "disabled" : ""}><ha-icon icon="mdi:trash-can-outline"></ha-icon></button>
+            </div>
           </li>
         `;
       })
@@ -328,12 +395,18 @@ class HassFlatmateShoppingCard extends HTMLElement {
 
         .item-row {
           display: grid;
-          grid-template-columns: auto 1fr auto;
+          grid-template-columns: 1fr auto;
           gap: 10px;
           align-items: center;
           border: 1px solid var(--divider-color);
           border-radius: 12px;
           padding: 10px;
+        }
+
+        .item-actions {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
         }
 
         .item-main {
@@ -371,19 +444,29 @@ class HassFlatmateShoppingCard extends HTMLElement {
           min-height: 34px;
           line-height: 0;
           color: var(--success-color, #4caf50);
+          border-color: color-mix(in srgb, var(--success-color, #4caf50) 45%, var(--divider-color));
+          background: color-mix(in srgb, var(--success-color, #4caf50) 14%, var(--card-background-color));
         }
 
         .todo-delete {
           min-width: 34px;
           min-height: 34px;
-          line-height: 1;
+          line-height: 0;
+          color: var(--secondary-text-color);
+          border-color: transparent;
+          background: transparent;
         }
 
         .todo-check:hover,
-        .todo-delete:hover,
         .add-btn:hover,
         .chip:hover {
           border-color: var(--primary-color);
+        }
+
+        .todo-delete:hover {
+          border-color: var(--divider-color);
+          color: var(--primary-text-color);
+          background: color-mix(in srgb, var(--divider-color) 20%, transparent);
         }
 
         .add-row {
@@ -436,15 +519,6 @@ class HassFlatmateShoppingCard extends HTMLElement {
         }
 
         @media (max-width: 700px) {
-          .item-row {
-            grid-template-columns: auto 1fr;
-          }
-
-          .todo-delete {
-            grid-column: 1 / -1;
-            justify-self: end;
-          }
-
           .add-row {
             grid-template-columns: 1fr;
           }
@@ -453,6 +527,18 @@ class HassFlatmateShoppingCard extends HTMLElement {
     `;
 
     this._bindEvents();
+
+    if (shouldRestoreInputFocus) {
+      const nextInput = this._root.querySelector("#hf-item-input");
+      if (nextInput) {
+        nextInput.focus({ preventScroll: true });
+        if (selectionStart !== null && selectionEnd !== null) {
+          try {
+            nextInput.setSelectionRange(selectionStart, selectionEnd);
+          } catch (_error) {}
+        }
+      }
+    }
   }
 }
 
