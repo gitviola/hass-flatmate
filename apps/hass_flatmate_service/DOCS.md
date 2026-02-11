@@ -17,6 +17,6 @@ Backend API for the `hass_flatmate` custom integration.
 ## Storage
 - SQLite DB at `/config/hass_flatmate_service/hass_flatmate.db`
 
-## Build mode
-- Built locally by Home Assistant Supervisor from this repository Dockerfile.
-- GHCR publishing workflow exists for optional external distribution.
+## Images
+- `ghcr.io/gitviola/hass-flatmate-service-amd64`
+- `ghcr.io/gitviola/hass-flatmate-service-aarch64`

@@ -3,6 +3,9 @@ name: Publish App Images
 on:
   release:
     types: [published]
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       version:
@@ -27,6 +30,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "release" ]; then
             raw="${{ github.event.release.tag_name }}"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            raw="${{ github.ref_name }}"
           else
             raw="${{ inputs.version }}"
           fi
@@ -62,3 +67,15 @@ jobs:
             --target ./apps/hass_flatmate_service \
             --image ghcr.io/gitviola/hass-flatmate-service-{arch} \
             --version ${{ steps.version.outputs.version }}
+
+      - name: Attempt to set package visibility public
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for pkg in hass-flatmate-service-amd64 hass-flatmate-service-aarch64; do
+            gh api --method PATCH \
+              -H "Accept: application/vnd.github+json" \
+              "/user/packages/container/${pkg}/visibility" \
+              -f visibility=public || true
+          done
