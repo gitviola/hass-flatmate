@@ -13,6 +13,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import HassFlatmateApiClient, HassFlatmateApiError
 from .const import CONF_BASE_URL, CONF_SCAN_INTERVAL, DEFAULT_BASE_URL, DEFAULT_SCAN_INTERVAL, DOMAIN
+from .discovery import async_discover_service_base_url
 
 
 class HassFlatmateConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -22,6 +23,8 @@ class HassFlatmateConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
+        discovered_base_url = await async_discover_service_base_url(self.hass)
+        suggested_base_url = discovered_base_url or DEFAULT_BASE_URL
 
         if user_input is not None:
             await self.async_set_unique_id(user_input[CONF_BASE_URL].strip().lower())
@@ -52,7 +55,10 @@ class HassFlatmateConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="user",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_BASE_URL, default=DEFAULT_BASE_URL): str,
+                    vol.Required(
+                        CONF_BASE_URL,
+                        default=user_input[CONF_BASE_URL] if user_input else suggested_base_url,
+                    ): str,
                     vol.Required(CONF_API_TOKEN): str,
                     vol.Required(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.All(
                         vol.Coerce(int), vol.Range(min=10, max=600)

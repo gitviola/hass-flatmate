@@ -48,8 +48,14 @@ from .const import (
     SERVICE_SYNC_MEMBERS,
 )
 from .coordinator import HassFlatmateCoordinator
+from .discovery import async_discover_service_base_url
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _is_loopback_base_url(value: str) -> bool:
+    normalized = value.strip().lower()
+    return normalized.startswith("http://127.0.0.1") or normalized.startswith("http://localhost")
 
 
 @dataclass
@@ -324,10 +330,26 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    entry_base_url = entry.data[CONF_BASE_URL]
+    resolved_base_url = entry_base_url
+    if _is_loopback_base_url(entry_base_url):
+        discovered_base_url = await async_discover_service_base_url(hass)
+        if discovered_base_url:
+            resolved_base_url = discovered_base_url
+            if discovered_base_url != entry_base_url:
+                hass.config_entries.async_update_entry(
+                    entry,
+                    data={**entry.data, CONF_BASE_URL: discovered_base_url},
+                )
+                _LOGGER.info(
+                    "Updated hass_flatmate base_url from loopback to discovered app URL: %s",
+                    discovered_base_url,
+                )
+
     session = async_get_clientsession(hass)
     api = HassFlatmateApiClient(
         session,
-        base_url=entry.data[CONF_BASE_URL],
+        base_url=resolved_base_url,
         api_token=entry.data[CONF_API_TOKEN],
     )
 
