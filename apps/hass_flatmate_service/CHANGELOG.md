@@ -16,6 +16,7 @@
 - `GET /v1/cleaning/schedule` support for `include_previous_weeks`.
 - Swap notification messages now include original assignee context for the week.
 - `PUT /v1/members/sync` now auto-cancels planned cleaning overrides that involve deactivated members and returns notifications for remaining affected flatmates.
+- `POST /v1/import/flatastic` migration endpoint for pasted CSV-style rotation + optional cleaning/shopping history imports.
 
 ## [0.1.10] - 2026-02-11
 

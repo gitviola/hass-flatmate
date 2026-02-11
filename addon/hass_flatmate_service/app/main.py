@@ -22,6 +22,8 @@ from .schemas import (
     CleaningNotificationDueResponse,
     CleaningScheduleResponse,
     CleaningSwapRequest,
+    FlatasticImportRequest,
+    FlatasticImportResponse,
     FavoritesResponse,
     MemberResponse,
     MembersSyncResponse,
@@ -33,7 +35,7 @@ from .schemas import (
     ShoppingItemCreateRequest,
     ShoppingItemResponse,
 )
-from .services import cleaning, shopping
+from .services import cleaning, importer, shopping
 from .services.activity import list_events
 from .services.members import sync_members
 from .settings import settings
@@ -261,6 +263,29 @@ def get_activity(
         }
         for row in rows
     ]
+
+
+@app.post(
+    "/v1/import/flatastic",
+    response_model=FlatasticImportResponse,
+    dependencies=[Depends(require_token)],
+)
+def post_import_flatastic(
+    payload: FlatasticImportRequest,
+    session: Session = Depends(get_session),
+) -> FlatasticImportResponse:
+    try:
+        summary, notifications = importer.import_flatastic_data(
+            session,
+            rotation_rows=payload.rotation_rows,
+            cleaning_history_rows=payload.cleaning_history_rows,
+            shopping_history_rows=payload.shopping_history_rows,
+            actor_user_id=payload.actor_user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return FlatasticImportResponse(ok=True, notifications=notifications, summary=summary)
 
 
 @app.get("/v1/cleaning/current", response_model=CleaningCurrentResponse, dependencies=[Depends(require_token)])

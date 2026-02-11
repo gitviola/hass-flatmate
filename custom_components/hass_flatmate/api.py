@@ -114,6 +114,25 @@ class HassFlatmateApiClient:
     async def get_activity(self, *, limit: int = 200) -> list[dict[str, Any]]:
         return await self._request("GET", "/v1/activity", params={"limit": limit})
 
+    async def import_flatastic_data(
+        self,
+        *,
+        rotation_rows: str | None,
+        cleaning_history_rows: str | None,
+        shopping_history_rows: str | None,
+        actor_user_id: str | None,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "POST",
+            "/v1/import/flatastic",
+            json={
+                "rotation_rows": rotation_rows,
+                "cleaning_history_rows": cleaning_history_rows,
+                "shopping_history_rows": shopping_history_rows,
+                "actor_user_id": actor_user_id,
+            },
+        )
+
     async def get_cleaning_current(self) -> dict[str, Any]:
         return await self._request("GET", "/v1/cleaning/current")
 

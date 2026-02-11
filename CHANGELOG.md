@@ -17,6 +17,13 @@ All notable changes to this project are documented in this file.
 - Member sync now deactivates departed members in rotation planning and auto-cancels impacted planned overrides.
 - Auto-canceled overrides from member departures now emit notifications for remaining affected flatmates.
 
+### Added
+- New Flatastic migration import service flow:
+  - API: `POST /v1/import/flatastic`
+  - HA service: `hass_flatmate_import_flatastic_data`
+  - Supports pasted CSV-style rows for rotation seed, cleaning history, and shopping history.
+- Cleaning card now supports `layout: compact` for read-only e-ink dashboards.
+- Added committed app icon/logo assets in mirrored app source for versioned packaging consistency.
 ## [0.1.11] - 2026-02-11
 
 ### Fixed

@@ -139,6 +139,37 @@ Use these entities to test all flows without notifying everyone:
 
 When test mode is enabled, all notifications are redirected to the selected target and prefixed with `[TEST]`.
 
+## Flatastic Migration Import
+
+Use service `hass_flatmate_import_flatastic_data` from Developer Tools to paste Flatastic-like rows:
+
+- `rotation_rows` format:
+  - `date,member_name`
+  - date can be any date inside that week (`YYYY-MM-DD` or ISO datetime)
+  - rows can be newline or `;` separated
+- `cleaning_history_rows` format:
+  - `date,member_name[,status][,completed_by_name]`
+  - status: `done` (default), `missed`, `pending`
+- `shopping_history_rows` format:
+  - `date,item_name,buyer_name`
+
+Example:
+
+```yaml
+service: hass_flatmate.hass_flatmate_import_flatastic_data
+data:
+  rotation_rows: |
+    2026-02-14,Martin
+    2026-02-21,Gianmarco
+    2026-02-28,María
+  cleaning_history_rows: |
+    2026-02-01,Martin,done
+    2026-02-08,Gianmarco,done
+  shopping_history_rows: |
+    2026-01-30,Milk,Martin
+    2026-01-31,Toilet Paper,Gianmarco
+```
+
 ## Automated Tests
 
 Backend tests run locally without Home Assistant:

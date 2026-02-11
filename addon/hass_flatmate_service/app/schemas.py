@@ -105,6 +105,13 @@ class CleaningSwapRequest(BaseModel):
     cancel: bool = False
 
 
+class FlatasticImportRequest(BaseModel):
+    rotation_rows: str | None = None
+    cleaning_history_rows: str | None = None
+    shopping_history_rows: str | None = None
+    actor_user_id: str | None = None
+
+
 class NotificationItem(BaseModel):
     member_id: int | None
     notify_service: str | None
@@ -115,6 +122,12 @@ class NotificationItem(BaseModel):
 class MembersSyncResponse(BaseModel):
     members: list[MemberResponse]
     notifications: list[NotificationItem] = Field(default_factory=list)
+
+
+class FlatasticImportResponse(BaseModel):
+    ok: bool = True
+    notifications: list[NotificationItem] = Field(default_factory=list)
+    summary: dict[str, Any] = Field(default_factory=dict)
 
 
 class CleaningNotificationDueResponse(BaseModel):

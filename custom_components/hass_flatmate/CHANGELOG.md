@@ -9,6 +9,12 @@
 - Cleaning card now supports `layout: compact` read-only rendering for e-ink/non-touch dashboards.
 - `hass_flatmate_sync_members` now dispatches notifications returned by member-sync cleanup (for auto-canceled overrides).
 
+### Added
+- New HA service `hass_flatmate_import_flatastic_data` for pasted Flatastic migration rows:
+  - rotation seed rows (`date,member_name`)
+  - optional cleaning history rows
+  - optional shopping history rows
+
 ## [0.1.11] - 2026-02-11
 
 ### Fixed

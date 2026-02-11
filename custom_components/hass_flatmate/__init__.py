@@ -54,14 +54,18 @@ from .const import (
     SERVICE_ATTR_CLEANER_MEMBER_ID,
     SERVICE_ATTR_FAVORITE_ID,
     SERVICE_ATTR_ITEM_ID,
+    SERVICE_ATTR_CLEANING_HISTORY_ROWS,
     SERVICE_ATTR_MEMBER_A_ID,
     SERVICE_ATTR_MEMBER_B_ID,
     SERVICE_ATTR_NAME,
     SERVICE_ATTR_ORIGINAL_ASSIGNEE_MEMBER_ID,
+    SERVICE_ATTR_ROTATION_ROWS,
+    SERVICE_ATTR_SHOPPING_HISTORY_ROWS,
     SERVICE_ATTR_WEEK_START,
     SERVICE_COMPLETE_SHOPPING_ITEM,
     SERVICE_DELETE_FAVORITE_ITEM,
     SERVICE_DELETE_SHOPPING_ITEM,
+    SERVICE_IMPORT_FLATASTIC_DATA,
     SERVICE_MARK_CLEANING_DONE,
     SERVICE_MARK_CLEANING_UNDONE,
     SERVICE_MARK_CLEANING_TAKEOVER_DONE,
@@ -531,6 +535,17 @@ async def _register_services(hass: HomeAssistant) -> None:
         await _sync_members_from_ha(runtime, hass)
         _schedule_refresh_and_process_activity(hass, runtime)
 
+    async def import_flatastic_data(call: ServiceCall) -> None:
+        runtime = _get_primary_runtime(hass)
+        response = await runtime.api.import_flatastic_data(
+            rotation_rows=call.data.get(SERVICE_ATTR_ROTATION_ROWS),
+            cleaning_history_rows=call.data.get(SERVICE_ATTR_CLEANING_HISTORY_ROWS),
+            shopping_history_rows=call.data.get(SERVICE_ATTR_SHOPPING_HISTORY_ROWS),
+            actor_user_id=call.context.user_id,
+        )
+        await _dispatch_notifications(hass, runtime, response.get("notifications", []))
+        await _refresh_and_process_activity(hass, runtime)
+
     hass.services.async_register(
         DOMAIN,
         SERVICE_ADD_SHOPPING_ITEM,
@@ -599,6 +614,18 @@ async def _register_services(hass: HomeAssistant) -> None:
         ),
     )
     hass.services.async_register(DOMAIN, SERVICE_SYNC_MEMBERS, sync_members)
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_IMPORT_FLATASTIC_DATA,
+        import_flatastic_data,
+        schema=vol.Schema(
+            {
+                vol.Optional(SERVICE_ATTR_ROTATION_ROWS, default=""): cv.string,
+                vol.Optional(SERVICE_ATTR_CLEANING_HISTORY_ROWS, default=""): cv.string,
+                vol.Optional(SERVICE_ATTR_SHOPPING_HISTORY_ROWS, default=""): cv.string,
+            }
+        ),
+    )
 
     data.services_registered = True
 

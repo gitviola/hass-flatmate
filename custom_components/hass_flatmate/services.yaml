@@ -123,3 +123,26 @@ hass_flatmate_swap_cleaning_week:
 hass_flatmate_sync_members:
   name: Sync members
   description: Sync Home Assistant users/persons into hass-flatmate members (deactivates departed members and auto-cancels impacted planned overrides).
+
+hass_flatmate_import_flatastic_data:
+  name: Import Flatastic data
+  description: Import rotation and optional history from pasted Flatastic-style CSV rows.
+  fields:
+    rotation_rows:
+      required: false
+      example: "2026-02-14,Martin;2026-02-21,Gianmarco;2026-02-28,María"
+      selector:
+        text:
+          multiline: true
+    cleaning_history_rows:
+      required: false
+      example: "2026-02-01,Martin,done;2026-02-08,Gianmarco,done"
+      selector:
+        text:
+          multiline: true
+    shopping_history_rows:
+      required: false
+      example: "2026-01-30,Milk,Martin;2026-01-31,Toilet Paper,Gianmarco"
+      selector:
+        text:
+          multiline: true
