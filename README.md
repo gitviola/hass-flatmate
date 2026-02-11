@@ -65,7 +65,7 @@ CI also runs on every push/PR:
 App images are published automatically to GHCR by GitHub Actions:
 - Workflow: `.github/workflows/publish-app.yml`
 - Trigger: git tag push like `v0.1.1` (also supports Release `published` and manual `workflow_dispatch`)
-- Registry image: `ghcr.io/gitviola/hass-flatmate-service-{arch}`
+- Registry image: `ghcr.io/gitviola/ghcr.io/gitviola/hass-flatmate-service-{arch}`
 - Architectures: `amd64`, `aarch64`
 
 Release/tag version must match `apps/hass_flatmate_service/config.yaml` `version`.

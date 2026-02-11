@@ -73,9 +73,39 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          for pkg in hass-flatmate-service-amd64 hass-flatmate-service-aarch64; do
+          for pkg in \
+            hass-flatmate-service-amd64 \
+            hass-flatmate-service-aarch64 \
+            ghcr.io/gitviola/hass-flatmate-service-amd64 \
+            ghcr.io/gitviola/hass-flatmate-service-aarch64
+          do
+            encoded_pkg="$(printf '%s' "$pkg" | jq -sRr @uri)"
             gh api --method PATCH \
               -H "Accept: application/vnd.github+json" \
-              "/user/packages/container/${pkg}/visibility" \
+              "/user/packages/container/${encoded_pkg}/visibility" \
               -f visibility=public || true
+          done
+
+      - name: Verify anonymous pull works for both architectures
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          for arch in amd64 aarch64; do
+            image="ghcr.io/gitviola/ghcr.io/gitviola/hass-flatmate-service-${arch}"
+            repo="${image#ghcr.io/}"
+            token="$(curl -sS "https://ghcr.io/token?service=ghcr.io&scope=repository:${repo}:pull" | jq -r '.token')"
+            if [ -z "$token" ] || [ "$token" = "null" ]; then
+              echo "Could not obtain anonymous GHCR token for ${repo}"
+              exit 1
+            fi
+            status="$(curl -sS -o /tmp/manifest.json -w '%{http_code}' \
+              -H "Authorization: Bearer ${token}" \
+              -H 'Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
+              "https://ghcr.io/v2/${repo}/manifests/${version}")"
+            if [ "$status" != "200" ]; then
+              echo "Anonymous pull check failed for ${image}:${version} (HTTP ${status})"
+              cat /tmp/manifest.json
+              exit 1
+            fi
           done

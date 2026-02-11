@@ -18,8 +18,8 @@
 4. Start app.
 
 Prebuilt images are pulled from:
-- `ghcr.io/gitviola/hass-flatmate-service-amd64`
-- `ghcr.io/gitviola/hass-flatmate-service-aarch64`
+- `ghcr.io/gitviola/ghcr.io/gitviola/hass-flatmate-service-amd64`
+- `ghcr.io/gitviola/ghcr.io/gitviola/hass-flatmate-service-aarch64`
 
 If install fails with GHCR `403 denied`, ensure package visibility is `public` in GitHub Packages for both architecture images.
 
