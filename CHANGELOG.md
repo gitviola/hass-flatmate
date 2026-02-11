@@ -11,6 +11,12 @@ All notable changes to this project are documented in this file.
 - Human-readable recent activity summaries with actor names.
 - Todo-style shopping card refresh with relative added times and suggestions.
 - Cleaning schedule sensor and improved Sections dashboard example cards.
+- Repository branding assets for automatic HACS/app store display:
+- `/icon.png`
+- `/logo.png`
+- `/custom_components/hass_flatmate/icon.png`
+- `/apps/hass_flatmate_service/icon.png`
+- `/apps/hass_flatmate_service/logo.png`
 
 ## [0.1.7] - 2026-02-11
 

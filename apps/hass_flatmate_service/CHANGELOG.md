@@ -1,5 +1,12 @@
 # Hass Flatmate Service App Changelog
 
+## [Unreleased]
+
+### Added
+- App branding assets for Home Assistant app store rendering:
+  - `icon.png`
+  - `logo.png`
+
 ## [0.1.5] - 2026-02-11
 
 ### Changed

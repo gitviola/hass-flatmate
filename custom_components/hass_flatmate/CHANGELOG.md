@@ -1,5 +1,10 @@
 # Hass Flatmate Integration Changelog
 
+## [Unreleased]
+
+### Added
+- Integration branding icon asset (`icon.png`) for improved presentation in Home Assistant UI surfaces.
+
 ## [0.1.9] - 2026-02-11
 
 ### Fixed
