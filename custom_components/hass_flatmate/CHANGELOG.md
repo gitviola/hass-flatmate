@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.17] - 2026-02-11
+
 ### Changed
 - Renamed manual migration service to `hass_flatmate_import_manual_data` with generic wording.
 - Activity summary now labels migration events as `Manual data import applied`.
