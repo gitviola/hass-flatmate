@@ -1,0 +1,387 @@
+Implement the following plan:
+
+# Plan: Card styling overhaul + shopping item history
+
+## Context
+
+Several UX improvements across the shopping, cleaning, and distribution cards:
+- Interactive cards have card-in-card look (bordered item rows inside bordered `<ha-card>`) that's visually cluttered — remove outer card chrome
+- Shopping checkmark icon looks "already done" (green filled) — should look like an unchecked action
+- No way to see purchase history per shopping item — want a click-to-see-history modal
+- Compact distribution chart truncates names when someone has 0 purchases
+- Cleaning card already has row clickability working correctly
+
+## Files to modify
+
+- `custom_components/hass_flatmate/frontend/hass-flatmate-shopping-card.js` — Remove outer card border, restyle check icon, add item history modal
+- `custom_components/hass_flatmate/frontend/hass-flatmate-cleaning-card.js` — Remove outer card border (interactive mode only)
+- `custom_components/hass_flatmate/frontend/hass-flatmate-distribution-card.js` — Fix compact name truncation
+- `custom_components/hass_flatmate/sensor.py` — Add `item_history` to ShoppingDataSensor (purchase history per item name)
+
+## Changes
+
+### 1. Remove outer ha-card chrome — shopping card + cleaning card
+
+Keep `<ha-card>` element (HA expects it) but flatten its visual styling. Add to both cards' CSS:
+
+```css
+ha-card {
+  box-shadow: none;
+  border: none;
+  background: transparent;
+}
+```
+
+For the cleaning card, only apply this in interactive mode (not compact, which doesn't nest cards).
+
+### 2. Shopping checkmark — unchecked appearance
+
+**Icon**: Change `mdi:check-circle-outline` → `mdi:circle-outline` (empty circle, invites clicking)
+
+**CSS**: Remove green tint from resting state. Go neutral, turn green on hover:
+
+```css
+.todo-check {
+  color: var(--secondary-text-color);
+  border-color: var(--divider-color);
+  background: var(--card-background-color);
+}
+.todo-check:hover {
+  color: var(--success-color, #4caf50);
+  border-color: color-mix(in srgb, var(--success-color, #4caf50) 45%, var(--divider-color));
+  background: color-mix(in srgb, var(--success-color, #4caf50) 10%, var(--card-background-color));
+}
+```
+
+### 3. Shopping item click → purchase history modal
+
+#### 3a. Add item_history to sensor.py (ShoppingDataSensor)
+
+The coordinator already fetches ALL shopping items (open + completed) via `get_shopping_items()`. Build purchase history from completed items, limited to items currently on the open list:
+
+```python
+# In ShoppingDataSensor.extra_state_attributes:
+all_items = self.coordinator.data.get("shopping_items", [])
+open_name_keys = {str(item.get("name", "")).strip().lower() for item in all_items if item.get("status") == "open"}
+# Group completed items by normalized name, only for names in open list
+# Each entry: { "completed_by_name": str, "completed_by_member_id": int, "completed_at": ISO str }
+# Sort by completed_at descending, limit 10 per item
+# Result: { "milk": [...], "bread": [...] }
+```
+
+Add `item_history` to the returned attributes dict.
+
+#### 3b. Item row click handler + modal state (shopping card JS)
+
+Add state variables: `_historyModalOpen`, `_historyModalItemName`.
+
+Make `.item-main` clickable (with cursor pointer). On click, look up `item_history[normalizedName]` from sensor attributes and open modal.
+
+Event binding: add click listener on `.item-main` elements with `data-action="open-item-history"` and `data-item-name`.
+
+#### 3c. History modal template
+
+Reuse the modal pattern from the cleaning card (backdrop + modal div):
+
+```
+Header: "{ItemName}" + close button
+Body: timeline list of purchases, newest first
+  Each entry: icon (mdi:cart-check) + "{MemberName}" + relative time
+  If no history: "No purchase history available"
+Footer: Close button
+```
+
+#### 3d. Relative time helper
+
+Add `_relativeTime(isoDatetime)` returning: "just now", "1 min ago", "5 hours ago", "2 days ago", "1 week ago", "3 weeks ago", "1 month ago", "6 months ago" etc.
+
+### 4. Fix compact distribution chart name truncation
+
+Current issue: `white-space: nowrap` + `text-overflow: ellipsis` + `overflow: hidden` on `.compact-name` causes names to truncate when their cell is small (count = 0).
+
+Changes to `.compact-cell` and `.compact-name`:
+- Reduce padding from `10px 6px` to `8px 4px`
+- Allow name to wrap up to 2 lines: remove nowrap, use `-webkit-line-clamp: 2`
+- Keep overflow hidden for safety but allow wrapping
+
+```css
+.compact-cell { padding: 8px 4px; }
+.compact-name {
+  font-weight: 600;
+  line-height: 1.15;
+  font-size: clamp(0.56rem, 1.1vw, 0.76rem);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+```
+
+## Verification
+
+1. `node --check` on all three JS files
+2. `python3 -m compileall custom_components/hass_flatmate`
+3. `make test` — backend tests pass (no backend changes)
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/ms/.REDACTED.jsonl
+
+---
+
+bumb version and push
+
+---
+
+Uhmm but the cards itself of the schedule weeks and the open items should be looking like proper home assistant cards with background color. I mean using the proper home assistant design elements the best practice for the tiles of the sections so it looks like it fits in..
+
+---
+
+https://github.com/home-assistant/home-assistant.io/blob/current/source/_dashboards/tile.markdown https://github.com/home-assistant/frontend/blob/master/src/resources/theme/color/color.globals.ts pls check out this and make sure we leverage all this so it looks proper like home assistant
+
+---
+
+Inside the shopping history modal let's write history inside so people know what this list in there means
+
+---
+
+I somehow still don't like the design of the interactive cleaning schedule. The cards are a bit too colorful somehow.. Too much noise. Let's try to clean this up a bit. For example the current week perhaps we can also have a think left border to kind of visually show this is this week
+
+---
+
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Analysis:
+Let me chronologically analyze the conversation:
+
+1. **Initial Plan Implementation**: User provided a detailed plan for card styling overhaul + shopping item history across 4 files.
+
+2. **Changes Made**:
+   - Shopping card: removed ha-card chrome, changed check icon, added item history modal with state/events/CSS, added relative time helper
+   - Cleaning card: removed ha-card chrome (interactive mode only)
+   - Distribution card: fixed compact name truncation
+   - Sensor.py: added item_history to ShoppingDataSensor
+
+3. **Version bump and push**: User asked to bump version (0.1.23 → 0.1.24), commit, tag v0.1.24, and push.
+
+4. **User feedback on card tiles**: User said item rows and week rows should look like proper HA cards with background color. I updated .item-row and .week-row to use ha-card CSS variables.
+
+5. **Completion animation**: User asked for animation when marking shopping item done. Added check-pop scale animation on button and fade-out slide animation on row.
+
+6. **HA Design System adoption**: User shared two GitHub URLs (tile.markdown and color.globals.ts) and asked to leverage HA's design tokens. I researched extensively via agents and got comprehensive HA CSS variable documentation. Then updated all three cards to use HA design tokens throughout.
+
+7. **Whole row clickability**: User asked to make entire item-row and week-row clickable like HA tile cards, with action buttons still working. Updated both cards with stopPropagation on buttons and z-index.
+
+8. **History modal subtitle**: User asked to add "Purchase history" text inside the modal. Added subtitle under the item name.
+
+9. **Current week design cleanup**: User's most recent request (before summary) was about the interactive cleaning schedule being too colorful/noisy. They suggested using a thick left border for the current week instead. I had just read the current CSS state but hadn't made changes yet.
+
+Let me trace the exact current state of the week-row CSS:
+- `.week-row.current` has `border-color: rgba(var(--rgb-primary-color), 0.45)` and `background: rgba(var(--rgb-primary-color), 0.08)`
+- `.week-row.current:hover` has `background: rgba(var(--rgb-primary-color), 0.12)`
+- `.week-row.past` has `background: rgba(var(--rgb-primary-text-color), 0.03)`
+- Action buttons have colored backgrounds (done=green, swap=blue)
+
+The user wants:
+- Less color noise overall
+- Thick left border for current week (like compact mode already does with `.compact-week-row.left-marked`)
+- Generally cleaner look
+
+Key files modified throughout:
+- `custom_components/hass_flatmate/frontend/hass-flatmate-shopping-card.js`
+- `custom_components/hass_flatmate/frontend/hass-flatmate-cleaning-card.js`
+- `custom_components/hass_flatmate/frontend/hass-flatmate-distribution-card.js`
+- `custom_components/hass_flatmate/sensor.py`
+- `apps/hass_flatmate_service/config.yaml` (version bump)
+- `custom_components/hass_flatmate/manifest.json` (version bump)
+
+The user's CLAUDE.md overrides allow git add/commit without asking. No co-author trailer. No git amend.
+
+Current git state: all committed and pushed up to `ccfffaa` on main.
+
+Summary:
+1. Primary Request and Intent:
+   The user requested a multi-part card styling overhaul for a Home Assistant custom integration:
+   - Remove outer `ha-card` chrome (card-in-card visual clutter) from shopping and cleaning cards
+   - Restyle shopping checkmark from filled green to empty circle (neutral resting, green on hover)
+   - Add per-item purchase history modal to shopping card (click item → see who bought it when)
+   - Fix compact distribution chart name truncation for members with 0 purchases
+   - Add `item_history` attribute to ShoppingDataSensor backend
+   - Make item rows and week rows look like proper HA section tiles with card background
+   - Add completion animation (check-pop + fade-out) when marking shopping items done
+   - Adopt HA design system tokens throughout (spacing, typography, border-radius, colors, transitions)
+   - Make entire item-row / week-row clickable (like HA tile cards) with action buttons still working via stopPropagation
+   - Add "Purchase history" subtitle to the shopping history modal
+   - **Most recent**: Clean up the interactive cleaning schedule design — too colorful/noisy, use thick left border for current week
+
+2. Key Technical Concepts:
+   - Home Assistant Lovelace custom cards (vanilla JS, shadow DOM)
+   - HA design token system: `--ha-space-*`, `--ha-font-size-*`, `--ha-font-weight-*`, `--ha-border-radius-*`, `--ha-animation-duration-*`, `--ha-box-shadow-*`
+   - HA card variables: `--ha-card-background`, `--ha-card-border-width`, `--ha-card-border-color`, `--ha-card-border-radius`, `--ha-card-box-shadow`
+   - HA color pattern: `rgba(var(--rgb-success-color, 67, 160, 71), 0.1)` instead of `color-mix()`
+   - HA input variables: `--input-fill-color`, `--input-outlined-idle-border-color`, `--input-ink-color`
+   - HA chip variable: `--ha-assist-chip-filled-container-color`
+   - Event delegation with `stopPropagation()` for nested clickable elements
+   - CSS `@keyframes` animations for check-pop and fade-out
+   - Optimistic UI updates with pending state tracking
+   - FastAPI + SQLite backend with coordinator polling pattern
+
+3. Files and Code Sections:
+
+   - **`custom_components/hass_flatmate/frontend/hass-flatmate-shopping-card.js`**
+     - Most heavily modified file. Key changes:
+     - Added state variables `_historyModalOpen`, `_historyModalItemName` to constructor
+     - Added `item_history` and modal state to `_buildStateSnapshot`
+     - Added `_relativeTime()` helper, `_openHistoryModal()`, `_closeHistoryModal()` methods
+     - Changed icon from `mdi:check-circle-outline` to `mdi:circle-outline`
+     - Modified `_completeItem` to accept `buttonEl` parameter and animate before removing:
+       ```javascript
+       async _completeItem(id, name = "", buttonEl = null) {
+         // Animate: swap icon to checkmark, pop the button, fade out the row
+         const rowEl = buttonEl?.closest(".item-row");
+         if (buttonEl) {
+           const icon = buttonEl.querySelector("ha-icon");
+           if (icon) { icon.setAttribute("icon", "mdi:check-circle"); }
+           buttonEl.classList.add("completing");
+         }
+         if (rowEl) { rowEl.classList.add("fade-out"); }
+         await new Promise((resolve) => setTimeout(resolve, 420));
+         // ... then optimistic removal and service call
+       }
+       ```
+     - Made entire `.item-row` clickable with `data-action="open-item-history"` on the `<li>`:
+       ```html
+       <li class="item-row ..." data-action="open-item-history" data-item-name="${name}">
+       ```
+     - Action buttons use `event.stopPropagation()`
+     - Added `_renderHistoryModal()` with backdrop, header (item name + "Purchase history" subtitle), timeline entries, footer
+     - Full CSS overhaul to HA design tokens: `--ha-space-*`, `--ha-font-size-*`, `--ha-border-radius-pill` for buttons, `rgba(var(--rgb-*))` color pattern
+     - `ha-card { box-shadow: none; border: none; background: transparent; }`
+     - `.item-row` uses ha-card variables + cursor pointer + hover highlight
+     - `.item-actions` has `position: relative; z-index: 1`
+
+   - **`custom_components/hass_flatmate/frontend/hass-flatmate-cleaning-card.js`**
+     - Removed ha-card chrome globally, restored on `.card.compact`:
+       ```css
+       ha-card { box-shadow: none; border: none; background: transparent; }
+       .card.compact {
+         box-shadow: var(--ha-card-box-shadow, none);
+         border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, ...);
+         background: var(--ha-card-background, ...);
+         border-radius: var(--ha-card-border-radius, 12px);
+       }
+       ```
+     - `.week-row` uses ha-card variables, cursor pointer, hover highlight
+     - Current week row state (about to be changed):
+       ```css
+       .week-row.current {
+         border-color: rgba(var(--rgb-primary-color, 0, 154, 199), 0.45);
+         background: rgba(var(--rgb-primary-color, 0, 154, 199), 0.08);
+       }
+       .week-row.current:hover {
+         background: rgba(var(--rgb-primary-color, 0, 154, 199), 0.12);
+       }
+       .week-row.past {
+         background: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.03);
+       }
+       ```
+     - Moved click handler from `.week-main.history-trigger` to whole `.week-row` `<li>`
+     - Action buttons (toggle-done, open-swap-modal) use `event.stopPropagation()`
+     - `.week-actions` has `position: relative; z-index: 1`
+     - Full HA token adoption: spacing, typography, border-radius, transitions, colors
+     - Action button states use rgba pattern: `.action.done` (green), `.action.swap` (primary blue)
+     - Modals use `--ha-border-radius-xl`, `--ha-box-shadow-l`, HA input variables for selects
+
+   - **`custom_components/hass_flatmate/frontend/hass-flatmate-distribution-card.js`**
+     - Fixed `.compact-name` truncation: removed `white-space: nowrap`, added `-webkit-line-clamp: 2`
+     - Reduced `.compact-cell` padding from `10px 6px` to `8px 4px`
+     - Full HA token adoption for all CSS
+
+   - **`custom_components/hass_flatmate/sensor.py`**
+     - Added `item_history` to `ShoppingDataSensor.extra_state_attributes`:
+       ```python
+       open_name_keys = {str(item.get("name", "")).strip().lower()
+           for item in self.coordinator.data.get("shopping_items", [])
+           if item.get("status") == "open" and str(item.get("name", "")).strip()}
+       history_by_name: dict[str, list[dict[str, Any]]] = {}
+       for item in self.coordinator.data.get("shopping_items", []):
+           if item.get("status") != "completed": continue
+           # ... group by normalized name, only for names in open list
+           # Each entry: completed_by_name, completed_by_member_id, completed_at
+       # Sort by completed_at desc, limit 10 per item
+       ```
+     - Added `"item_history": history_by_name` to the returned attributes dict
+
+   - **`apps/hass_flatmate_service/config.yaml`** — version bumped to "0.1.24"
+   - **`custom_components/hass_flatmate/manifest.json`** — version bumped to "0.1.24"
+
+4. Errors and fixes:
+   - **User feedback: item rows should look like proper HA cards**: After removing outer ha-card chrome, the inner item rows had only a thin `border: 1px solid var(--divider-color)` which didn't look like HA cards. Fixed by switching to `--ha-card-background`, `--ha-card-border-width`, `--ha-card-border-color`, `--ha-card-border-radius`, `--ha-card-box-shadow` variables.
+   - **User feedback: cards too colorful/noisy**: The current week row has a colored background and border that adds visual noise. The action buttons (done=green bg, swap=blue bg) also add color. This is the pending issue to address.
+   - No JavaScript syntax errors encountered — all `node --check` validations passed throughout.
+   - All 29 backend tests passed throughout.
+
+5. Problem Solving:
+   - Solved card-in-card visual clutter by making outer ha-card transparent while giving inner rows proper ha-card tile styling
+   - Solved "already done" look of check icon by switching to empty circle with green-on-hover
+   - Solved event propagation conflict (whole row clickable + action buttons) using stopPropagation + z-index
+   - Solved completion UX by adding icon swap + scale pop animation + row fade-out slide before optimistic removal
+   - Researched HA's full design token system via three agents fetching tile docs, color globals, and ha-card/ha-style/core.globals/typography.globals
+
+6. All user messages:
+   - "Implement the following plan: [detailed plan for card styling overhaul + shopping item history]"
+   - "bumb version and push"
+   - "and release of course.."
+   - "And then when marking a shopping item as done maybe a small animation like a checkmark or something on the button before it disappears and then it should fade out or something to help the user understand it worked.."
+   - "https://github.com/home-assistant/home-assistant.io/blob/current/source/_dashboards/tile.markdown https://github.com/home-assistant/frontend/blob/master/src/resources/theme/color/color.globals.ts pls check out this and make sure we leverage all this so it looks proper like home assistant"
+   - "Uhmm but the cards itself of the schedule weeks and the open items should be looking like proper home assistant cards with background color. I mean using the proper home assistant design elements the best practice for the tiles of the sections so it looks like it fits in.."
+   - "And pls again make the whole card clickable (shopping item and also schedule week item) but make sure the action buttons still work (I guess z-index or just position them above). I want it to behave pretty much like any other home assistant tile card.. And design wise they should look pretty similar to the tile cards"
+   - "Inside the shopping history modal let's write history inside so people know what this list in there means"
+   - "I somehow still don't like the design of the interactive cleaning schedule. The cards are a bit too colorful somehow.. Too much noise. Let's try to clean this up a bit. For example the current week perhaps we can also have a think left border to kind of visually show this is this week"
+
+7. Pending Tasks:
+   - Clean up interactive cleaning schedule design to reduce visual noise
+   - Add thick left border to current week row instead of (or in addition to reducing) the colored background/border
+   - Generally reduce color noise in the cleaning card's interactive mode
+
+8. Current Work:
+   I had just read the current CSS state of the cleaning card (lines 1830-2079) to understand the current `.week-row.current`, `.week-row.past`, and action button styling when the summary was requested. No edits had been made yet for this latest request.
+
+   Current problematic CSS:
+   ```css
+   .week-row.current {
+     border-color: rgba(var(--rgb-primary-color, 0, 154, 199), 0.45);
+     background: rgba(var(--rgb-primary-color, 0, 154, 199), 0.08);
+   }
+   ```
+   Action buttons `.action.done` and `.action.swap` also have colored backgrounds/borders.
+
+9. Optional Next Step:
+   Implement the cleaning schedule design cleanup per the user's most recent request: *"I somehow still don't like the design of the interactive cleaning schedule. The cards are a bit too colorful somehow.. Too much noise. Let's try to clean this up a bit. For example the current week perhaps we can also have a think left border to kind of visually show this is this week"*
+
+   Changes to make:
+   - Replace `.week-row.current`'s colored background/border with a thick left border (like compact mode's `.compact-week-row.left-marked` pattern: `border-left: 4px solid var(--primary-color)`)
+   - Remove or significantly reduce the colored background tints on `.week-row.current` and `.week-row.past`
+   - Tone down the action button colors (`.action.done` green background, `.action.swap` blue background) to be more subtle/neutral
+   - Reduce the `.header-status` badge color intensity
+   - Generally make the interactive schedule visually quieter
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/ms/.REDACTED.jsonl
+Please continue the conversation from where we left off without asking the user any further questions. Continue with the last task that you were asked to work on.
+
+---
+
+And maybe the cards should be more compact. I mean less high..
+
+---
+
+But they should all have the same hight..
+
+---
+
+And then we have some weird edge case. If there is already a swap then the person I guess cannot swap again wihth another one. Maybe that's too complex this case but I guess it could happen. You know what I mean? Like there is a swap scheduled, the shift that it is swaped with says only upcoming and no options to change it. So it is kind of set in stone but what if suddenly that person also cannot do it
+
+---
+
+[Request interrupted by user for tool use]
