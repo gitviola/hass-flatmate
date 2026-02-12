@@ -7,12 +7,20 @@ from datetime import datetime
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
 from fastapi.responses import PlainTextResponse
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from . import db
 from .db import Base, get_session
-from .models import Member
+from .models import (
+    ActivityEvent,
+    CleaningAssignment,
+    CleaningOverride,
+    Member,
+    RotationConfig,
+    ShoppingFavorite,
+    ShoppingItem,
+)
 from .schemas import (
     BuyStatsResponse,
     CleaningCurrentResponse,
@@ -299,6 +307,19 @@ def post_import_manual(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return ManualImportResponse(ok=True, notifications=notifications, summary=summary)
+
+
+@app.post("/v1/admin/reset", response_model=OperationResponse, dependencies=[Depends(require_token)])
+def post_admin_reset(session: Session = Depends(get_session)) -> OperationResponse:
+    session.execute(delete(CleaningOverride))
+    session.execute(delete(CleaningAssignment))
+    session.execute(delete(ActivityEvent))
+    session.execute(delete(ShoppingItem))
+    session.execute(delete(ShoppingFavorite))
+    session.execute(delete(RotationConfig))
+    session.execute(delete(Member))
+    session.commit()
+    return OperationResponse(ok=True)
 
 
 @app.get("/v1/cleaning/current", response_model=CleaningCurrentResponse, dependencies=[Depends(require_token)])

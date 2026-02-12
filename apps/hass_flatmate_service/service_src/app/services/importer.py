@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from ..models import (
     CleaningAssignmentStatus,
     CleaningOverride,
+    Member,
     OverrideSource,
     OverrideStatus,
     OverrideType,
@@ -70,13 +71,17 @@ def _member_index(session: Session) -> tuple[dict[str, int], list[int], dict[int
     if not active_members:
         raise ValueError("No active members found. Sync members first.")
 
+    all_members = session.execute(
+        select(Member).order_by(Member.display_name.asc())
+    ).scalars().all()
+
     index: dict[str, int] = {}
     id_to_name: dict[int, str] = {}
-    for member in active_members:
+    for member in all_members:
         key = _normalize_member_name(member.display_name)
         if key in index and index[key] != member.id:
             raise ValueError(
-                "Ambiguous member names detected among active flatmates. "
+                "Ambiguous member names detected. "
                 "Rename members so names are unique for migration."
             )
         index[key] = member.id
@@ -86,15 +91,33 @@ def _member_index(session: Session) -> tuple[dict[str, int], list[int], dict[int
     return index, active_member_ids, id_to_name
 
 
-def _resolve_member_id(name_index: dict[str, int], raw_name: str, *, line_no: int) -> int:
+def _resolve_member_id(
+    session: Session,
+    name_index: dict[str, int],
+    id_to_name: dict[int, str],
+    raw_name: str,
+    *,
+    line_no: int,
+) -> int:
     key = _normalize_member_name(raw_name)
     member_id = name_index.get(key)
-    if member_id is None:
-        raise ValueError(
-            f"Unknown member '{raw_name}' at row {line_no}. "
-            "Use exact display names from hass-flatmate members."
-        )
-    return member_id
+    if member_id is not None:
+        return member_id
+
+    # Auto-create inactive placeholder member for former flatmates
+    display_name = raw_name.strip()
+    member = Member(
+        display_name=display_name,
+        ha_user_id=None,
+        ha_person_entity_id=None,
+        notify_service=None,
+        active=False,
+    )
+    session.add(member)
+    session.flush()
+    name_index[key] = member.id
+    id_to_name[member.id] = display_name
+    return member.id
 
 
 def _apply_rotation_rows(
@@ -102,6 +125,7 @@ def _apply_rotation_rows(
     *,
     rows_text: str | None,
     name_index: dict[str, int],
+    id_to_name: dict[int, str],
     active_member_ids: list[int],
 ) -> tuple[date | None, list[int], int]:
     rows = _rows_from_text(rows_text)
@@ -118,7 +142,7 @@ def _apply_rotation_rows(
             )
         parsed_date, _parsed_dt = _parse_date_or_datetime(columns[0], line_no=line_no)
         week_start = monday_for(parsed_date)
-        member_id = _resolve_member_id(name_index, columns[1], line_no=line_no)
+        member_id = _resolve_member_id(session, name_index, id_to_name, columns[1], line_no=line_no)
 
         existing = assignment_by_week.get(week_start)
         if existing is not None and existing != member_id:
@@ -161,6 +185,7 @@ def _apply_cleaning_history_rows(
     *,
     rows_text: str | None,
     name_index: dict[str, int],
+    id_to_name: dict[int, str],
     actor_user_id: str | None,
 ) -> tuple[int, int]:
     rows = _rows_from_text(rows_text)
@@ -180,7 +205,7 @@ def _apply_cleaning_history_rows(
 
         parsed_date, at_dt = _parse_date_or_datetime(columns[0], line_no=line_no)
         week_start = monday_for(parsed_date)
-        member_id = _resolve_member_id(name_index, columns[1], line_no=line_no)
+        member_id = _resolve_member_id(session, name_index, id_to_name, columns[1], line_no=line_no)
         status_value = columns[2].strip().lower() if len(columns) >= 3 and columns[2].strip() else "done"
 
         assignment = ensure_assignment(session, week_start)
@@ -189,7 +214,7 @@ def _apply_cleaning_history_rows(
         if status_value == "done":
             completed_by_member_id = member_id
             if len(columns) >= 4 and columns[3].strip():
-                completed_by_member_id = _resolve_member_id(name_index, columns[3], line_no=line_no)
+                completed_by_member_id = _resolve_member_id(session, name_index, id_to_name, columns[3], line_no=line_no)
 
             completion_mode = (
                 "own" if assignment.assignee_member_id == completed_by_member_id else "takeover"
@@ -250,6 +275,7 @@ def _apply_shopping_history_rows(
     *,
     rows_text: str | None,
     name_index: dict[str, int],
+    id_to_name: dict[int, str],
     actor_user_id: str | None,
 ) -> int:
     rows = _rows_from_text(rows_text)
@@ -270,7 +296,7 @@ def _apply_shopping_history_rows(
         item_name = columns[1].strip()
         if not item_name:
             raise ValueError(f"Missing shopping item name at row {line_no}")
-        buyer_member_id = _resolve_member_id(name_index, columns[2], line_no=line_no)
+        buyer_member_id = _resolve_member_id(session, name_index, id_to_name, columns[2], line_no=line_no)
 
         item = ShoppingItem(
             name=item_name,
@@ -319,6 +345,7 @@ def _apply_cleaning_override_rows(
     *,
     rows_text: str | None,
     name_index: dict[str, int],
+    id_to_name: dict[int, str],
     actor_user_id: str | None,
 ) -> tuple[int, int]:
     rows = _rows_from_text(rows_text)
@@ -337,8 +364,8 @@ def _apply_cleaning_override_rows(
 
         parsed_date, _at_dt = _parse_date_or_datetime(columns[0], line_no=line_no)
         week_start = monday_for(parsed_date)
-        member_from_id = _resolve_member_id(name_index, columns[1], line_no=line_no)
-        member_to_id = _resolve_member_id(name_index, columns[2], line_no=line_no)
+        member_from_id = _resolve_member_id(session, name_index, id_to_name, columns[1], line_no=line_no)
+        member_to_id = _resolve_member_id(session, name_index, id_to_name, columns[2], line_no=line_no)
         override_type = _parse_override_type(columns[3] if len(columns) >= 4 else None, line_no=line_no)
 
         if member_from_id == member_to_id:
@@ -483,24 +510,28 @@ def import_manual_data(
         session,
         rows_text=rotation_rows,
         name_index=name_index,
+        id_to_name=id_to_name,
         active_member_ids=active_member_ids,
     )
     cleaning_rows_imported, cleaning_done_events_imported = _apply_cleaning_history_rows(
         session,
         rows_text=cleaning_history_rows,
         name_index=name_index,
+        id_to_name=id_to_name,
         actor_user_id=actor_user_id,
     )
     shopping_rows_imported = _apply_shopping_history_rows(
         session,
         rows_text=shopping_history_rows,
         name_index=name_index,
+        id_to_name=id_to_name,
         actor_user_id=actor_user_id,
     )
     cleaning_override_rows_imported, cleaning_override_swap_pairs_linked = _apply_cleaning_override_rows(
         session,
         rows_text=cleaning_override_rows,
         name_index=name_index,
+        id_to_name=id_to_name,
         actor_user_id=actor_user_id,
     )
 

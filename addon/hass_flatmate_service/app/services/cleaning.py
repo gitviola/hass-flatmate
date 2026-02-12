@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..models import (
@@ -79,7 +80,11 @@ def get_or_create_rotation_config(session: Session) -> RotationConfig:
     if config is None:
         config = RotationConfig(id=1, ordered_member_ids_json=[], anchor_week_start=None)
         session.add(config)
-        session.flush()
+        try:
+            session.flush()
+        except IntegrityError:
+            session.rollback()
+            config = session.get(RotationConfig, 1)
     return config
 
 

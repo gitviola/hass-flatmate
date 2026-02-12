@@ -104,7 +104,7 @@ def test_import_history_rows_populates_cleaning_and_shopping(client, auth_header
     assert "manual_import_applied" in actions
 
 
-def test_import_rejects_unknown_member_name(client, auth_headers) -> None:
+def test_import_creates_inactive_placeholder_for_unknown_member(client, auth_headers) -> None:
     _sync_members(client, auth_headers)
 
     current = client.get("/v1/cleaning/current", headers=auth_headers)
@@ -119,8 +119,140 @@ def test_import_rejects_unknown_member_name(client, auth_headers) -> None:
             "actor_user_id": "u1",
         },
     )
-    assert response.status_code == 400
-    assert "Unknown member" in response.json()["detail"]
+    assert response.status_code == 200
+
+    members = client.get("/v1/members", headers=auth_headers).json()
+    placeholder = [m for m in members if m["display_name"] == "Unknown Person"]
+    assert len(placeholder) == 1
+    assert placeholder[0]["active"] is False
+    assert placeholder[0]["ha_user_id"] is None
+
+
+def test_admin_reset_clears_all_data_including_members(client, auth_headers) -> None:
+    _sync_members(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    week_start = date.fromisoformat(current.json()["week_start"])
+
+    # Import some data first
+    client.post(
+        "/v1/import/manual",
+        headers=auth_headers,
+        json={
+            "rotation_rows": ";".join([
+                f"{(week_start + timedelta(days=2)).isoformat()},Alex",
+                f"{(week_start + timedelta(days=9)).isoformat()},Sam",
+            ]),
+            "cleaning_history_rows": f"{(week_start + timedelta(days=2)).isoformat()},Alex,done",
+            "shopping_history_rows": f"{week_start.isoformat()},Milk,Alex",
+            "actor_user_id": "u1",
+        },
+    )
+
+    # Add a shopping item and favorite
+    client.post("/v1/shopping/items", headers=auth_headers, json={"name": "Bread", "actor_user_id": "u1"})
+    client.post("/v1/shopping/favorites", headers=auth_headers, json={"name": "Eggs", "actor_user_id": "u1"})
+
+    # Verify data exists
+    assert len(client.get("/v1/shopping/items", headers=auth_headers).json()) > 0
+    assert len(client.get("/v1/shopping/favorites", headers=auth_headers).json()["favorites"]) > 0
+    assert len(client.get("/v1/activity?limit=50", headers=auth_headers).json()) > 0
+
+    # Reset
+    response = client.post("/v1/admin/reset", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+
+    # Everything is gone including members
+    assert client.get("/v1/shopping/items", headers=auth_headers).json() == []
+    assert client.get("/v1/shopping/favorites", headers=auth_headers).json()["favorites"] == []
+    assert client.get("/v1/activity?limit=50", headers=auth_headers).json() == []
+    assert client.get("/v1/members", headers=auth_headers).json() == []
+
+    # HA sync recreates active members
+    _sync_members(client, auth_headers)
+    members = client.get("/v1/members", headers=auth_headers).json()
+    names = sorted(m["display_name"] for m in members)
+    assert names == ["Alex", "Pat", "Sam"]
+
+
+def test_reset_then_reimport_with_former_flatmates(client, auth_headers) -> None:
+    _sync_members(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    week_start = date.fromisoformat(current.json()["week_start"])
+
+    # First import references a former flatmate "Jordan" who left
+    first_import = client.post(
+        "/v1/import/manual",
+        headers=auth_headers,
+        json={
+            "rotation_rows": ";".join([
+                f"{(week_start - timedelta(days=21)).isoformat()},Jordan",
+                f"{(week_start - timedelta(days=14)).isoformat()},Alex",
+                f"{(week_start - timedelta(days=7)).isoformat()},Sam",
+                f"{(week_start + timedelta(days=2)).isoformat()},Pat",
+            ]),
+            "cleaning_history_rows": ";".join([
+                f"{(week_start - timedelta(days=19)).isoformat()},Jordan,done",
+                f"{(week_start - timedelta(days=12)).isoformat()},Alex,done",
+                f"{(week_start - timedelta(days=5)).isoformat()},Sam,done",
+            ]),
+            "shopping_history_rows": ";".join([
+                f"{(week_start - timedelta(days=20)).isoformat()},Milk,Jordan",
+                f"{(week_start - timedelta(days=13)).isoformat()},Bread,Alex",
+            ]),
+            "actor_user_id": "u1",
+        },
+    )
+    assert first_import.status_code == 200
+    summary = first_import.json()["summary"]
+    assert summary["rotation_weeks_imported"] == 4
+    assert "Jordan" in summary["rotation_order_names"]
+
+    # Jordan was auto-created as inactive
+    members = client.get("/v1/members", headers=auth_headers).json()
+    jordan = [m for m in members if m["display_name"] == "Jordan"]
+    assert len(jordan) == 1
+    assert jordan[0]["active"] is False
+
+    # Activity includes Jordan's shopping
+    activity = client.get("/v1/activity?limit=50", headers=auth_headers).json()
+    shopping_events = [
+        e for e in activity
+        if e["action"] == "shopping_item_completed" and e["actor_member_id"] == jordan[0]["id"]
+    ]
+    assert len(shopping_events) == 1
+
+    # Reset wipes everything including members, re-sync active ones from HA
+    client.post("/v1/admin/reset", headers=auth_headers)
+    assert client.get("/v1/members", headers=auth_headers).json() == []
+    _sync_members(client, auth_headers)
+
+    # Reimport — Jordan gets recreated as inactive placeholder
+    second_import = client.post(
+        "/v1/import/manual",
+        headers=auth_headers,
+        json={
+            "rotation_rows": ";".join([
+                f"{(week_start - timedelta(days=21)).isoformat()},Jordan",
+                f"{(week_start - timedelta(days=14)).isoformat()},Alex",
+                f"{(week_start - timedelta(days=7)).isoformat()},Sam",
+                f"{(week_start + timedelta(days=2)).isoformat()},Pat",
+            ]),
+            "shopping_history_rows": f"{(week_start - timedelta(days=20)).isoformat()},Milk,Jordan",
+            "actor_user_id": "u1",
+        },
+    )
+    assert second_import.status_code == 200
+
+    # Jordan was recreated as inactive, only one instance
+    members_after = client.get("/v1/members", headers=auth_headers).json()
+    jordans = [m for m in members_after if m["display_name"] == "Jordan"]
+    assert len(jordans) == 1
+    assert jordans[0]["active"] is False
 
 
 def test_import_cleaning_override_rows_plans_compensation_override(client, auth_headers) -> None:
