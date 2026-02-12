@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "691b9229226c",
+  "session_id": "24983503-9149-44bb-8f68-d2ad7c4e9735",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-12T13:20:07.363306Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "custom_components/hass_flatmate/frontend/hass-flatmate-shopping-card.js"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "4c9eadb7-52bb-4cb0-97c0-45be6d7bd610",
+  "checkpoint_transcript_start": 544,
+  "transcript_lines_at_start": 544,
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 156123,
+    "cache_read_tokens": 838531,
+    "output_tokens": 946,
+    "api_call_count": 6
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-12T13:20:06.967848Z",
+    "agent_lines": 0,
+    "human_added": 58,
+    "human_modified": 85,
+    "human_removed": 0,
+    "total_committed": 141,
+    "agent_percentage": 0
+  }
+}

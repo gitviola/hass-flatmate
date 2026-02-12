@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "691b9229226c",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "custom_components/hass_flatmate/frontend/hass-flatmate-shopping-card.js"
+  ],
+  "sessions": [
+    {
+      "metadata": "/69/1b9229226c/0/metadata.json",
+      "transcript": "/69/1b9229226c/0/full.jsonl",
+      "context": "/69/1b9229226c/0/context.md",
+      "content_hash": "/69/1b9229226c/0/content_hash.txt",
+      "prompt": "/69/1b9229226c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 8,
+    "cache_creation_tokens": 156123,
+    "cache_read_tokens": 838531,
+    "output_tokens": 946,
+    "api_call_count": 6
+  }
+}
