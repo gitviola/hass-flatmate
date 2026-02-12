@@ -1815,6 +1815,19 @@ class HassFlatmateCleaningCard extends HTMLElement {
       </ha-card>
 
       <style>
+        ha-card {
+          box-shadow: none;
+          border: none;
+          background: transparent;
+        }
+
+        .card.compact {
+          box-shadow: var(--ha-card-box-shadow, none);
+          border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #e0e0e0));
+          background: var(--ha-card-background, var(--card-background-color, #fff));
+          border-radius: var(--ha-card-border-radius, 12px);
+        }
+
         .card {
           padding: 16px;
           display: grid;

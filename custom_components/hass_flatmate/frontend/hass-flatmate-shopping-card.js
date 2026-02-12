@@ -9,6 +9,8 @@ class HassFlatmateShoppingCard extends HTMLElement {
     this._pendingAdds = [];
     this._deferredSnapshot = "";
     this._optimisticRecents = [];
+    this._historyModalOpen = false;
+    this._historyModalItemName = "";
   }
 
   static async getConfigElement() {
@@ -83,6 +85,9 @@ class HassFlatmateShoppingCard extends HTMLElement {
       service_add_item: attrs.service_add_item || "",
       service_complete_item: attrs.service_complete_item || "",
       service_delete_item: attrs.service_delete_item || "",
+      item_history: attrs.item_history || {},
+      history_modal_open: this._historyModalOpen,
+      history_modal_item_name: this._historyModalItemName,
     });
   }
 
@@ -203,6 +208,54 @@ class HassFlatmateShoppingCard extends HTMLElement {
     return `added ${rtf.format(-Math.abs(value), unit)}`;
   }
 
+  _relativeTime(isoDatetime) {
+    if (!isoDatetime) {
+      return "";
+    }
+    const date = new Date(isoDatetime);
+    if (Number.isNaN(date.getTime())) {
+      return "";
+    }
+    const diffSeconds = Math.round((Date.now() - date.getTime()) / 1000);
+    const abs = Math.abs(diffSeconds);
+    const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+    const units = [
+      [60, "second"],
+      [60, "minute"],
+      [24, "hour"],
+      [7, "day"],
+      [4.34524, "week"],
+      [12, "month"],
+      [Number.POSITIVE_INFINITY, "year"],
+    ];
+    let value = diffSeconds;
+    let unit = "second";
+    let current = abs;
+    for (const [base, nextUnit] of units) {
+      unit = nextUnit;
+      if (current < base) {
+        break;
+      }
+      value = Math.round(value / base);
+      current = current / base;
+    }
+    return rtf.format(-Math.abs(value), unit);
+  }
+
+  _openHistoryModal(itemName) {
+    this._historyModalOpen = true;
+    this._historyModalItemName = String(itemName || "");
+    this._stateSnapshot = "";
+    this._render();
+  }
+
+  _closeHistoryModal() {
+    this._historyModalOpen = false;
+    this._historyModalItemName = "";
+    this._stateSnapshot = "";
+    this._render();
+  }
+
   async _callService(service, data) {
     if (!this._hass || !this._stateObj) {
       return;
@@ -298,6 +351,51 @@ class HassFlatmateShoppingCard extends HTMLElement {
     }
   }
 
+  _renderHistoryModal() {
+    if (!this._historyModalOpen || !this._historyModalItemName) {
+      return "";
+    }
+    const attrs = this._stateObj?.attributes || {};
+    const itemHistory = attrs.item_history || {};
+    const nameKey = this._historyModalItemName.trim().toLowerCase();
+    const entries = itemHistory[nameKey] || [];
+    const displayName = this._escape(this._historyModalItemName);
+
+    const entriesHtml = entries.length > 0
+      ? entries.map((entry) => {
+          const memberName = this._escape(entry.completed_by_name || "Someone");
+          const relTime = this._relativeTime(entry.completed_at);
+          return `
+            <li class="history-entry">
+              <ha-icon icon="mdi:cart-check" class="history-icon"></ha-icon>
+              <div class="history-entry-content">
+                <span class="history-member">${memberName}</span>
+                <span class="history-time">${this._escape(relTime)}</span>
+              </div>
+            </li>
+          `;
+        }).join("")
+      : '<li class="history-empty">No purchase history available</li>';
+
+    return `
+      <div class="history-backdrop" data-action="close-history-modal"></div>
+      <div class="history-modal">
+        <div class="history-modal-header">
+          <h3>${displayName}</h3>
+          <button class="history-modal-close" type="button" data-action="close-history-modal" aria-label="Close">
+            <ha-icon icon="mdi:close"></ha-icon>
+          </button>
+        </div>
+        <ul class="history-list">
+          ${entriesHtml}
+        </ul>
+        <div class="history-modal-footer">
+          <button class="history-modal-close-btn" type="button" data-action="close-history-modal">Close</button>
+        </div>
+      </div>
+    `;
+  }
+
   _bindEvents() {
     const form = this._root.querySelector("#hf-add-form");
     const input = this._root.querySelector("#hf-item-input");
@@ -349,6 +447,18 @@ class HassFlatmateShoppingCard extends HTMLElement {
     this._root.querySelectorAll("[data-action='delete-item']").forEach((el) => {
       el.addEventListener("click", async () => {
         await this._deleteItem(Number(el.dataset.itemId), el.dataset.itemName || "item");
+      });
+    });
+
+    this._root.querySelectorAll("[data-action='open-item-history']").forEach((el) => {
+      el.addEventListener("click", () => {
+        this._openHistoryModal(el.dataset.itemName || "");
+      });
+    });
+
+    this._root.querySelectorAll("[data-action='close-history-modal']").forEach((el) => {
+      el.addEventListener("click", () => {
+        this._closeHistoryModal();
       });
     });
   }
@@ -456,12 +566,12 @@ class HassFlatmateShoppingCard extends HTMLElement {
         const actionButtons = isPendingAdd
           ? '<span class="pending-pill">Saving...</span>'
           : `
-              <button class="todo-check" type="button" data-action="complete-item" data-item-id="${id}" data-item-name="${name}" title="Mark as bought" aria-label="Mark ${name} as bought"><ha-icon icon="mdi:check-circle-outline"></ha-icon></button>
+              <button class="todo-check" type="button" data-action="complete-item" data-item-id="${id}" data-item-name="${name}" title="Mark as bought" aria-label="Mark ${name} as bought"><ha-icon icon="mdi:circle-outline"></ha-icon></button>
               <button class="todo-delete" type="button" data-action="delete-item" data-item-id="${id}" data-item-name="${name}" title="Remove from shopping list" aria-label="Remove ${name} from shopping list"><ha-icon icon="mdi:close-circle-outline"></ha-icon></button>
             `;
         return `
           <li class="item-row ${isPendingAdd ? "pending-add" : ""}">
-            <div class="item-main">
+            <div class="item-main" data-action="open-item-history" data-item-name="${name}">
               <div class="item-name">${name}</div>
               <div class="item-meta">${metaText}</div>
             </div>
@@ -525,9 +635,16 @@ class HassFlatmateShoppingCard extends HTMLElement {
 
           ${errorMessage ? `<div class="error">${errorMessage}</div>` : ""}
         </div>
+        ${this._renderHistoryModal()}
       </ha-card>
 
       <style>
+        ha-card {
+          box-shadow: none;
+          border: none;
+          background: transparent;
+        }
+
         .card {
           padding: 16px;
           display: grid;
@@ -584,6 +701,7 @@ class HassFlatmateShoppingCard extends HTMLElement {
 
         .item-main {
           min-width: 0;
+          cursor: pointer;
         }
 
         .item-name {
@@ -617,9 +735,9 @@ class HassFlatmateShoppingCard extends HTMLElement {
           min-width: 34px;
           min-height: 34px;
           line-height: 0;
-          color: var(--success-color, #4caf50);
-          border-color: color-mix(in srgb, var(--success-color, #4caf50) 45%, var(--divider-color));
-          background: color-mix(in srgb, var(--success-color, #4caf50) 14%, var(--card-background-color));
+          color: var(--secondary-text-color);
+          border-color: var(--divider-color);
+          background: var(--card-background-color);
         }
 
         .todo-delete {
@@ -640,7 +758,12 @@ class HassFlatmateShoppingCard extends HTMLElement {
           font-size: 0.8rem;
         }
 
-        .todo-check:hover,
+        .todo-check:hover {
+          color: var(--success-color, #4caf50);
+          border-color: color-mix(in srgb, var(--success-color, #4caf50) 45%, var(--divider-color));
+          background: color-mix(in srgb, var(--success-color, #4caf50) 10%, var(--card-background-color));
+        }
+
         .add-btn:hover,
         .chip:hover {
           border-color: var(--primary-color);
@@ -704,6 +827,135 @@ class HassFlatmateShoppingCard extends HTMLElement {
           border-radius: 10px;
           padding: 8px 10px;
           font-size: 0.9rem;
+        }
+
+        .item-main:hover {
+          background: color-mix(in srgb, var(--divider-color) 10%, transparent);
+          border-radius: 8px;
+        }
+
+        .history-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.5);
+          z-index: 999;
+        }
+
+        .history-modal {
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          z-index: 1000;
+          background: var(--card-background-color, #fff);
+          border-radius: 16px;
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+          width: min(90vw, 380px);
+          max-height: 80vh;
+          display: grid;
+          grid-template-rows: auto 1fr auto;
+          overflow: hidden;
+        }
+
+        .history-modal-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 16px;
+          border-bottom: 1px solid var(--divider-color);
+        }
+
+        .history-modal-header h3 {
+          margin: 0;
+          font-size: 1.1rem;
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .history-modal-close {
+          border: none;
+          background: none;
+          color: var(--secondary-text-color);
+          cursor: pointer;
+          padding: 4px;
+          line-height: 0;
+        }
+
+        .history-modal-close:hover {
+          color: var(--primary-text-color);
+        }
+
+        .history-list {
+          list-style: none;
+          margin: 0;
+          padding: 8px 16px;
+          overflow-y: auto;
+          display: grid;
+          gap: 4px;
+        }
+
+        .history-entry {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 8px 0;
+          border-bottom: 1px solid color-mix(in srgb, var(--divider-color) 40%, transparent);
+        }
+
+        .history-entry:last-child {
+          border-bottom: none;
+        }
+
+        .history-icon {
+          color: var(--success-color, #4caf50);
+          flex-shrink: 0;
+          --mdc-icon-size: 20px;
+        }
+
+        .history-entry-content {
+          display: grid;
+          gap: 2px;
+          min-width: 0;
+        }
+
+        .history-member {
+          font-weight: 600;
+          font-size: 0.92rem;
+        }
+
+        .history-time {
+          color: var(--secondary-text-color);
+          font-size: 0.82rem;
+        }
+
+        .history-empty {
+          color: var(--secondary-text-color);
+          font-style: italic;
+          padding: 16px 0;
+          text-align: center;
+        }
+
+        .history-modal-footer {
+          padding: 12px 16px;
+          border-top: 1px solid var(--divider-color);
+          display: flex;
+          justify-content: flex-end;
+        }
+
+        .history-modal-close-btn {
+          border: 1px solid var(--divider-color);
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
+          border-radius: 10px;
+          padding: 8px 16px;
+          cursor: pointer;
+          font: inherit;
+        }
+
+        .history-modal-close-btn:hover {
+          border-color: var(--primary-color);
         }
 
         @media (max-width: 700px) {

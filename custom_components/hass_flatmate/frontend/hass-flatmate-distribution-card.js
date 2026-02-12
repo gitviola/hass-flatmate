@@ -373,7 +373,7 @@ class HassFlatmateDistributionCard extends HTMLElement {
           display: grid;
           gap: 4px;
           text-align: center;
-          padding: 10px 6px;
+          padding: 8px 4px;
           border-right: 2px solid #000;
         }
 
@@ -383,13 +383,14 @@ class HassFlatmateDistributionCard extends HTMLElement {
 
         .compact-name {
           font-weight: 600;
-          line-height: 1;
+          line-height: 1.15;
           font-size: clamp(0.56rem, 1.1vw, 0.76rem);
-          white-space: nowrap;
-          text-overflow: ellipsis;
+          word-break: break-word;
+          overflow-wrap: anywhere;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
           overflow: hidden;
-          word-break: normal;
-          overflow-wrap: normal;
         }
 
         .compact-count {

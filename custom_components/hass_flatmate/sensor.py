@@ -525,11 +525,51 @@ class ShoppingDataSensor(HassFlatmateCoordinatorEntity, SensorEntity):
             seen.add(key)
             suggestions.append(name)
 
+        # Build purchase history for items currently on the open list
+        open_name_keys = {
+            str(item.get("name", "")).strip().lower()
+            for item in self.coordinator.data.get("shopping_items", [])
+            if item.get("status") == "open" and str(item.get("name", "")).strip()
+        }
+        history_by_name: dict[str, list[dict[str, Any]]] = {}
+        for item in self.coordinator.data.get("shopping_items", []):
+            if item.get("status") != "completed":
+                continue
+            name_raw = str(item.get("name", "")).strip()
+            name_key = name_raw.lower()
+            if not name_key or name_key not in open_name_keys:
+                continue
+
+            completed_by_member_id = item.get("completed_by_member_id")
+            completed_by_name = None
+            if completed_by_member_id is not None:
+                try:
+                    completed_by_name = members.get(int(completed_by_member_id))
+                except (TypeError, ValueError):
+                    completed_by_name = None
+
+            completed_at_raw = item.get("completed_at")
+            completed_at = _parse_datetime_local(completed_at_raw)
+
+            history_by_name.setdefault(name_key, []).append({
+                "completed_by_name": completed_by_name or "Someone",
+                "completed_by_member_id": completed_by_member_id,
+                "completed_at": completed_at.isoformat() if completed_at else completed_at_raw,
+            })
+
+        for name_key, entries in history_by_name.items():
+            entries.sort(
+                key=lambda e: str(e.get("completed_at") or ""),
+                reverse=True,
+            )
+            history_by_name[name_key] = entries[:10]
+
         return {
             "open_items": open_items,
             "favorites": favorites,
             "recents": recents,
             "suggestions": suggestions[:40],
+            "item_history": history_by_name,
             "service_domain": DOMAIN,
             "service_add_item": SERVICE_ADD_SHOPPING_ITEM,
             "service_complete_item": SERVICE_COMPLETE_SHOPPING_ITEM,
