@@ -6,6 +6,7 @@
 
 ### Changed
 - Compensation notification text now uses clearer "make-up shift" wording.
+- Swap and make-up-shift push notifications now include actor-aware context and clearer one-time action wording.
 
 ## [0.1.15] - 2026-02-11
 

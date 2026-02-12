@@ -1010,15 +1010,26 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
     const compactMode = this._isCompact();
     const errorMessage = this._errorMessage ? this._escape(this._errorMessage) : "";
+    const actorMemberId = this._currentMemberId(members);
+    const actorName =
+      Number.isInteger(actorMemberId) && actorMemberId > 0
+        ? this._memberName(memberMap, actorMemberId)
+        : String(this._hass?.user?.name || "Someone");
+    const actorNameEscaped = this._escape(actorName);
     const modalWeek = this._resolveModalWeek(weeks);
     const modalAssigneeId = Number(this._modalAssigneeMemberId || modalWeek?.assignee_member_id);
     const modalAssigneeName = this._memberName(memberMap, modalAssigneeId);
+    const modalAssigneeNameEscaped = this._escape(modalAssigneeName);
     const modalCleanerId = Number(this._modalCleanerMemberId);
     const hasValidModalCleaner =
       Number.isInteger(modalCleanerId) && modalCleanerId > 0 && modalCleanerId !== modalAssigneeId;
     const modalCleanerName = hasValidModalCleaner
       ? this._memberName(memberMap, modalCleanerId)
       : "the selected flatmate";
+    const modalCleanerNameEscaped = this._escape(modalCleanerName);
+    const modalWeekLabel = modalWeek
+      ? `${this._weekTitle(modalWeek, 0)} (${this._rowDateRange(modalWeek)})`
+      : "the selected week";
     const modalCompensationWeek =
       this._modalChoice === "takeover" && hasValidModalCleaner
         ? this._findCompensationPreviewWeek(weeks, modalCleanerId, modalWeek?.week_start)
@@ -1032,20 +1043,30 @@ class HassFlatmateCleaningCard extends HTMLElement {
           modalCompensationWeekIndex >= 0 ? modalCompensationWeekIndex : 0
         )} (${this._rowDateRange(modalCompensationWeek)})`
       : "the next eligible original shift in the visible schedule";
+    const modalCompensationWeekLabelEscaped = this._escape(modalCompensationWeekLabel);
 
     const doneEffectsHtml =
       this._modalChoice === "takeover"
         ? `
           <ul class="effect-list">
-            <li>Record that <strong>${this._escape(modalCleanerName)}</strong> took over this shift from <strong>${this._escape(modalAssigneeName)}</strong>.</li>
-            <li>Automatically assign <strong>${this._escape(modalAssigneeName)}</strong> to <strong>${this._escape(modalCleanerName)}</strong>'s next original turn in <strong>${this._escape(modalCompensationWeekLabel)}</strong>.</li>
-            <li>Send a notification to both flatmates with the takeover and make-up shift details.</li>
+            <li>Record that <strong>${modalCleanerNameEscaped}</strong> took over <strong>${modalAssigneeNameEscaped}</strong>'s shift in <strong>${this._escape(modalWeekLabel)}</strong>.</li>
+            <li>Mark this week as done and credit <strong>${modalCleanerNameEscaped}</strong> as the cleaner.</li>
+            <li>Create a one-time make-up shift: <strong>${modalAssigneeNameEscaped}</strong> is reassigned to <strong>${modalCleanerNameEscaped}</strong>'s next regular week: <strong>${modalCompensationWeekLabelEscaped}</strong>.</li>
+          </ul>
+          <p class="effect-subtitle">Who will be notified</p>
+          <ul class="effect-list notification-list">
+            <li><strong>${modalAssigneeNameEscaped}</strong>: "${actorNameEscaped} recorded that ${modalCleanerNameEscaped} took over your shift. Your make-up shift is ${modalCompensationWeekLabelEscaped}."</li>
+            <li><strong>${modalCleanerNameEscaped}</strong>: "${actorNameEscaped} recorded you as the cleaner. ${modalAssigneeNameEscaped} is reassigned to your next regular week (${modalCompensationWeekLabelEscaped})."</li>
           </ul>
         `
         : `
           <ul class="effect-list">
-            <li>Mark this shift as done for <strong>${this._escape(modalAssigneeName)}</strong>.</li>
-            <li>Send a notification to <strong>${this._escape(modalAssigneeName)}</strong> that you confirmed completion.</li>
+            <li>Mark this shift as done for <strong>${modalAssigneeNameEscaped}</strong>.</li>
+            <li>No rotation changes are made; future weeks stay in the same order.</li>
+          </ul>
+          <p class="effect-subtitle">Who will be notified</p>
+          <ul class="effect-list notification-list">
+            <li><strong>${modalAssigneeNameEscaped}</strong>: "${actorNameEscaped} confirmed your cleaning shift as done."</li>
           </ul>
         `;
 
@@ -1088,18 +1109,31 @@ class HassFlatmateCleaningCard extends HTMLElement {
       swapExistingPartnerId !== swapOriginalAssigneeId
         ? this._memberName(memberMap, swapExistingPartnerId)
         : "the swap partner";
+    const swapActionWord = swapHasExistingManualSwap ? "updated" : "set";
     const swapEffectsHtml =
       this._swapModalAction === "cancel"
         ? `
           <ul class="effect-list">
-            <li>Restore the original assignment for <strong>${this._escape(swapOriginalAssigneeName)}</strong> in <strong>${this._escape(swapWeekLabel)}</strong>.</li>
-            <li>Send a notification to <strong>${this._escape(swapOriginalAssigneeName)}</strong> and <strong>${this._escape(swapCancelPartnerName)}</strong> that the swap was canceled.</li>
+            <li>Remove the one-time swap for <strong>${this._escape(swapWeekLabel)}</strong>.</li>
+            <li>Restore <strong>${this._escape(swapOriginalAssigneeName)}</strong> as the assignee for that week.</li>
+            <li>Future weeks remain unchanged.</li>
+          </ul>
+          <p class="effect-subtitle">Who will be notified</p>
+          <ul class="effect-list notification-list">
+            <li><strong>${this._escape(swapOriginalAssigneeName)}</strong>: "${actorNameEscaped} canceled the one-time swap for ${this._escape(swapWeekLabel)}. You are assigned again."</li>
+            <li><strong>${this._escape(swapCancelPartnerName)}</strong>: "${actorNameEscaped} canceled the one-time swap for ${this._escape(swapWeekLabel)}. You are no longer assigned."</li>
           </ul>
         `
         : `
           <ul class="effect-list">
-            <li>Swap <strong>${this._escape(swapOriginalAssigneeName)}</strong> with <strong>${this._escape(swapTargetName)}</strong> for <strong>${this._escape(swapWeekLabel)}</strong>.</li>
-            <li>Send a notification to both flatmates with the week and original assignee details.</li>
+            <li>Apply a one-time swap for <strong>${this._escape(swapWeekLabel)}</strong> only.</li>
+            <li><strong>${this._escape(swapTargetName)}</strong> is assigned for that week instead of <strong>${this._escape(swapOriginalAssigneeName)}</strong>.</li>
+            <li>From the following week onward, the rotation returns automatically to the original order.</li>
+          </ul>
+          <p class="effect-subtitle">Who will be notified</p>
+          <ul class="effect-list notification-list">
+            <li><strong>${this._escape(swapOriginalAssigneeName)}</strong>: "${actorNameEscaped} ${this._escape(swapActionWord)} a one-time swap with ${this._escape(swapTargetName)} for ${this._escape(swapWeekLabel)}. You are not assigned this week."</li>
+            <li><strong>${this._escape(swapTargetName)}</strong>: "${actorNameEscaped} ${this._escape(swapActionWord)} a one-time swap with ${this._escape(swapOriginalAssigneeName)} for ${this._escape(swapWeekLabel)}. You are assigned this week."</li>
           </ul>
         `;
     const swapTargetOptions = [
@@ -1289,7 +1323,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
           <div class="modal-backdrop swap-modal-backdrop">
             <div class="modal" role="dialog" aria-modal="true">
               <div class="modal-header">
-                <h3>${swapHasExistingManualSwap ? "Edit weekly swap" : "Schedule weekly swap"}</h3>
+                <h3>${swapHasExistingManualSwap ? "Edit one-time swap for this week" : "Set one-time swap for this week"}</h3>
                 <button class="icon-btn" type="button" data-action="close-swap-modal" aria-label="Close swap dialog">
                   <ha-icon icon="mdi:close"></ha-icon>
                 </button>
@@ -1306,10 +1340,10 @@ class HassFlatmateCleaningCard extends HTMLElement {
               <div class="choice-group">
                 <label class="choice-option">
                   <input type="radio" name="hf-swap-action" value="swap" ${this._swapModalAction !== "cancel" ? "checked" : ""} />
-                  <span>${swapHasExistingManualSwap ? "Update swap for this week" : "Create swap for this week"}</span>
+                  <span>${swapHasExistingManualSwap ? "Update one-time swap for this week" : "Create one-time swap for this week"}</span>
                 </label>
                 <p class="choice-help">
-                  Both involved flatmates will be notified immediately.
+                  This affects only the selected week. Following weeks stay on the normal rotation.
                 </p>
                 ${
                   swapHasExistingManualSwap
@@ -1319,7 +1353,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
                         <span>Cancel existing swap</span>
                       </label>
                       <p class="choice-help">
-                        Restores the original assignment and notifies both flatmates.
+                        Restores the original assignment for this week and notifies both flatmates.
                       </p>
                     `
                     : ""
@@ -1808,6 +1842,14 @@ class HassFlatmateCleaningCard extends HTMLElement {
           letter-spacing: 0.03em;
         }
 
+        .effect-subtitle {
+          margin: 4px 0 0;
+          color: var(--secondary-text-color);
+          font-size: 0.78rem;
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
+        }
+
         .effect-list {
           margin: 0;
           padding-left: 18px;
@@ -1819,6 +1861,10 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
         .effect-list strong {
           font-weight: 700;
+        }
+
+        .notification-list {
+          margin-top: -2px;
         }
 
         .modal-actions {

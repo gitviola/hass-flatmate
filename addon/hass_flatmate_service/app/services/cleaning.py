@@ -154,38 +154,53 @@ def _build_swap_notifications(
     week_start: date,
     *,
     action: str,
+    actor_name: str | None = None,
 ) -> list[dict]:
     member_a = get_member_by_id(session, member_a_id)
     member_b = get_member_by_id(session, member_b_id)
+    member_a_name = member_a.display_name if member_a else "member"
+    member_b_name = member_b.display_name if member_b else "member"
     original_assignee_id = baseline_assignee_member_id(session, week_start)
     original_assignee = (
         get_member_by_id(session, original_assignee_id)
         if original_assignee_id is not None
         else None
     )
-    original_suffix = (
-        f" Original assignee: {original_assignee.display_name}."
-        if original_assignee is not None
-        else ""
-    )
+    original_name = original_assignee.display_name if original_assignee is not None else None
+    actor_prefix = f"{actor_name} " if actor_name else "A flatmate "
+    week_label = week_start.isoformat()
 
     if action == "created":
         msg_a = (
-            f"Swap confirmed for week {week_start.isoformat()} with "
-            f"{member_b.display_name if member_b else 'member'}."
-            f"{original_suffix}"
+            f"{actor_prefix}set a one-time swap for week {week_label} with {member_b_name}. "
+            f"You are not assigned this week."
         )
         msg_b = (
-            f"Swap confirmed for week {week_start.isoformat()} with "
-            f"{member_a.display_name if member_a else 'member'}."
-            f"{original_suffix}"
+            f"{actor_prefix}set a one-time swap for week {week_label} with {member_a_name}. "
+            f"You are assigned this week."
         )
     elif action == "updated":
-        msg_a = f"Swap updated for week {week_start.isoformat()}. Check current assignment.{original_suffix}"
-        msg_b = f"Swap updated for week {week_start.isoformat()}. Check current assignment.{original_suffix}"
+        msg_a = (
+            f"{actor_prefix}updated the one-time swap for week {week_label} with {member_b_name}. "
+            f"Check this week's assignment."
+        )
+        msg_b = (
+            f"{actor_prefix}updated the one-time swap for week {week_label} with {member_a_name}. "
+            f"Check this week's assignment."
+        )
     else:
-        msg_a = f"Swap canceled for week {week_start.isoformat()}. Rotation has been restored.{original_suffix}"
-        msg_b = f"Swap canceled for week {week_start.isoformat()}. Rotation has been restored.{original_suffix}"
+        msg_a = (
+            f"{actor_prefix}canceled the one-time swap for week {week_label}. "
+            f"Original assignment has been restored."
+        )
+        msg_b = (
+            f"{actor_prefix}canceled the one-time swap for week {week_label}. "
+            f"Original assignment has been restored."
+        )
+
+    if original_name:
+        msg_a = f"{msg_a} Original assignee: {original_name}."
+        msg_b = f"{msg_b} Original assignee: {original_name}."
 
     title = "Weekly Cleaning Shift"
     return [
@@ -247,6 +262,7 @@ def upsert_manual_swap(
                 existing.member_to_id,
                 week_start,
                 action="canceled",
+                actor_name=actor_member.display_name if actor_member else None,
             )
             log_event(
                 session,
@@ -296,6 +312,7 @@ def upsert_manual_swap(
         member_b_id,
         week_start,
         action=action,
+        actor_name=actor_member.display_name if actor_member else None,
     )
 
     log_event(
@@ -486,20 +503,26 @@ def _build_compensation_notifications(
     session: Session,
     *,
     week_start: date,
+    source_week_start: date | None,
     member_from_id: int,
     member_to_id: int,
+    actor_name: str | None = None,
 ) -> list[dict]:
     member_from = get_member_by_id(session, member_from_id)
     member_to = get_member_by_id(session, member_to_id)
+    member_to_name = member_to.display_name if member_to else "another member"
+    actor_prefix = f"{actor_name} recorded that " if actor_name else "A flatmate recorded that "
+    source_label = source_week_start.isoformat() if source_week_start is not None else "this week"
+    make_up_label = week_start.isoformat()
 
     title = "Weekly Cleaning Shift"
     msg_from = (
-        f"Make-up shift planned for week {week_start.isoformat()}: "
-        f"{member_to.display_name if member_to else 'Another member'} will cover your regular turn."
+        f"{actor_prefix}{member_to_name} took over your shift in week {source_label}. "
+        f"Your make-up shift is planned for week {make_up_label}."
     )
     msg_to = (
-        f"Make-up shift planned for week {week_start.isoformat()}: "
-        f"you are scheduled to cover {member_from.display_name if member_from else 'another member'}'s regular turn."
+        f"{actor_prefix}you took over {member_to_name}'s shift in week {source_label}. "
+        f"{member_to_name} is assigned to your regular week {make_up_label} as a make-up shift."
     )
     return [
         _member_notification(member_from, title, msg_from),
@@ -714,8 +737,10 @@ def mark_cleaning_takeover_done(
     notifications = _build_compensation_notifications(
         session,
         week_start=compensation_week,
+        source_week_start=week_start,
         member_from_id=cleaner_member_id,
         member_to_id=original_assignee_member_id,
+        actor_name=actor_member.display_name if actor_member else None,
     )
 
     session.commit()
