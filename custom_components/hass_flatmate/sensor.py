@@ -121,9 +121,9 @@ def _cleaning_history_summary(
         status = str(payload.get("status", "")).strip().lower()
         slot = str(payload.get("notification_slot", "")).strip().lower()
         slot_label_map = {
-            "monday_11": "Mon 11:00 assignment",
-            "sunday_18": "Sun 18:00 reminder",
-            "sunday_21": "Sun 21:00 final reminder",
+            "monday_11": "Monday assignment",
+            "sunday_18": "Sunday evening reminder",
+            "sunday_21": "Sunday final reminder",
         }
         status_label_map = {
             "sent": "Sent",
