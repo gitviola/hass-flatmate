@@ -240,56 +240,57 @@ class HassFlatmateDistributionCard extends HTMLElement {
       <style>
         .card {
           display: grid;
-          gap: 12px;
+          gap: var(--ha-space-3, 12px);
         }
 
         .header {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          gap: 10px;
-          padding: 16px 16px 0;
+          gap: var(--ha-space-2, 8px);
+          padding: var(--ha-space-4, 16px) var(--ha-space-4, 16px) 0;
         }
 
         .header h2 {
           margin: 0;
-          font-size: 1.2rem;
-          line-height: 1.25;
+          font-size: var(--ha-font-size-xl, 1.2rem);
+          font-weight: var(--ha-font-weight-bold, 700);
+          line-height: var(--ha-line-height-condensed, 1.2);
         }
 
         .header p {
-          margin: 4px 0 0;
+          margin: var(--ha-space-1, 4px) 0 0;
           color: var(--secondary-text-color);
-          font-size: 0.88rem;
+          font-size: var(--ha-font-size-s, 0.85rem);
         }
 
         .total-chip,
         .chip {
-          border: 1px solid var(--divider-color);
-          border-radius: 999px;
-          padding: 5px 10px;
-          font-size: 0.78rem;
+          border: var(--ha-border-width-sm, 1px) solid var(--outline-color, var(--divider-color));
+          border-radius: var(--ha-border-radius-pill, 9999px);
+          padding: var(--ha-space-1, 4px) var(--ha-space-2, 8px);
+          font-size: var(--ha-font-size-xs, 0.75rem);
           line-height: 1;
         }
 
         .total-chip {
           color: var(--primary-color);
-          border-color: color-mix(in srgb, var(--primary-color) 45%, var(--divider-color));
-          background: color-mix(in srgb, var(--primary-color) 10%, var(--card-background-color));
-          font-weight: 600;
+          border-color: rgba(var(--rgb-primary-color, 0, 154, 199), 0.45);
+          background: rgba(var(--rgb-primary-color, 0, 154, 199), 0.1);
+          font-weight: var(--ha-font-weight-medium, 500);
           white-space: nowrap;
         }
 
         .meta-row {
           display: flex;
           flex-wrap: wrap;
-          gap: 8px;
-          padding: 0 16px;
+          gap: var(--ha-space-2, 8px);
+          padding: 0 var(--ha-space-4, 16px);
         }
 
         .chip {
           color: var(--secondary-text-color);
-          background: color-mix(in srgb, var(--divider-color) 10%, var(--card-background-color));
+          background: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.05);
         }
 
         .body {
@@ -297,7 +298,7 @@ class HassFlatmateDistributionCard extends HTMLElement {
         }
 
         .bars-body {
-          padding: 0 16px 16px;
+          padding: 0 var(--ha-space-4, 16px) var(--ha-space-4, 16px);
         }
 
         .list {
@@ -305,23 +306,24 @@ class HassFlatmateDistributionCard extends HTMLElement {
           margin: 0;
           padding: 0;
           display: grid;
-          gap: 10px;
+          gap: var(--ha-space-2, 8px);
         }
 
         .row {
           display: grid;
-          gap: 6px;
+          gap: var(--ha-space-1, 4px);
         }
 
         .row-head {
           display: flex;
           justify-content: space-between;
           align-items: baseline;
-          gap: 10px;
+          gap: var(--ha-space-2, 8px);
         }
 
         .name {
-          font-weight: 600;
+          font-weight: var(--ha-font-weight-medium, 500);
+          font-size: var(--ha-font-size-m, 0.875rem);
           min-width: 0;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -330,36 +332,38 @@ class HassFlatmateDistributionCard extends HTMLElement {
 
         .metrics {
           color: var(--secondary-text-color);
-          font-size: 0.82rem;
+          font-size: var(--ha-font-size-s, 0.75rem);
           white-space: nowrap;
+          letter-spacing: 0.4px;
         }
 
         .track {
-          height: 12px;
-          border-radius: 999px;
-          border: 1px solid var(--divider-color);
-          background: color-mix(in srgb, var(--divider-color) 16%, var(--card-background-color));
+          height: var(--ha-space-3, 12px);
+          border-radius: var(--ha-border-radius-pill, 9999px);
+          border: var(--ha-border-width-sm, 1px) solid var(--outline-color, var(--divider-color));
+          background: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.06);
           overflow: hidden;
         }
 
         .fill {
           width: var(--bar-width, 0%);
           height: 100%;
-          background: color-mix(in srgb, var(--accent) 80%, #ffffff 20%);
-          transition: width 260ms ease;
+          background: var(--accent);
+          transition: width var(--ha-animation-duration-normal, 250ms) ease;
         }
 
         .empty,
         .empty-list {
           color: var(--secondary-text-color);
           font-style: italic;
+          font-size: var(--ha-font-size-s, 0.75rem);
         }
 
         .compact-list {
           list-style: none;
           margin: 0;
           padding: 0;
-          border: 2px solid #000;
+          border: var(--ha-border-width-md, 2px) solid var(--primary-text-color);
           border-radius: 0;
           overflow: hidden;
           background: var(--card-background-color);
@@ -371,10 +375,10 @@ class HassFlatmateDistributionCard extends HTMLElement {
           flex: var(--compact-share, 1) 1 0;
           min-width: 0;
           display: grid;
-          gap: 4px;
+          gap: var(--ha-space-1, 4px);
           text-align: center;
-          padding: 8px 4px;
-          border-right: 2px solid #000;
+          padding: var(--ha-space-2, 8px) var(--ha-space-1, 4px);
+          border-right: var(--ha-border-width-md, 2px) solid var(--primary-text-color);
         }
 
         .compact-cell:last-child {
@@ -382,8 +386,8 @@ class HassFlatmateDistributionCard extends HTMLElement {
         }
 
         .compact-name {
-          font-weight: 600;
-          line-height: 1.15;
+          font-weight: var(--ha-font-weight-medium, 500);
+          line-height: var(--ha-line-height-condensed, 1.2);
           font-size: clamp(0.56rem, 1.1vw, 0.76rem);
           word-break: break-word;
           overflow-wrap: anywhere;
@@ -400,7 +404,7 @@ class HassFlatmateDistributionCard extends HTMLElement {
         }
 
         .compact-empty {
-          padding: 10px 12px;
+          padding: var(--ha-space-3, 12px);
         }
 
         .without-header {
@@ -408,8 +412,8 @@ class HassFlatmateDistributionCard extends HTMLElement {
         }
 
         .without-header .meta-row {
-          padding-top: 12px;
-          padding-bottom: 8px;
+          padding-top: var(--ha-space-3, 12px);
+          padding-bottom: var(--ha-space-2, 8px);
         }
       </style>
     `;

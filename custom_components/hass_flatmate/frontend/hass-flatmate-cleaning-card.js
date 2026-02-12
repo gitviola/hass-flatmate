@@ -904,7 +904,8 @@ class HassFlatmateCleaningCard extends HTMLElement {
     });
 
     this._root.querySelectorAll("[data-action='toggle-done']").forEach((el) => {
-      el.addEventListener("click", async () => {
+      el.addEventListener("click", async (event) => {
+        event.stopPropagation();
         const weekStart = String(el.dataset.weekStart || "");
         const row = weekMap.get(weekStart);
         await this._toggleDone(row, members);
@@ -912,7 +913,8 @@ class HassFlatmateCleaningCard extends HTMLElement {
     });
 
     this._root.querySelectorAll("[data-action='open-swap-modal']").forEach((el) => {
-      el.addEventListener("click", () => {
+      el.addEventListener("click", (event) => {
+        event.stopPropagation();
         const weekStart = String(el.dataset.weekStart || "");
         const row = weekMap.get(weekStart);
         this._openSwapModal(row, members);
@@ -1205,15 +1207,14 @@ class HassFlatmateCleaningCard extends HTMLElement {
         const actionControl = actionParts.join("");
 
         return `
-          <li class="week-row ${isCurrent ? "current" : ""} ${isPast ? "past" : ""} ${isDone ? "done" : ""} ${isMissed ? "missed" : ""}">
-            <div
-              class="week-main history-trigger"
+          <li class="week-row ${isCurrent ? "current" : ""} ${isPast ? "past" : ""} ${isDone ? "done" : ""} ${isMissed ? "missed" : ""}"
               data-action="open-history-modal"
               data-week-start="${this._escape(row.week_start)}"
               role="button"
               tabindex="0"
               aria-label="Open shift details for ${this._escape(this._rowDateRange(row))}"
-            >
+          >
+            <div class="week-main">
               <div class="week-top">
                 <span class="week-label">${this._escape(this._weekTitle(row, index))}</span>
                 <span class="week-dates">${this._escape(this._rowDateRange(row))}</span>
@@ -1829,27 +1830,28 @@ class HassFlatmateCleaningCard extends HTMLElement {
         }
 
         .card {
-          padding: 16px;
+          padding: var(--ha-space-4, 16px);
           display: grid;
-          gap: 14px;
+          gap: var(--ha-space-3, 12px);
         }
 
         .card.compact {
-          padding: 12px;
-          gap: 10px;
+          padding: var(--ha-space-3, 12px);
+          gap: var(--ha-space-2, 8px);
         }
 
         .header {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          gap: 10px;
+          gap: var(--ha-space-2, 8px);
         }
 
         .header h2 {
           margin: 0;
-          font-size: 1.2rem;
-          line-height: 1.25;
+          font-size: var(--ha-font-size-xl, 1.2rem);
+          font-weight: var(--ha-font-weight-bold, 700);
+          line-height: var(--ha-line-height-condensed, 1.2);
         }
 
         .compact-header {
@@ -1857,43 +1859,44 @@ class HassFlatmateCleaningCard extends HTMLElement {
         }
 
         .card.compact .header h2 {
-          font-size: 1.05rem;
+          font-size: var(--ha-font-size-l, 1rem);
         }
 
         .header p {
-          margin: 4px 0 0;
+          margin: var(--ha-space-1, 4px) 0 0;
           color: var(--secondary-text-color);
-          font-size: 0.9rem;
+          font-size: var(--ha-font-size-s, 0.85rem);
         }
 
         .card.compact .header p {
-          font-size: 0.82rem;
+          font-size: var(--ha-font-size-xs, 0.75rem);
         }
 
         .header-status {
-          border-radius: 999px;
-          padding: 6px 10px;
-          font-size: 0.78rem;
-          border: 1px solid var(--divider-color);
+          border-radius: var(--ha-border-radius-pill, 9999px);
+          padding: var(--ha-space-1, 4px) var(--ha-space-2, 8px);
+          font-size: var(--ha-font-size-xs, 0.75rem);
+          font-weight: var(--ha-font-weight-medium, 500);
+          border: var(--ha-border-width-sm, 1px) solid var(--outline-color, var(--divider-color));
           text-transform: uppercase;
           letter-spacing: 0.03em;
         }
 
         .card.compact .header-status {
-          font-size: 0.72rem;
-          padding: 5px 8px;
+          font-size: var(--ha-font-size-xs, 0.75rem);
+          padding: 3px var(--ha-space-2, 8px);
         }
 
         .header-status.done {
-          color: var(--success-color, #4caf50);
-          background: color-mix(in srgb, var(--success-color, #4caf50) 14%, var(--card-background-color));
-          border-color: color-mix(in srgb, var(--success-color, #4caf50) 40%, var(--divider-color));
+          color: var(--success-color, #43a047);
+          background: rgba(var(--rgb-success-color, 67, 160, 71), 0.14);
+          border-color: rgba(var(--rgb-success-color, 67, 160, 71), 0.4);
         }
 
         .header-status.missed {
-          color: var(--warning-color, #f57c00);
-          background: color-mix(in srgb, var(--warning-color, #f57c00) 14%, var(--card-background-color));
-          border-color: color-mix(in srgb, var(--warning-color, #f57c00) 40%, var(--divider-color));
+          color: var(--warning-color, #ffa600);
+          background: rgba(var(--rgb-warning-color, 255, 166, 0), 0.14);
+          border-color: rgba(var(--rgb-warning-color, 255, 166, 0), 0.4);
         }
 
         .header-status.pending {
@@ -1901,8 +1904,9 @@ class HassFlatmateCleaningCard extends HTMLElement {
         }
 
         section h3 {
-          margin: 0 0 8px;
-          font-size: 0.92rem;
+          margin: 0 0 var(--ha-space-2, 8px);
+          font-size: var(--ha-font-size-s, 0.85rem);
+          font-weight: var(--ha-font-weight-medium, 500);
           color: var(--secondary-text-color);
           text-transform: uppercase;
           letter-spacing: 0.04em;
@@ -1913,19 +1917,31 @@ class HassFlatmateCleaningCard extends HTMLElement {
           margin: 0;
           padding: 0;
           display: grid;
-          gap: 8px;
+          gap: var(--ha-space-2, 8px);
         }
 
         .week-row {
           display: grid;
           grid-template-columns: 1fr auto;
-          gap: 10px;
+          gap: var(--ha-space-2, 8px);
           align-items: center;
           background: var(--ha-card-background, var(--card-background-color, #fff));
           border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #e0e0e0));
-          border-radius: var(--ha-card-border-radius, 12px);
+          border-radius: var(--ha-card-border-radius, var(--ha-border-radius-lg, 12px));
           box-shadow: var(--ha-card-box-shadow, none);
-          padding: 10px;
+          padding: var(--ha-space-3, 12px);
+          cursor: pointer;
+          transition: box-shadow var(--ha-animation-duration-fast, 150ms) ease-in-out,
+                      border-color var(--ha-animation-duration-fast, 150ms) ease-in-out,
+                      background var(--ha-animation-duration-fast, 150ms) ease-in-out;
+        }
+
+        .week-row:hover {
+          background: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.04);
+        }
+
+        .week-row.current:hover {
+          background: rgba(var(--rgb-primary-color, 0, 154, 199), 0.12);
         }
 
         .compact-week-list {
@@ -2024,12 +2040,12 @@ class HassFlatmateCleaningCard extends HTMLElement {
         }
 
         .week-row.current {
-          border-color: color-mix(in srgb, var(--primary-color) 45%, var(--divider-color));
-          background: color-mix(in srgb, var(--primary-color) 8%, var(--card-background-color));
+          border-color: rgba(var(--rgb-primary-color, 0, 154, 199), 0.45);
+          background: rgba(var(--rgb-primary-color, 0, 154, 199), 0.08);
         }
 
         .week-row.past {
-          background: color-mix(in srgb, var(--secondary-text-color) 6%, var(--card-background-color));
+          background: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.03);
         }
 
         .week-main {
@@ -2037,18 +2053,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
           min-width: 0;
         }
 
-        .week-main.history-trigger {
-          cursor: pointer;
-          border-radius: 8px;
-          padding: 2px;
-          margin: -2px;
-        }
-
-        .week-main.history-trigger:hover {
-          background: color-mix(in srgb, var(--primary-color) 6%, var(--card-background-color));
-        }
-
-        .week-main.history-trigger:focus-visible {
+        .week-row:focus-visible {
           outline: 2px solid var(--primary-color);
           outline-offset: 2px;
         }
@@ -2056,26 +2061,27 @@ class HassFlatmateCleaningCard extends HTMLElement {
         .week-top {
           display: flex;
           align-items: baseline;
-          gap: 8px;
+          gap: var(--ha-space-2, 8px);
           flex-wrap: wrap;
         }
 
         .week-label {
-          font-weight: 700;
-          font-size: 0.88rem;
+          font-weight: var(--ha-font-weight-bold, 700);
+          font-size: var(--ha-font-size-m, 0.875rem);
         }
 
         .week-dates {
           color: var(--secondary-text-color);
-          font-size: 0.82rem;
+          font-size: var(--ha-font-size-s, 0.75rem);
+          letter-spacing: 0.4px;
         }
 
         .assignee {
-          margin-top: 4px;
+          margin-top: var(--ha-space-1, 4px);
           display: flex;
           align-items: center;
-          gap: 6px;
-          font-weight: 600;
+          gap: var(--ha-space-1, 4px);
+          font-weight: var(--ha-font-weight-medium, 500);
           min-width: 0;
         }
 
@@ -2107,11 +2113,11 @@ class HassFlatmateCleaningCard extends HTMLElement {
         }
 
         .badge {
-          border: 1px solid var(--divider-color);
-          border-radius: 999px;
-          padding: 2px 8px;
-          font-size: 0.72rem;
-          font-weight: 600;
+          border: var(--ha-border-width-sm, 1px) solid var(--outline-color, var(--divider-color));
+          border-radius: var(--ha-border-radius-pill, 9999px);
+          padding: 2px var(--ha-space-2, 8px);
+          font-size: var(--ha-font-size-xs, 0.75rem);
+          font-weight: var(--ha-font-weight-medium, 500);
           color: var(--secondary-text-color);
           text-transform: uppercase;
           letter-spacing: 0.03em;
@@ -2120,36 +2126,42 @@ class HassFlatmateCleaningCard extends HTMLElement {
         .week-actions {
           display: flex;
           flex-direction: column;
-          gap: 6px;
+          gap: var(--ha-space-1, 4px);
           align-items: stretch;
+          position: relative;
+          z-index: 1;
         }
 
         .action,
         .status-chip,
         .btn,
         .icon-btn {
-          border: 1px solid var(--divider-color);
+          border: var(--ha-border-width-sm, 1px) solid var(--outline-color, var(--divider-color));
           background: var(--card-background-color);
           color: var(--primary-text-color);
-          border-radius: 10px;
+          border-radius: var(--ha-border-radius-pill, 9999px);
           font: inherit;
+          font-size: var(--ha-font-size-s, 0.75rem);
+          transition: border-color var(--ha-animation-duration-fast, 150ms) ease-in-out,
+                      background var(--ha-animation-duration-fast, 150ms) ease-in-out;
         }
 
         .action {
           display: inline-flex;
           align-items: center;
-          gap: 6px;
+          gap: var(--ha-space-1, 4px);
           justify-content: center;
-          padding: 7px 10px;
+          padding: var(--ha-space-2, 8px) var(--ha-space-3, 12px);
           cursor: pointer;
-          min-height: 36px;
+          min-height: var(--ha-space-9, 36px);
           white-space: nowrap;
+          font-weight: var(--ha-font-weight-medium, 500);
         }
 
         .action.done {
-          color: var(--success-color, #4caf50);
-          border-color: color-mix(in srgb, var(--success-color, #4caf50) 40%, var(--divider-color));
-          background: color-mix(in srgb, var(--success-color, #4caf50) 10%, var(--card-background-color));
+          color: var(--success-color, #43a047);
+          border-color: rgba(var(--rgb-success-color, 67, 160, 71), 0.4);
+          background: rgba(var(--rgb-success-color, 67, 160, 71), 0.1);
         }
 
         .action.undo {
@@ -2158,27 +2170,28 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
         .action.swap {
           color: var(--primary-color);
-          border-color: color-mix(in srgb, var(--primary-color) 35%, var(--divider-color));
-          background: color-mix(in srgb, var(--primary-color) 8%, var(--card-background-color));
+          border-color: rgba(var(--rgb-primary-color, 0, 154, 199), 0.35);
+          background: rgba(var(--rgb-primary-color, 0, 154, 199), 0.08);
         }
 
         .status-chip {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          min-height: 34px;
-          padding: 0 10px;
-          font-size: 0.78rem;
+          min-height: var(--ha-space-9, 36px);
+          padding: 0 var(--ha-space-3, 12px);
+          font-size: var(--ha-font-size-xs, 0.75rem);
+          font-weight: var(--ha-font-weight-medium, 500);
           text-transform: uppercase;
           letter-spacing: 0.03em;
         }
 
         .status-chip.done {
-          color: var(--success-color, #4caf50);
+          color: var(--success-color, #43a047);
         }
 
         .status-chip.missed {
-          color: var(--warning-color, #f57c00);
+          color: var(--warning-color, #ffa600);
         }
 
         .action:hover,
@@ -2189,17 +2202,17 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
         .action:disabled,
         .btn:disabled {
-          opacity: 0.55;
+          opacity: var(--dark-disabled-opacity, 0.38);
           cursor: default;
         }
 
         .error {
-          border: 1px solid color-mix(in srgb, var(--error-color, #f44336) 40%, var(--divider-color));
-          color: var(--error-color, #f44336);
-          background: color-mix(in srgb, var(--error-color, #f44336) 8%, var(--card-background-color));
-          border-radius: 10px;
-          padding: 8px 10px;
-          font-size: 0.9rem;
+          border: var(--ha-border-width-sm, 1px) solid rgba(var(--rgb-error-color, 219, 68, 55), 0.4);
+          color: var(--error-color, #db4437);
+          background: rgba(var(--rgb-error-color, 219, 68, 55), 0.08);
+          border-radius: var(--ha-border-radius-md, 8px);
+          padding: var(--ha-space-2, 8px) var(--ha-space-3, 12px);
+          font-size: var(--ha-font-size-s, 0.75rem);
         }
 
         .empty,
@@ -2215,64 +2228,72 @@ class HassFlatmateCleaningCard extends HTMLElement {
           display: grid;
           place-items: center;
           z-index: 20;
-          padding: 14px;
+          padding: var(--ha-space-4, 16px);
           box-sizing: border-box;
         }
 
         .modal {
           width: min(560px, 100%);
-          background: var(--card-background-color);
-          border: 1px solid var(--divider-color);
-          border-radius: 14px;
-          box-shadow: 0 12px 36px rgba(0, 0, 0, 0.3);
-          padding: 14px;
+          background: var(--ha-card-background, var(--card-background-color, #fff));
+          border: var(--ha-border-width-sm, 1px) solid var(--divider-color);
+          border-radius: var(--ha-border-radius-xl, 16px);
+          box-shadow: var(--ha-box-shadow-l, 0 8px 12px rgba(0, 0, 0, 0.14));
+          padding: var(--ha-space-4, 16px);
           display: grid;
-          gap: 10px;
+          gap: var(--ha-space-3, 12px);
         }
 
         .modal-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          gap: 10px;
+          gap: var(--ha-space-2, 8px);
         }
 
         .modal-header h3 {
           margin: 0;
-          font-size: 1.03rem;
+          font-size: var(--ha-font-size-l, 1rem);
+          font-weight: var(--ha-font-weight-bold, 700);
         }
 
         .icon-btn {
           cursor: pointer;
-          width: 34px;
-          height: 34px;
+          width: var(--ha-space-9, 36px);
+          height: var(--ha-space-9, 36px);
           display: inline-flex;
           align-items: center;
           justify-content: center;
           padding: 0;
+          border-radius: var(--ha-border-radius-pill, 9999px);
         }
 
         .modal-week {
           margin: 0;
           color: var(--secondary-text-color);
-          font-size: 0.9rem;
+          font-size: var(--ha-font-size-s, 0.85rem);
         }
 
         label {
-          font-size: 0.84rem;
+          font-size: var(--ha-font-size-s, 0.85rem);
           color: var(--secondary-text-color);
         }
 
         select {
           box-sizing: border-box;
           width: 100%;
-          min-height: 40px;
-          border-radius: 10px;
-          border: 1px solid var(--divider-color);
-          background: var(--card-background-color);
-          color: var(--primary-text-color);
+          min-height: var(--ha-space-10, 40px);
+          border-radius: var(--ha-border-radius-lg, 12px);
+          border: var(--ha-border-width-sm, 1px) solid var(--input-outlined-idle-border-color, var(--divider-color));
+          background: var(--input-fill-color, var(--card-background-color));
+          color: var(--input-ink-color, var(--primary-text-color));
           font: inherit;
-          padding: 8px 10px;
+          font-size: var(--ha-font-size-m, 0.875rem);
+          padding: var(--ha-space-2, 8px) var(--ha-space-3, 12px);
+          transition: border-color var(--ha-animation-duration-fast, 150ms) ease-in-out;
+        }
+
+        select:hover {
+          border-color: var(--input-outlined-hover-border-color, var(--outline-hover-color));
         }
 
         select:disabled {
@@ -2288,10 +2309,10 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
         .choice-group {
           display: grid;
-          gap: 6px;
-          border: 1px solid var(--divider-color);
-          border-radius: 10px;
-          padding: 10px;
+          gap: var(--ha-space-1, 4px);
+          border: var(--ha-border-width-sm, 1px) solid var(--outline-color, var(--divider-color));
+          border-radius: var(--ha-border-radius-lg, 12px);
+          padding: var(--ha-space-3, 12px);
         }
 
         .choice-option {
@@ -2314,12 +2335,12 @@ class HassFlatmateCleaningCard extends HTMLElement {
         }
 
         .effect-panel {
-          border: 1px solid var(--divider-color);
-          border-radius: 10px;
-          padding: 10px;
-          background: color-mix(in srgb, var(--divider-color) 8%, var(--card-background-color));
+          border: var(--ha-border-width-sm, 1px) solid var(--outline-color, var(--divider-color));
+          border-radius: var(--ha-border-radius-lg, 12px);
+          padding: var(--ha-space-3, 12px);
+          background: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.03);
           display: grid;
-          gap: 6px;
+          gap: var(--ha-space-1, 4px);
         }
 
         .effect-title {
@@ -2459,12 +2480,12 @@ class HassFlatmateCleaningCard extends HTMLElement {
         }
 
         .shift-context {
-          border: 1px solid var(--divider-color);
-          border-radius: 10px;
-          padding: 10px;
-          background: color-mix(in srgb, var(--divider-color) 8%, var(--card-background-color));
+          border: var(--ha-border-width-sm, 1px) solid var(--outline-color, var(--divider-color));
+          border-radius: var(--ha-border-radius-lg, 12px);
+          padding: var(--ha-space-3, 12px);
+          background: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.03);
           display: grid;
-          gap: 4px;
+          gap: var(--ha-space-1, 4px);
         }
 
         .shift-context-line {
@@ -2475,12 +2496,12 @@ class HassFlatmateCleaningCard extends HTMLElement {
         }
 
         .timeline-panel {
-          border: 1px solid var(--divider-color);
-          border-radius: 10px;
-          padding: 10px;
-          background: color-mix(in srgb, var(--divider-color) 8%, var(--card-background-color));
+          border: var(--ha-border-width-sm, 1px) solid var(--outline-color, var(--divider-color));
+          border-radius: var(--ha-border-radius-lg, 12px);
+          padding: var(--ha-space-3, 12px);
+          background: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.03);
           display: grid;
-          gap: 8px;
+          gap: var(--ha-space-2, 8px);
         }
 
         .timeline-list {
@@ -2584,14 +2605,15 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
         .btn {
           cursor: pointer;
-          min-height: 36px;
-          padding: 8px 12px;
+          min-height: var(--ha-space-9, 36px);
+          padding: var(--ha-space-2, 8px) var(--ha-space-3, 12px);
+          font-weight: var(--ha-font-weight-medium, 500);
         }
 
         .btn.primary {
           color: var(--primary-color);
-          border-color: color-mix(in srgb, var(--primary-color) 40%, var(--divider-color));
-          background: color-mix(in srgb, var(--primary-color) 10%, var(--card-background-color));
+          border-color: rgba(var(--rgb-primary-color, 0, 154, 199), 0.4);
+          background: rgba(var(--rgb-primary-color, 0, 154, 199), 0.1);
         }
 
         @media (max-width: 720px) {

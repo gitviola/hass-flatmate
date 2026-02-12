@@ -456,18 +456,20 @@ class HassFlatmateShoppingCard extends HTMLElement {
     });
 
     this._root.querySelectorAll("[data-action='complete-item']").forEach((el) => {
-      el.addEventListener("click", async () => {
+      el.addEventListener("click", async (event) => {
+        event.stopPropagation();
         await this._completeItem(Number(el.dataset.itemId), el.dataset.itemName || "", el);
       });
     });
 
     this._root.querySelectorAll("[data-action='delete-item']").forEach((el) => {
-      el.addEventListener("click", async () => {
+      el.addEventListener("click", async (event) => {
+        event.stopPropagation();
         await this._deleteItem(Number(el.dataset.itemId), el.dataset.itemName || "item");
       });
     });
 
-    this._root.querySelectorAll("[data-action='open-item-history']").forEach((el) => {
+    this._root.querySelectorAll("li[data-action='open-item-history']").forEach((el) => {
       el.addEventListener("click", () => {
         this._openHistoryModal(el.dataset.itemName || "");
       });
@@ -587,8 +589,8 @@ class HassFlatmateShoppingCard extends HTMLElement {
               <button class="todo-delete" type="button" data-action="delete-item" data-item-id="${id}" data-item-name="${name}" title="Remove from shopping list" aria-label="Remove ${name} from shopping list"><ha-icon icon="mdi:close-circle-outline"></ha-icon></button>
             `;
         return `
-          <li class="item-row ${isPendingAdd ? "pending-add" : ""}">
-            <div class="item-main" data-action="open-item-history" data-item-name="${name}">
+          <li class="item-row ${isPendingAdd ? "pending-add" : ""}" data-action="open-item-history" data-item-name="${name}">
+            <div class="item-main">
               <div class="item-name">${name}</div>
               <div class="item-meta">${metaText}</div>
             </div>
@@ -663,26 +665,28 @@ class HassFlatmateShoppingCard extends HTMLElement {
         }
 
         .card {
-          padding: 16px;
+          padding: var(--ha-space-4, 16px);
           display: grid;
-          gap: 14px;
+          gap: var(--ha-space-3, 12px);
         }
 
         .header h2 {
           margin: 0;
-          font-size: 1.2rem;
-          line-height: 1.3;
+          font-size: var(--ha-font-size-xl, 1.2rem);
+          font-weight: var(--ha-font-weight-bold, 700);
+          line-height: var(--ha-line-height-condensed, 1.2);
         }
 
         .header p {
-          margin: 4px 0 0;
+          margin: var(--ha-space-1, 4px) 0 0;
           color: var(--secondary-text-color);
-          font-size: 0.92rem;
+          font-size: var(--ha-font-size-s, 0.85rem);
         }
 
         section h3 {
-          margin: 0 0 8px;
-          font-size: 0.92rem;
+          margin: 0 0 var(--ha-space-2, 8px);
+          font-size: var(--ha-font-size-s, 0.85rem);
+          font-weight: var(--ha-font-weight-medium, 500);
           color: var(--secondary-text-color);
           text-transform: uppercase;
           letter-spacing: 0.04em;
@@ -693,19 +697,27 @@ class HassFlatmateShoppingCard extends HTMLElement {
           margin: 0;
           padding: 0;
           display: grid;
-          gap: 8px;
+          gap: var(--ha-space-2, 8px);
         }
 
         .item-row {
           display: grid;
           grid-template-columns: 1fr auto;
-          gap: 10px;
+          gap: var(--ha-space-2, 8px);
           align-items: center;
           background: var(--ha-card-background, var(--card-background-color, #fff));
           border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #e0e0e0));
-          border-radius: var(--ha-card-border-radius, 12px);
+          border-radius: var(--ha-card-border-radius, var(--ha-border-radius-lg, 12px));
           box-shadow: var(--ha-card-box-shadow, none);
-          padding: 10px;
+          padding: var(--ha-space-3, 12px);
+          cursor: pointer;
+          transition: box-shadow var(--ha-animation-duration-fast, 150ms) ease-in-out,
+                      border-color var(--ha-animation-duration-fast, 150ms) ease-in-out,
+                      background var(--ha-animation-duration-fast, 150ms) ease-in-out;
+        }
+
+        .item-row:hover {
+          background: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.04);
         }
 
         .item-row.pending-add {
@@ -715,16 +727,18 @@ class HassFlatmateShoppingCard extends HTMLElement {
         .item-actions {
           display: inline-flex;
           align-items: center;
-          gap: 6px;
+          gap: var(--ha-space-1, 4px);
+          position: relative;
+          z-index: 1;
         }
 
         .item-main {
           min-width: 0;
-          cursor: pointer;
         }
 
         .item-name {
-          font-weight: 600;
+          font-weight: var(--ha-font-weight-medium, 500);
+          font-size: var(--ha-font-size-m, 0.875rem);
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -733,7 +747,9 @@ class HassFlatmateShoppingCard extends HTMLElement {
         .item-meta {
           margin-top: 2px;
           color: var(--secondary-text-color);
-          font-size: 0.83rem;
+          font-size: var(--ha-font-size-s, 0.75rem);
+          line-height: var(--ha-line-height-condensed, 1.2);
+          letter-spacing: 0.4px;
         }
 
         .todo-check,
@@ -741,53 +757,64 @@ class HassFlatmateShoppingCard extends HTMLElement {
         .add-btn,
         .pending-pill,
         .chip {
-          border: 1px solid var(--divider-color);
+          border: var(--ha-border-width-sm, 1px) solid var(--outline-color, var(--divider-color));
           background: var(--card-background-color);
           color: var(--primary-text-color);
-          border-radius: 10px;
-          padding: 6px 9px;
+          border-radius: var(--ha-border-radius-pill, 9999px);
+          padding: var(--ha-space-1, 4px) var(--ha-space-2, 8px);
           cursor: pointer;
           font: inherit;
+          font-size: var(--ha-font-size-s, 0.75rem);
+          transition: border-color var(--ha-animation-duration-fast, 150ms) ease-in-out,
+                      background var(--ha-animation-duration-fast, 150ms) ease-in-out,
+                      color var(--ha-animation-duration-fast, 150ms) ease-in-out;
         }
 
         .todo-check {
-          min-width: 34px;
-          min-height: 34px;
+          min-width: 36px;
+          min-height: 36px;
           line-height: 0;
           color: var(--secondary-text-color);
-          border-color: var(--divider-color);
+          border-color: var(--outline-color, var(--divider-color));
           background: var(--card-background-color);
+          border-radius: var(--ha-border-radius-pill, 9999px);
+          padding: 0;
+          display: grid;
+          place-items: center;
         }
 
         .todo-delete {
-          min-width: 34px;
-          min-height: 34px;
+          min-width: 36px;
+          min-height: 36px;
           line-height: 0;
           color: var(--secondary-text-color);
           border-color: transparent;
           background: transparent;
+          border-radius: var(--ha-border-radius-pill, 9999px);
+          padding: 0;
+          display: grid;
+          place-items: center;
         }
 
         .pending-pill {
           cursor: default;
           color: var(--secondary-text-color);
-          background: color-mix(in srgb, var(--divider-color) 14%, var(--card-background-color));
+          background: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.05);
           border-style: dashed;
-          padding: 7px 10px;
-          font-size: 0.8rem;
+          padding: var(--ha-space-2, 8px) var(--ha-space-3, 12px);
         }
 
         .todo-check:hover {
-          color: var(--success-color, #4caf50);
-          border-color: color-mix(in srgb, var(--success-color, #4caf50) 45%, var(--divider-color));
-          background: color-mix(in srgb, var(--success-color, #4caf50) 10%, var(--card-background-color));
+          color: var(--success-color, #43a047);
+          border-color: rgba(var(--rgb-success-color, 67, 160, 71), 0.45);
+          background: rgba(var(--rgb-success-color, 67, 160, 71), 0.1);
         }
 
         .todo-check.completing {
-          color: var(--success-color, #4caf50);
-          border-color: color-mix(in srgb, var(--success-color, #4caf50) 45%, var(--divider-color));
-          background: color-mix(in srgb, var(--success-color, #4caf50) 14%, var(--card-background-color));
-          animation: check-pop 360ms ease;
+          color: var(--success-color, #43a047);
+          border-color: rgba(var(--rgb-success-color, 67, 160, 71), 0.45);
+          background: rgba(var(--rgb-success-color, 67, 160, 71), 0.14);
+          animation: check-pop var(--ha-animation-duration-slow, 350ms) ease;
           pointer-events: none;
         }
 
@@ -813,15 +840,14 @@ class HassFlatmateShoppingCard extends HTMLElement {
         }
 
         .todo-delete:hover {
-          border-color: var(--divider-color);
           color: var(--primary-text-color);
-          background: color-mix(in srgb, var(--divider-color) 20%, transparent);
+          background: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.04);
         }
 
         .add-row {
           display: grid;
           grid-template-columns: 1fr auto;
-          gap: 8px;
+          gap: var(--ha-space-2, 8px);
           align-items: start;
         }
 
@@ -832,49 +858,62 @@ class HassFlatmateShoppingCard extends HTMLElement {
         #hf-item-input {
           box-sizing: border-box;
           width: 100%;
-          min-height: 42px;
-          border-radius: 10px;
-          border: 1px solid var(--divider-color);
-          background: var(--card-background-color);
-          color: var(--primary-text-color);
+          min-height: var(--ha-space-11, 44px);
+          border-radius: var(--ha-border-radius-lg, 12px);
+          border: var(--ha-border-width-sm, 1px) solid var(--input-outlined-idle-border-color, var(--divider-color));
+          background: var(--input-fill-color, var(--card-background-color));
+          color: var(--input-ink-color, var(--primary-text-color));
           font: inherit;
-          padding: 10px 12px;
+          font-size: var(--ha-font-size-m, 0.875rem);
+          padding: var(--ha-space-2, 8px) var(--ha-space-3, 12px);
+          transition: border-color var(--ha-animation-duration-fast, 150ms) ease-in-out,
+                      box-shadow var(--ha-animation-duration-fast, 150ms) ease-in-out;
+        }
+
+        #hf-item-input:hover {
+          border-color: var(--input-outlined-hover-border-color, var(--outline-hover-color));
         }
 
         #hf-item-input:focus {
           outline: none;
           border-color: var(--primary-color);
-          box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary-color) 55%, transparent);
+          box-shadow: 0 0 0 1px var(--primary-color);
         }
 
         .add-btn {
-          background: color-mix(in srgb, var(--primary-color) 18%, var(--card-background-color));
+          min-height: var(--ha-space-11, 44px);
+          font-weight: var(--ha-font-weight-medium, 500);
+          background: rgba(var(--rgb-primary-color, 0, 154, 199), 0.15);
+          border-color: transparent;
+          color: var(--primary-color);
         }
 
         .chips-wrap {
           display: flex;
           flex-wrap: wrap;
-          gap: 8px;
+          gap: var(--ha-space-2, 8px);
+        }
+
+        .chip {
+          background: var(--ha-assist-chip-filled-container-color, rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.15));
+          border-color: transparent;
+          font-weight: var(--ha-font-weight-medium, 500);
         }
 
         .empty,
         .empty-list {
           color: var(--secondary-text-color);
           font-style: italic;
+          font-size: var(--ha-font-size-s, 0.75rem);
         }
 
         .error {
-          border: 1px solid color-mix(in srgb, var(--error-color, #f44336) 40%, var(--divider-color));
-          color: var(--error-color, #f44336);
-          background: color-mix(in srgb, var(--error-color, #f44336) 8%, var(--card-background-color));
-          border-radius: 10px;
-          padding: 8px 10px;
-          font-size: 0.9rem;
-        }
-
-        .item-main:hover {
-          background: color-mix(in srgb, var(--divider-color) 10%, transparent);
-          border-radius: 8px;
+          border: var(--ha-border-width-sm, 1px) solid rgba(var(--rgb-error-color, 219, 68, 55), 0.4);
+          color: var(--error-color, #db4437);
+          background: rgba(var(--rgb-error-color, 219, 68, 55), 0.08);
+          border-radius: var(--ha-border-radius-md, 8px);
+          padding: var(--ha-space-2, 8px) var(--ha-space-3, 12px);
+          font-size: var(--ha-font-size-s, 0.75rem);
         }
 
         .history-backdrop {
@@ -890,9 +929,9 @@ class HassFlatmateShoppingCard extends HTMLElement {
           left: 50%;
           transform: translate(-50%, -50%);
           z-index: 1000;
-          background: var(--card-background-color, #fff);
-          border-radius: 16px;
-          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+          background: var(--ha-card-background, var(--card-background-color, #fff));
+          border-radius: var(--ha-border-radius-xl, 16px);
+          box-shadow: var(--ha-box-shadow-l, 0 8px 12px rgba(0, 0, 0, 0.14));
           width: min(90vw, 380px);
           max-height: 80vh;
           display: grid;
@@ -904,13 +943,14 @@ class HassFlatmateShoppingCard extends HTMLElement {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          padding: 16px;
-          border-bottom: 1px solid var(--divider-color);
+          padding: var(--ha-space-4, 16px);
+          border-bottom: var(--ha-border-width-sm, 1px) solid var(--divider-color);
         }
 
         .history-modal-header h3 {
           margin: 0;
-          font-size: 1.1rem;
+          font-size: var(--ha-font-size-l, 1rem);
+          font-weight: var(--ha-font-weight-bold, 700);
           min-width: 0;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -922,8 +962,10 @@ class HassFlatmateShoppingCard extends HTMLElement {
           background: none;
           color: var(--secondary-text-color);
           cursor: pointer;
-          padding: 4px;
+          padding: var(--ha-space-1, 4px);
           line-height: 0;
+          border-radius: var(--ha-border-radius-pill, 9999px);
+          transition: color var(--ha-animation-duration-fast, 150ms) ease-in-out;
         }
 
         .history-modal-close:hover {
@@ -933,18 +975,18 @@ class HassFlatmateShoppingCard extends HTMLElement {
         .history-list {
           list-style: none;
           margin: 0;
-          padding: 8px 16px;
+          padding: var(--ha-space-2, 8px) var(--ha-space-4, 16px);
           overflow-y: auto;
           display: grid;
-          gap: 4px;
+          gap: var(--ha-space-1, 4px);
         }
 
         .history-entry {
           display: flex;
           align-items: center;
-          gap: 10px;
-          padding: 8px 0;
-          border-bottom: 1px solid color-mix(in srgb, var(--divider-color) 40%, transparent);
+          gap: var(--ha-space-3, 12px);
+          padding: var(--ha-space-2, 8px) 0;
+          border-bottom: var(--ha-border-width-sm, 1px) solid rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.06);
         }
 
         .history-entry:last-child {
@@ -952,7 +994,7 @@ class HassFlatmateShoppingCard extends HTMLElement {
         }
 
         .history-icon {
-          color: var(--success-color, #4caf50);
+          color: var(--success-color, #43a047);
           flex-shrink: 0;
           --mdc-icon-size: 20px;
         }
@@ -964,37 +1006,42 @@ class HassFlatmateShoppingCard extends HTMLElement {
         }
 
         .history-member {
-          font-weight: 600;
-          font-size: 0.92rem;
+          font-weight: var(--ha-font-weight-medium, 500);
+          font-size: var(--ha-font-size-m, 0.875rem);
         }
 
         .history-time {
           color: var(--secondary-text-color);
-          font-size: 0.82rem;
+          font-size: var(--ha-font-size-s, 0.75rem);
+          letter-spacing: 0.4px;
         }
 
         .history-empty {
           color: var(--secondary-text-color);
           font-style: italic;
+          font-size: var(--ha-font-size-s, 0.75rem);
           padding: 16px 0;
           text-align: center;
         }
 
         .history-modal-footer {
-          padding: 12px 16px;
-          border-top: 1px solid var(--divider-color);
+          padding: var(--ha-space-3, 12px) var(--ha-space-4, 16px);
+          border-top: var(--ha-border-width-sm, 1px) solid var(--divider-color);
           display: flex;
           justify-content: flex-end;
         }
 
         .history-modal-close-btn {
-          border: 1px solid var(--divider-color);
+          border: var(--ha-border-width-sm, 1px) solid var(--outline-color, var(--divider-color));
           background: var(--card-background-color);
           color: var(--primary-text-color);
-          border-radius: 10px;
-          padding: 8px 16px;
+          border-radius: var(--ha-border-radius-pill, 9999px);
+          padding: var(--ha-space-2, 8px) var(--ha-space-4, 16px);
           cursor: pointer;
           font: inherit;
+          font-size: var(--ha-font-size-s, 0.75rem);
+          font-weight: var(--ha-font-weight-medium, 500);
+          transition: border-color var(--ha-animation-duration-fast, 150ms) ease-in-out;
         }
 
         .history-modal-close-btn:hover {
