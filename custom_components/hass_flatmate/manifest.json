@@ -1,7 +1,7 @@
 {
   "domain": "hass_flatmate",
   "name": "Hass Flatmate",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "documentation": "https://github.com/gitviola/hass-flatmate",
   "issue_tracker": "https://github.com/gitviola/hass-flatmate/issues",
   "codeowners": ["@gitviola"],
