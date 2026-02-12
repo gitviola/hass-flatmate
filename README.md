@@ -46,7 +46,7 @@ It replaces the flat-sharing features you use with:
 4. Configure integration with:
    - `base_url`: service URL (default `http://ebc95cb1-hass-flatmate-service:8099`)
    - `api_token`: same value from app config
-5. In Lovelace storage mode, shopping and cleaning card resources are auto-registered.
+5. In Lovelace storage mode, shopping and cleaning card resources are auto-registered with cache-busting version query params.
 6. Add cards/entities from `examples/lovelace-flatmate-dashboard.yaml` (Sections dashboard format).
 
 ## Shopping UI Card
@@ -109,10 +109,10 @@ Features:
 Manual swap override remains available via service:
 - `hass_flatmate.hass_flatmate_swap_cleaning_week`
 
-In Lovelace YAML resource mode, add both resources manually as `module`:
-- `/hass_flatmate/static/hass-flatmate-shopping-card.js`
-- `/hass_flatmate/static/hass-flatmate-shopping-compact-card.js`
-- `/hass_flatmate/static/hass-flatmate-cleaning-card.js`
+In Lovelace YAML resource mode, add both resources manually as `module` (recommended with `?v=<integration_version>`):
+- `/hass_flatmate/static/hass-flatmate-shopping-card.js?v=<integration_version>`
+- `/hass_flatmate/static/hass-flatmate-shopping-compact-card.js?v=<integration_version>`
+- `/hass_flatmate/static/hass-flatmate-cleaning-card.js?v=<integration_version>`
 
 Compact e-ink example:
 
@@ -143,7 +143,7 @@ Features:
 - Uses purchase wording (`N purchases`) and last-90-days context text
 
 In Lovelace YAML resource mode, also add:
-- `/hass_flatmate/static/hass-flatmate-distribution-card.js`
+- `/hass_flatmate/static/hass-flatmate-distribution-card.js?v=<integration_version>`
 
 Compact example:
 

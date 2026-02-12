@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+import json
 import logging
 from pathlib import Path
 import re
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import voluptuous as vol
 
@@ -90,6 +92,37 @@ from .discovery import async_discover_service_base_url
 _LOGGER = logging.getLogger(__name__)
 REFRESH_TASK_KEY = "_refresh_activity_task"
 REFRESH_PENDING_KEY = "_refresh_activity_pending"
+RESOURCE_ID_KEY = "id"
+
+
+def _integration_version() -> str:
+    manifest_path = Path(__file__).parent / "manifest.json"
+    try:
+        manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return "dev"
+
+    version = str(manifest_data.get("version", "")).strip()
+    return version or "dev"
+
+
+def _resource_url_path(url: str) -> str:
+    return urlsplit(url).path
+
+
+def _resource_url_with_version(url: str, version: str) -> str:
+    parts = urlsplit(url)
+    params = dict(parse_qsl(parts.query, keep_blank_values=True))
+    params["v"] = version
+    return urlunsplit(
+        (
+            parts.scheme,
+            parts.netloc,
+            parts.path,
+            urlencode(params),
+            parts.fragment,
+        )
+    )
 
 
 def _is_loopback_base_url(value: str) -> bool:
@@ -938,7 +971,7 @@ async def _register_lovelace_card_resource(hass: HomeAssistant) -> None:
     if lovelace_data is None:
         return
 
-    resource_targets = [
+    resource_targets_base = [
         {
             CONF_URL: FRONTEND_SHOPPING_CARD_RESOURCE_URL,
             CONF_TYPE: FRONTEND_SHOPPING_CARD_RESOURCE_TYPE,
@@ -960,6 +993,16 @@ async def _register_lovelace_card_resource(hass: HomeAssistant) -> None:
             CONF_RESOURCE_TYPE_WS: FRONTEND_DISTRIBUTION_CARD_RESOURCE_TYPE,
         },
     ]
+    integration_version = _integration_version()
+    resource_targets = [
+        {
+            CONF_URL: _resource_url_with_version(target[CONF_URL], integration_version),
+            CONF_TYPE: target[CONF_TYPE],
+            CONF_RESOURCE_TYPE_WS: target[CONF_RESOURCE_TYPE_WS],
+            "resource_path": _resource_url_path(target[CONF_URL]),
+        }
+        for target in resource_targets_base
+    ]
 
     if lovelace_data.resource_mode != MODE_STORAGE:
         resource_urls = ", ".join(target[CONF_URL] for target in resource_targets)
@@ -972,31 +1015,134 @@ async def _register_lovelace_card_resource(hass: HomeAssistant) -> None:
 
     resources = lovelace_data.resources
     await resources.async_get_info()
-    existing = {
-        (item.get(CONF_URL), item.get(CONF_TYPE))
-        for item in (resources.async_items() or [])
-    }
+    existing_items = list(resources.async_items() or [])
+    delete_resource_item = getattr(resources, "async_delete_item", None)
+    update_resource_item = getattr(resources, "async_update_item", None)
+
+    def _resource_item_type(item: dict[str, Any]) -> str:
+        item_type = item.get(CONF_TYPE) or item.get(CONF_RESOURCE_TYPE_WS)
+        return str(item_type) if item_type else ""
+
+    async def _refresh_existing_items() -> None:
+        nonlocal existing_items
+        await resources.async_get_info()
+        existing_items = list(resources.async_items() or [])
+
+    async def _replace_resource_item(existing_item: dict[str, Any], target: dict[str, Any]) -> bool:
+        item_id = existing_item.get(RESOURCE_ID_KEY)
+        if item_id is None:
+            return False
+
+        payload = {
+            CONF_RESOURCE_TYPE_WS: target[CONF_RESOURCE_TYPE_WS],
+            CONF_URL: target[CONF_URL],
+        }
+
+        if callable(update_resource_item):
+            try:
+                await update_resource_item(item_id, payload)
+                return True
+            except Exception as err:  # pragma: no cover - defensive for HA API edge cases
+                _LOGGER.debug(
+                    "Failed to update Lovelace resource id=%s to %s: %s",
+                    item_id,
+                    target[CONF_URL],
+                    err,
+                )
+
+        if not callable(delete_resource_item):
+            return False
+
+        try:
+            await delete_resource_item(item_id)
+        except Exception as err:  # pragma: no cover - defensive for HA API edge cases
+            _LOGGER.debug(
+                "Failed to delete stale Lovelace resource id=%s before recreate: %s",
+                item_id,
+                err,
+            )
+            return False
+
+        try:
+            await resources.async_create_item(payload)
+            return True
+        except Exception as err:  # pragma: no cover - defensive for HA API edge cases
+            _LOGGER.warning(
+                "Failed to recreate Lovelace resource %s after deleting stale id=%s: %s",
+                target[CONF_URL],
+                item_id,
+                err,
+            )
+            return False
 
     for target in resource_targets:
-        key = (target[CONF_URL], target[CONF_TYPE])
-        if key in existing:
+        target_url = str(target[CONF_URL])
+        target_type = str(target[CONF_TYPE])
+        target_path = str(target["resource_path"])
+
+        exact_match = next(
+            (
+                item
+                for item in existing_items
+                if str(item.get(CONF_URL) or "") == target_url
+                and _resource_item_type(item) == target_type
+            ),
+            None,
+        )
+        if exact_match is not None:
+            continue
+
+        stale_matches = [
+            item
+            for item in existing_items
+            if _resource_item_type(item) == target_type
+            and _resource_url_path(str(item.get(CONF_URL) or "")) == target_path
+        ]
+
+        if stale_matches:
+            replaced = await _replace_resource_item(stale_matches[0], target)
+            if replaced:
+                _LOGGER.info(
+                    "Updated Lovelace resource to cache-busted URL: %s",
+                    target_url,
+                )
+                if callable(delete_resource_item):
+                    for duplicate in stale_matches[1:]:
+                        duplicate_id = duplicate.get(RESOURCE_ID_KEY)
+                        if duplicate_id is None:
+                            continue
+                        try:
+                            await delete_resource_item(duplicate_id)
+                        except Exception as err:  # pragma: no cover
+                            _LOGGER.debug(
+                                "Failed to remove duplicate stale Lovelace resource id=%s: %s",
+                                duplicate_id,
+                                err,
+                            )
+                await _refresh_existing_items()
+            else:
+                _LOGGER.warning(
+                    "Found stale Lovelace resource for %s but could not update it automatically",
+                    target_path,
+                )
             continue
 
         try:
             await resources.async_create_item(
                 {
                     CONF_RESOURCE_TYPE_WS: target[CONF_RESOURCE_TYPE_WS],
-                    CONF_URL: target[CONF_URL],
+                    CONF_URL: target_url,
                 }
             )
             _LOGGER.info(
                 "Auto-registered Lovelace resource: %s",
-                target[CONF_URL],
+                target_url,
             )
+            await _refresh_existing_items()
         except Exception as err:  # pragma: no cover - defensive for HA API edge cases
             _LOGGER.warning(
                 "Failed to auto-register Lovelace resource %s: %s",
-                target[CONF_URL],
+                target_url,
                 err,
             )
 

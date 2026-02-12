@@ -49,7 +49,7 @@ class HassFlatmateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.api.get_favorites(),
                 self.api.get_buy_stats(window_days=90),
                 self.api.get_cleaning_current(),
-                self.api.get_cleaning_schedule(weeks_ahead=12, include_previous_weeks=1),
+                self.api.get_cleaning_schedule(weeks_ahead=24, include_previous_weeks=1),
                 self.api.get_activity(limit=200),
             )
         except HassFlatmateApiError as exc:

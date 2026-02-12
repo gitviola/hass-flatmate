@@ -231,7 +231,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
     }
     const diffWeeks = Math.round((target.getTime() - current.getTime()) / (7 * 24 * 60 * 60 * 1000));
     if (diffWeeks === 0) {
-      return "in 0 weeks";
+      return "this week";
     }
     if (diffWeeks === 1) {
       return "in 1 week";
@@ -247,11 +247,14 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
   _formatWeekLabelWithDistance(row, index, currentWeekStart) {
     if (!row) {
-      return "the selected week";
+      return "selected week";
     }
-    const base = `${this._weekTitle(row, index)} (${this._rowDateRange(row)})`;
+    const range = this._rowDateRange(row);
     const distance = this._weekDistanceLabel(row?.week_start, currentWeekStart);
-    return distance ? `${base} (${distance})` : base;
+    if (distance) {
+      return `${distance} (${range})`;
+    }
+    return `${this._weekTitle(row, index)} (${range})`;
   }
 
   _compensationNote(row, assigneeLabel, originalLabel) {
@@ -962,7 +965,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
     }
 
     const weeksToShow = this._coerceWeeks(this._config.weeks);
-    const weeks = rawWeeks
+    const scheduleWeeks = rawWeeks
       .slice()
       .map((row) => {
         const weekStart = String(row.week_start || "");
@@ -972,10 +975,11 @@ class HassFlatmateCleaningCard extends HTMLElement {
         }
         return { ...row, ...patch };
       })
-      .sort((a, b) => String(a.week_start || "").localeCompare(String(b.week_start || "")))
-      .slice(0, weeksToShow);
+      .sort((a, b) => String(a.week_start || "").localeCompare(String(b.week_start || "")));
+    const weeks = scheduleWeeks.slice(0, weeksToShow);
 
-    const currentWeek = weeks.find((row) => row.is_current) || weeks[0] || null;
+    const currentWeek =
+      scheduleWeeks.find((row) => row.is_current) || weeks[0] || scheduleWeeks[0] || null;
     const currentStatus = String(currentWeek?.status || "pending");
 
     const statusLabel =
@@ -1121,8 +1125,12 @@ class HassFlatmateCleaningCard extends HTMLElement {
         ? this._memberName(memberMap, actorMemberId)
         : String(this._hass?.user?.name || "Someone");
     const actorNameEscaped = this._escape(actorName);
-    const currentWeekStartForDistance = weeks.find((row) => row.is_current)?.week_start || weeks[0]?.week_start || "";
-    const modalWeek = this._resolveModalWeek(weeks);
+    const currentWeekStartForDistance =
+      currentWeek?.week_start ||
+      scheduleWeeks[0]?.week_start ||
+      weeks[0]?.week_start ||
+      "";
+    const modalWeek = this._resolveModalWeek(scheduleWeeks);
     const modalAssigneeId = Number(this._modalAssigneeMemberId || modalWeek?.assignee_member_id);
     const modalAssigneeName = this._memberName(memberMap, modalAssigneeId);
     const modalAssigneeNameEscaped = this._escape(modalAssigneeName);
@@ -1140,10 +1148,10 @@ class HassFlatmateCleaningCard extends HTMLElement {
     );
     const modalCompensationWeek =
       this._modalChoice === "takeover" && hasValidModalCleaner
-        ? this._findCompensationPreviewWeek(weeks, modalCleanerId, modalWeek?.week_start)
+        ? this._findCompensationPreviewWeek(scheduleWeeks, modalCleanerId, modalWeek?.week_start)
         : null;
     const modalCompensationWeekIndex = modalCompensationWeek
-      ? weeks.findIndex((row) => row.week_start === modalCompensationWeek.week_start)
+      ? scheduleWeeks.findIndex((row) => row.week_start === modalCompensationWeek.week_start)
       : -1;
     const modalCompensationWeekLabel = modalCompensationWeek
       ? this._formatWeekLabelWithDistance(
@@ -1151,7 +1159,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
           modalCompensationWeekIndex >= 0 ? modalCompensationWeekIndex : 0,
           currentWeekStartForDistance
         )
-      : "the next eligible original shift in the visible schedule";
+      : "the next regular week (outside loaded schedule)";
     const modalCompensationWeekLabelEscaped = this._escape(modalCompensationWeekLabel);
 
     const doneEffectsHtml =
@@ -1165,7 +1173,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
           <p class="effect-subtitle">Who will be notified</p>
           <ul class="effect-list notification-list">
             <li><strong>${modalAssigneeNameEscaped}</strong>: "${actorNameEscaped} recorded that ${modalCleanerNameEscaped} took over your shift. Your make-up shift is ${modalCompensationWeekLabelEscaped}."</li>
-            <li><strong>${modalCleanerNameEscaped}</strong>: "${actorNameEscaped} recorded you as the cleaner. ${modalAssigneeNameEscaped} is reassigned to your next regular week (${modalCompensationWeekLabelEscaped})."</li>
+            <li><strong>${modalCleanerNameEscaped}</strong>: "${actorNameEscaped} recorded you as the cleaner. ${modalAssigneeNameEscaped} is reassigned to your next regular week ${modalCompensationWeekLabelEscaped}."</li>
           </ul>
         `
         : `
@@ -1191,7 +1199,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
       }),
     ].join("");
 
-    const swapModalWeek = this._resolveSwapModalWeek(weeks);
+    const swapModalWeek = this._resolveSwapModalWeek(scheduleWeeks);
     const swapOriginalAssigneeId = Number(
       this._swapOriginalAssigneeMemberId ||
       swapModalWeek?.original_assignee_member_id ||
@@ -1207,7 +1215,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
       ? this._memberName(memberMap, swapTargetId)
       : "the selected flatmate";
     const swapWeekIndex = swapModalWeek
-      ? weeks.findIndex((row) => row.week_start === swapModalWeek.week_start)
+      ? scheduleWeeks.findIndex((row) => row.week_start === swapModalWeek.week_start)
       : -1;
     const swapWeekLabel = this._formatWeekLabelWithDistance(
       swapModalWeek,
@@ -1217,13 +1225,13 @@ class HassFlatmateCleaningCard extends HTMLElement {
     const swapReturnWeek =
       hasValidSwapTarget && swapModalWeek
         ? this._findSwapReturnPreviewWeek(
-            weeks,
+            scheduleWeeks,
             swapOriginalAssigneeId,
             swapTargetId,
             swapModalWeek.week_start
           )
         : this._findExistingManualSwapReturnWeek(
-            weeks,
+            scheduleWeeks,
             swapOriginalAssigneeId,
             swapExistingPartnerId,
             swapModalWeek?.week_start
@@ -1231,10 +1239,10 @@ class HassFlatmateCleaningCard extends HTMLElement {
     const swapReturnWeekLabel = swapReturnWeek
       ? this._formatWeekLabelWithDistance(
           swapReturnWeek,
-          Math.max(0, weeks.findIndex((row) => row.week_start === swapReturnWeek.week_start)),
+          Math.max(0, scheduleWeeks.findIndex((row) => row.week_start === swapReturnWeek.week_start)),
           currentWeekStartForDistance
         )
-      : "the next eligible regular week in the schedule";
+      : "the next regular week (outside loaded schedule)";
     const swapCancelPartnerName =
       Number.isInteger(swapExistingPartnerId) &&
       swapExistingPartnerId > 0 &&
@@ -1459,7 +1467,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
           <div class="modal-backdrop swap-modal-backdrop">
             <div class="modal" role="dialog" aria-modal="true">
               <div class="modal-header">
-                <h3>${swapHasExistingManualSwap ? "Edit shift swap (2 weeks)" : "Set shift swap (2 weeks)"}</h3>
+                <h3>${swapHasExistingManualSwap ? "Edit one-time shift swap" : "Create one-time shift swap"}</h3>
                 <button class="icon-btn" type="button" data-action="close-swap-modal" aria-label="Close swap dialog">
                   <ha-icon icon="mdi:close"></ha-icon>
                 </button>
@@ -1476,10 +1484,10 @@ class HassFlatmateCleaningCard extends HTMLElement {
               <div class="choice-group">
                 <label class="choice-option">
                   <input type="radio" name="hf-swap-action" value="swap" ${this._swapModalAction !== "cancel" ? "checked" : ""} />
-                  <span>${swapHasExistingManualSwap ? "Update shift swap" : "Create shift swap"}</span>
+                  <span>${swapHasExistingManualSwap ? "Update one-time swap" : "Create one-time swap"}</span>
                 </label>
                 <p class="choice-help">
-                  This swaps two weeks: the selected week and the selected flatmate's next regular week.
+                  This swaps exactly two weeks: the selected week and the selected flatmate's next regular week.
                 </p>
                 ${
                   swapHasExistingManualSwap
@@ -2070,7 +2078,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
       swapTargetSelect.value = this._swapTargetMemberId;
     }
 
-    this._bindEvents(weeks, members);
+    this._bindEvents(scheduleWeeks, members);
   }
 }
 

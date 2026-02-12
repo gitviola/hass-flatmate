@@ -10,6 +10,9 @@ All notable changes to this project are documented in this file.
 ### Added
 - Backend tests for DB-path fallback behavior to guard persistent-storage defaults in Home Assistant and local-dev fallback behavior.
 
+### Fixed
+- Lovelace storage-mode card resources are now auto-registered with cache-busting version query params, and stale prior-version resource entries are auto-updated to reduce frontend JS caching issues after updates.
+
 ## [0.1.21] - 2026-02-12
 
 ### Changed

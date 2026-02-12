@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- Lovelace storage-mode frontend resources are now registered with cache-busting version query params and stale older-url resource entries are upgraded automatically to avoid card JS cache issues after updates.
+
 ## [0.1.21] - 2026-02-12
 
 ### Changed

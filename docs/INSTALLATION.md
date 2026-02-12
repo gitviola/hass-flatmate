@@ -40,15 +40,15 @@ If install fails with GHCR `403 denied`, ensure package visibility is `public` i
 ## Custom Card Resources
 
 Lovelace storage mode:
-- Resources are auto-registered by the integration.
+- Resources are auto-registered by the integration with cache-busting version query params (for example `?v=0.1.21`), so card JS updates are picked up reliably.
 
 Lovelace YAML resources mode:
 1. Open dashboard resources.
 2. Add resources:
-- URL: `/hass_flatmate/static/hass-flatmate-shopping-card.js` | Type: `module`
-- URL: `/hass_flatmate/static/hass-flatmate-shopping-compact-card.js` | Type: `module`
-- URL: `/hass_flatmate/static/hass-flatmate-cleaning-card.js` | Type: `module`
-- URL: `/hass_flatmate/static/hass-flatmate-distribution-card.js` | Type: `module`
+- URL: `/hass_flatmate/static/hass-flatmate-shopping-card.js?v=<integration_version>` | Type: `module`
+- URL: `/hass_flatmate/static/hass-flatmate-shopping-compact-card.js?v=<integration_version>` | Type: `module`
+- URL: `/hass_flatmate/static/hass-flatmate-cleaning-card.js?v=<integration_version>` | Type: `module`
+- URL: `/hass_flatmate/static/hass-flatmate-distribution-card.js?v=<integration_version>` | Type: `module`
 3. Save.
 
 ## Dashboard Layout
