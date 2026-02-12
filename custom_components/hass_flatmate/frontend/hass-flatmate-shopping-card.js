@@ -709,10 +709,9 @@ class HassFlatmateShoppingCard extends HTMLElement {
           gap: var(--ha-space-2, 8px);
           align-items: center;
           background: var(--ha-card-background, var(--card-background-color, #fff));
-          border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #e0e0e0));
-          border-radius: var(--ha-card-border-radius, var(--ha-border-radius-lg, 12px));
-          box-shadow: var(--ha-card-box-shadow, none);
-          padding: var(--ha-space-3, 12px);
+          border: 1px solid var(--ha-card-border-color, var(--divider-color, #e0e0e0));
+          border-radius: var(--ha-border-radius-md, 8px);
+          padding: var(--ha-space-2, 8px) var(--ha-space-3, 12px);
           cursor: pointer;
           transition: box-shadow var(--ha-animation-duration-fast, 150ms) ease-in-out,
                       border-color var(--ha-animation-duration-fast, 150ms) ease-in-out,
@@ -908,6 +907,10 @@ class HassFlatmateShoppingCard extends HTMLElement {
           color: var(--secondary-text-color);
           font-style: italic;
           font-size: var(--ha-font-size-s, 0.75rem);
+          border: none;
+          background: none;
+          box-shadow: none;
+          padding: var(--ha-space-2, 8px) 0;
         }
 
         .error {

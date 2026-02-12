@@ -363,8 +363,8 @@ class HassFlatmateDistributionCard extends HTMLElement {
           list-style: none;
           margin: 0;
           padding: 0;
-          border: var(--ha-border-width-md, 2px) solid var(--primary-text-color);
-          border-radius: 0;
+          border: 1px solid var(--divider-color, #e0e0e0);
+          border-radius: var(--ha-border-radius-md, 8px);
           overflow: hidden;
           background: var(--card-background-color);
           display: flex;
@@ -378,7 +378,7 @@ class HassFlatmateDistributionCard extends HTMLElement {
           gap: var(--ha-space-1, 4px);
           text-align: center;
           padding: var(--ha-space-2, 8px) var(--ha-space-1, 4px);
-          border-right: var(--ha-border-width-md, 2px) solid var(--primary-text-color);
+          border-right: 1px solid var(--divider-color, #e0e0e0);
         }
 
         .compact-cell:last-child {
