@@ -34,6 +34,41 @@ def _planned_override_for_week(session: Session, week_start: date) -> CleaningOv
     ).scalar_one_or_none()
 
 
+def _linked_manual_swap_return_override(
+    session: Session,
+    swap_override: CleaningOverride | None,
+) -> CleaningOverride | None:
+    if swap_override is None:
+        return None
+
+    if swap_override.source_event_id is not None:
+        linked = session.execute(
+            select(CleaningOverride)
+            .where(
+                CleaningOverride.source_event_id == swap_override.source_event_id,
+                CleaningOverride.type == OverrideType.COMPENSATION,
+                CleaningOverride.source == OverrideSource.MANUAL,
+                CleaningOverride.status == OverrideStatus.PLANNED,
+            )
+            .order_by(CleaningOverride.created_at.asc())
+        ).scalar_one_or_none()
+        if linked is not None:
+            return linked
+
+    return session.execute(
+        select(CleaningOverride)
+        .where(
+            CleaningOverride.type == OverrideType.COMPENSATION,
+            CleaningOverride.source == OverrideSource.MANUAL,
+            CleaningOverride.status == OverrideStatus.PLANNED,
+            CleaningOverride.member_from_id == swap_override.member_to_id,
+            CleaningOverride.member_to_id == swap_override.member_from_id,
+            CleaningOverride.week_start > swap_override.week_start,
+        )
+        .order_by(CleaningOverride.week_start.asc(), CleaningOverride.created_at.asc())
+    ).scalar_one_or_none()
+
+
 def _ensure_week_start_is_monday(week_start: date) -> None:
     if week_start.weekday() != 0:
         raise ValueError("week_start must be a Monday date")
@@ -153,6 +188,7 @@ def _build_swap_notifications(
     member_b_id: int,
     week_start: date,
     *,
+    return_week_start: date | None,
     action: str,
     actor_name: str | None = None,
 ) -> list[dict]:
@@ -168,39 +204,40 @@ def _build_swap_notifications(
     )
     original_name = original_assignee.display_name if original_assignee is not None else None
     actor_prefix = f"{actor_name} " if actor_name else "A flatmate "
-    week_label = week_start.isoformat()
+    selected_week_label = week_start.isoformat()
+    return_week_label = return_week_start.isoformat() if return_week_start is not None else "the next regular week"
 
     if action == "created":
         msg_a = (
-            f"{actor_prefix}set a one-time swap for week {week_label} with {member_b_name}. "
-            f"You are not assigned this week."
+            f"{actor_prefix}swapped shifts between week {selected_week_label} and week {return_week_label} with "
+            f"{member_b_name}. {member_b_name} is assigned for {selected_week_label}, and you are assigned for {return_week_label}."
         )
         msg_b = (
-            f"{actor_prefix}set a one-time swap for week {week_label} with {member_a_name}. "
-            f"You are assigned this week."
+            f"{actor_prefix}swapped shifts between week {selected_week_label} and week {return_week_label} with "
+            f"{member_a_name}. You are assigned for {selected_week_label}, and {member_a_name} is assigned for {return_week_label}."
         )
     elif action == "updated":
         msg_a = (
-            f"{actor_prefix}updated the one-time swap for week {week_label} with {member_b_name}. "
-            f"Check this week's assignment."
+            f"{actor_prefix}updated the shift swap: {member_b_name} now covers week {selected_week_label}, "
+            f"and you cover week {return_week_label}."
         )
         msg_b = (
-            f"{actor_prefix}updated the one-time swap for week {week_label} with {member_a_name}. "
-            f"Check this week's assignment."
+            f"{actor_prefix}updated the shift swap: you now cover week {selected_week_label}, "
+            f"and {member_a_name} covers week {return_week_label}."
         )
     else:
         msg_a = (
-            f"{actor_prefix}canceled the one-time swap for week {week_label}. "
-            f"Original assignment has been restored."
+            f"{actor_prefix}canceled the shift swap between week {selected_week_label} and week {return_week_label}. "
+            "Original assignments were restored."
         )
         msg_b = (
-            f"{actor_prefix}canceled the one-time swap for week {week_label}. "
-            f"Original assignment has been restored."
+            f"{actor_prefix}canceled the shift swap between week {selected_week_label} and week {return_week_label}. "
+            "Original assignments were restored."
         )
 
     if original_name:
-        msg_a = f"{msg_a} Original assignee: {original_name}."
-        msg_b = f"{msg_b} Original assignee: {original_name}."
+        msg_a = f"{msg_a} Original assignee for {selected_week_label}: {original_name}."
+        msg_b = f"{msg_b} Original assignee for {selected_week_label}: {original_name}."
 
     title = "Weekly Cleaning Shift"
     return [
@@ -234,33 +271,34 @@ def upsert_manual_swap(
     actor_member = resolve_actor_member(session, actor_user_id)
     existing_any = _planned_override_for_week(session, week_start)
     existing = existing_any if existing_any and existing_any.type == OverrideType.MANUAL_SWAP else None
+    existing_return_override = _linked_manual_swap_return_override(session, existing)
 
     notifications: list[dict] = []
     action = "created"
 
     if cancel:
         if existing is not None:
-            already_canceled = session.execute(
-                select(CleaningOverride).where(
-                    CleaningOverride.week_start == week_start,
-                    CleaningOverride.type == OverrideType.MANUAL_SWAP,
-                    CleaningOverride.status == OverrideStatus.CANCELED,
-                )
-            ).scalar_one_or_none()
+            return_week_start = existing_return_override.week_start if existing_return_override else None
 
-            if already_canceled is not None and already_canceled.id != existing.id:
-                already_canceled.member_from_id = existing.member_from_id
-                already_canceled.member_to_id = existing.member_to_id
-                already_canceled.created_by_member_id = actor_member.id if actor_member else None
-                session.delete(existing)
-            else:
-                existing.status = OverrideStatus.CANCELED
+            _cancel_override_without_status_collision(
+                session,
+                override=existing,
+                actor_member_id=actor_member.id if actor_member else None,
+            )
+            if existing_return_override is not None:
+                _cancel_override_without_status_collision(
+                    session,
+                    override=existing_return_override,
+                    actor_member_id=actor_member.id if actor_member else None,
+                )
+
             action = "canceled"
             notifications = _build_swap_notifications(
                 session,
                 existing.member_from_id,
                 existing.member_to_id,
                 week_start,
+                return_week_start=return_week_start,
                 action="canceled",
                 actor_name=actor_member.display_name if actor_member else None,
             )
@@ -274,10 +312,13 @@ def upsert_manual_swap(
                     "week_start": week_start.isoformat(),
                     "member_a_id": existing.member_from_id,
                     "member_b_id": existing.member_to_id,
+                    "return_week_start": return_week_start.isoformat() if return_week_start else None,
                 },
             )
         session.flush()
         ensure_assignment(session, week_start)
+        if existing_return_override is not None:
+            ensure_assignment(session, existing_return_override.week_start)
         session.commit()
         return None, notifications
 
@@ -298,24 +339,25 @@ def upsert_manual_swap(
             created_by_member_id=actor_member.id if actor_member else None,
         )
         session.add(existing)
+        session.flush()
         action = "created"
     else:
         existing.member_from_id = member_a_id
         existing.member_to_id = member_b_id
         action = "updated"
 
-    ensure_assignment(session, week_start)
+    ignore_override_ids = {existing.id}
+    if existing_return_override is not None:
+        ignore_override_ids.add(existing_return_override.id)
 
-    notifications = _build_swap_notifications(
+    return_week_start = _next_baseline_week_for_member(
         session,
-        member_a_id,
         member_b_id,
-        week_start,
-        action=action,
-        actor_name=actor_member.display_name if actor_member else None,
+        start_week=add_weeks(week_start, 1),
+        ignore_override_ids=ignore_override_ids,
     )
 
-    log_event(
+    swap_event = log_event(
         session,
         domain="cleaning",
         action=f"cleaning_swap_{action}",
@@ -325,8 +367,45 @@ def upsert_manual_swap(
             "week_start": week_start.isoformat(),
             "member_a_id": member_a_id,
             "member_b_id": member_b_id,
+            "return_week_start": return_week_start.isoformat(),
         },
     )
+
+    existing.source_event_id = swap_event.id
+
+    if existing_return_override is None:
+        existing_return_override = CleaningOverride(
+            week_start=return_week_start,
+            type=OverrideType.COMPENSATION,
+            source=OverrideSource.MANUAL,
+            source_event_id=swap_event.id,
+            member_from_id=member_b_id,
+            member_to_id=member_a_id,
+            status=OverrideStatus.PLANNED,
+            created_by_member_id=actor_member.id if actor_member else None,
+        )
+        session.add(existing_return_override)
+    else:
+        existing_return_override.week_start = return_week_start
+        existing_return_override.type = OverrideType.COMPENSATION
+        existing_return_override.source = OverrideSource.MANUAL
+        existing_return_override.source_event_id = swap_event.id
+        existing_return_override.member_from_id = member_b_id
+        existing_return_override.member_to_id = member_a_id
+        existing_return_override.status = OverrideStatus.PLANNED
+        existing_return_override.created_by_member_id = actor_member.id if actor_member else None
+
+    notifications = _build_swap_notifications(
+        session,
+        member_a_id,
+        member_b_id,
+        week_start,
+        return_week_start=return_week_start,
+        action=action,
+        actor_name=actor_member.display_name if actor_member else None,
+    )
+    ensure_assignment(session, week_start)
+    ensure_assignment(session, return_week_start)
 
     session.commit()
     return existing, notifications
@@ -337,12 +416,16 @@ def _next_baseline_week_for_member(
     member_id: int,
     *,
     start_week: date,
+    ignore_override_ids: set[int] | None = None,
     max_scan_weeks: int = 156,
 ) -> date:
+    ignore_ids = ignore_override_ids or set()
     candidate = start_week
     for _ in range(max_scan_weeks):
         baseline_id = baseline_assignee_member_id(session, candidate)
         override = _planned_override_for_week(session, candidate)
+        if override is not None and override.id in ignore_ids:
+            override = None
         if baseline_id == member_id and override is None:
             return candidate
         candidate = add_weeks(candidate, 1)
@@ -780,6 +863,7 @@ def get_schedule(session: Session, *, weeks_ahead: int, from_week_start: date | 
                 "baseline_assignee_member_id": baseline_id,
                 "effective_assignee_member_id": effective_id,
                 "override_type": override.type.value if override else None,
+                "override_source": override.source.value if override else None,
                 "status": assignment.status.value,
                 "completed_by_member_id": assignment.completed_by_member_id,
                 "completion_mode": assignment.completion_mode,

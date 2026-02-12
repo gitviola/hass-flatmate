@@ -335,6 +335,7 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
             effective_id = row.get("effective_assignee_member_id")
             baseline_id = row.get("baseline_assignee_member_id")
             override_type = row.get("override_type")
+            override_source = row.get("override_source")
 
             assignee_name = None
             baseline_name = None
@@ -353,7 +354,7 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
             if override_type == "manual_swap":
                 note = "swap"
             elif override_type == "compensation":
-                note = "make-up shift"
+                note = "swap return week" if override_source == "manual" else "make-up shift"
 
             is_current = week_start.isoformat() == current_week_start
             status_value = row.get("status")
@@ -409,6 +410,7 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
                     "baseline_assignee_member_id": baseline_id,
                     "baseline_assignee_name": baseline_name,
                     "override_type": override_type,
+                    "override_source": override_source,
                     "note": note,
                     "is_current": is_current,
                     "is_past": is_past,

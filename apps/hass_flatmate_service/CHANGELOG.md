@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+- `POST /v1/cleaning/overrides/swap` now applies a true two-week shift exchange by adding a linked return-week override automatically.
+- Swap cancel now removes both linked weeks in the exchange and restores baseline assignment for both.
+
 ## [0.1.20] - 2026-02-12
 
 ### Changed

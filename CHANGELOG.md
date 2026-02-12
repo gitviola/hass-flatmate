@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Cleaning swap semantics now exchange two shifts (selected week plus the selected flatmate's next regular baseline week) instead of only replacing one week.
+- Cleaning swap modal copy now explains the two-week exchange explicitly, including return-week preview.
+
+### Fixed
+- Cleaning schedule payload now includes `override_source` so UI can distinguish swap-return weeks from takeover make-up shifts.
+
 ## [0.1.20] - 2026-02-12
 
 ### Changed

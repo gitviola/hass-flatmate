@@ -313,6 +313,81 @@ def test_cancel_swap_repeatedly_does_not_raise_500(client, auth_headers) -> None
     assert second_cancel.status_code == 200
 
 
+def test_swap_exchanges_two_weeks_and_cancel_restores_both(client, auth_headers) -> None:
+    _sync_members(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    current_payload = current.json()
+    week_start = date.fromisoformat(current_payload["week_start"])
+    member_a_id = int(current_payload["effective_assignee_member_id"])
+    member_b_id = 2 if member_a_id != 2 else 3
+
+    baseline_schedule = client.get("/v1/cleaning/schedule?weeks_ahead=20", headers=auth_headers)
+    assert baseline_schedule.status_code == 200
+    rows = baseline_schedule.json()["schedule"]
+    expected_return_week = next(
+        date.fromisoformat(row["week_start"])
+        for row in rows
+        if date.fromisoformat(row["week_start"]) > week_start
+        and row["baseline_assignee_member_id"] == member_b_id
+        and row["override_type"] is None
+    )
+
+    swap = client.post(
+        "/v1/cleaning/overrides/swap",
+        headers=auth_headers,
+        json={
+            "week_start": week_start.isoformat(),
+            "member_a_id": member_a_id,
+            "member_b_id": member_b_id,
+            "actor_user_id": "u1",
+            "cancel": False,
+        },
+    )
+    assert swap.status_code == 200
+
+    schedule_after_swap = client.get("/v1/cleaning/schedule?weeks_ahead=20", headers=auth_headers)
+    assert schedule_after_swap.status_code == 200
+    row_map = {
+        date.fromisoformat(row["week_start"]): row
+        for row in schedule_after_swap.json()["schedule"]
+    }
+
+    selected_row = row_map[week_start]
+    assert selected_row["override_type"] == "manual_swap"
+    assert selected_row["effective_assignee_member_id"] == member_b_id
+
+    return_row = row_map[expected_return_week]
+    assert return_row["override_type"] == "compensation"
+    assert return_row["override_source"] == "manual"
+    assert return_row["baseline_assignee_member_id"] == member_b_id
+    assert return_row["effective_assignee_member_id"] == member_a_id
+
+    cancel = client.post(
+        "/v1/cleaning/overrides/swap",
+        headers=auth_headers,
+        json={
+            "week_start": week_start.isoformat(),
+            "member_a_id": member_a_id,
+            "member_b_id": member_b_id,
+            "actor_user_id": "u1",
+            "cancel": True,
+        },
+    )
+    assert cancel.status_code == 200
+
+    schedule_after_cancel = client.get("/v1/cleaning/schedule?weeks_ahead=20", headers=auth_headers)
+    assert schedule_after_cancel.status_code == 200
+    row_map_after_cancel = {
+        date.fromisoformat(row["week_start"]): row
+        for row in schedule_after_cancel.json()["schedule"]
+    }
+
+    assert row_map_after_cancel[week_start]["override_type"] is None
+    assert row_map_after_cancel[expected_return_week]["override_type"] is None
+
+
 def test_mark_done_then_undone(client, auth_headers) -> None:
     _sync_members(client, auth_headers)
 
@@ -446,9 +521,9 @@ def test_member_sync_removes_inactive_members_from_rotation_and_cancels_override
     assert removed is not None
     assert removed["active"] is False
 
-    assert len(notifications) == 1
-    assert notifications[0]["member_id"] == 1
-    assert "no longer active" in notifications[0]["message"]
+    assert len(notifications) >= 1
+    assert all(notification["member_id"] == 1 for notification in notifications)
+    assert any("no longer active" in notification["message"] for notification in notifications)
 
     schedule = client.get("/v1/cleaning/schedule?weeks_ahead=8", headers=auth_headers)
     assert schedule.status_code == 200

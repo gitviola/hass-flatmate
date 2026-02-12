@@ -282,6 +282,56 @@ class HassFlatmateCleaningCard extends HTMLElement {
     return null;
   }
 
+  _findExistingManualSwapReturnWeek(weeks, originalMemberId, targetMemberId, sourceWeekStart) {
+    if (!Number.isInteger(originalMemberId) || originalMemberId <= 0) {
+      return null;
+    }
+    if (!Number.isInteger(targetMemberId) || targetMemberId <= 0) {
+      return null;
+    }
+    const sourceDate = this._parseWeekDate(sourceWeekStart);
+    if (!sourceDate) {
+      return null;
+    }
+
+    const sortedWeeks = weeks
+      .slice()
+      .sort((a, b) => String(a?.week_start || "").localeCompare(String(b?.week_start || "")));
+
+    for (const row of sortedWeeks) {
+      const rowDate = this._parseWeekDate(row?.week_start);
+      if (!rowDate || rowDate <= sourceDate) {
+        continue;
+      }
+      if (row?.override_type !== "compensation" || row?.override_source !== "manual") {
+        continue;
+      }
+      const effectiveId = Number(row?.assignee_member_id);
+      const baselineId = Number(row?.original_assignee_member_id ?? row?.baseline_assignee_member_id);
+      if (
+        Number.isInteger(effectiveId) &&
+        Number.isInteger(baselineId) &&
+        effectiveId === originalMemberId &&
+        baselineId === targetMemberId
+      ) {
+        return row;
+      }
+    }
+
+    return null;
+  }
+
+  _findSwapReturnPreviewWeek(weeks, originalMemberId, targetMemberId, sourceWeekStart) {
+    return (
+      this._findExistingManualSwapReturnWeek(
+        weeks,
+        originalMemberId,
+        targetMemberId,
+        sourceWeekStart
+      ) || this._findCompensationPreviewWeek(weeks, targetMemberId, sourceWeekStart)
+    );
+  }
+
   _closeDoneModal() {
     this._modalOpen = false;
     this._modalWeekStart = "";
@@ -936,14 +986,22 @@ class HassFlatmateCleaningCard extends HTMLElement {
         }
 
         const overrideBadge = row.override_type
-          ? `<span class="badge">${this._escape(row.override_type === "manual_swap" ? "Swap" : "Make-up")}</span>`
+          ? `<span class="badge">${this._escape(
+              row.override_type === "manual_swap"
+                ? "Swap"
+                : row.override_source === "manual"
+                  ? "Swap return"
+                  : "Make-up"
+            )}</span>`
           : "";
 
         const secondary =
           row.override_type === "manual_swap" && originalName && originalName !== assigneeName
             ? `<span class="meta-note">Swapped with ${originalName}</span>`
             : row.override_type === "compensation"
-              ? `<span class="meta-note">Make-up shift: ${assigneeName} covers ${originalName || "the original turn"}</span>`
+              ? row.override_source === "manual"
+                ? `<span class="meta-note">Swap return week: ${assigneeName} covers ${originalName || "the original turn"}</span>`
+                : `<span class="meta-note">Make-up shift: ${assigneeName} covers ${originalName || "the original turn"}</span>`
               : "";
 
         const actionParts = [];
@@ -1103,6 +1161,26 @@ class HassFlatmateCleaningCard extends HTMLElement {
     const swapWeekLabel = swapModalWeek
       ? `${this._weekTitle(swapModalWeek, swapWeekIndex >= 0 ? swapWeekIndex : 0)} (${this._rowDateRange(swapModalWeek)})`
       : "the selected week";
+    const swapReturnWeek =
+      hasValidSwapTarget && swapModalWeek
+        ? this._findSwapReturnPreviewWeek(
+            weeks,
+            swapOriginalAssigneeId,
+            swapTargetId,
+            swapModalWeek.week_start
+          )
+        : this._findExistingManualSwapReturnWeek(
+            weeks,
+            swapOriginalAssigneeId,
+            swapExistingPartnerId,
+            swapModalWeek?.week_start
+          );
+    const swapReturnWeekLabel = swapReturnWeek
+      ? `${this._weekTitle(
+          swapReturnWeek,
+          Math.max(0, weeks.findIndex((row) => row.week_start === swapReturnWeek.week_start))
+        )} (${this._rowDateRange(swapReturnWeek)})`
+      : "the next eligible regular week in the schedule";
     const swapCancelPartnerName =
       Number.isInteger(swapExistingPartnerId) &&
       swapExistingPartnerId > 0 &&
@@ -1114,26 +1192,27 @@ class HassFlatmateCleaningCard extends HTMLElement {
       this._swapModalAction === "cancel"
         ? `
           <ul class="effect-list">
-            <li>Remove the one-time swap for <strong>${this._escape(swapWeekLabel)}</strong>.</li>
-            <li>Restore <strong>${this._escape(swapOriginalAssigneeName)}</strong> as the assignee for that week.</li>
-            <li>Future weeks remain unchanged.</li>
+            <li>Remove the shift swap pair linked to <strong>${this._escape(swapWeekLabel)}</strong>.</li>
+            <li>Restore <strong>${this._escape(swapOriginalAssigneeName)}</strong> for <strong>${this._escape(swapWeekLabel)}</strong> and restore <strong>${this._escape(swapCancelPartnerName)}</strong> for <strong>${this._escape(swapReturnWeekLabel)}</strong>.</li>
+            <li>No further weeks are modified.</li>
           </ul>
           <p class="effect-subtitle">Who will be notified</p>
           <ul class="effect-list notification-list">
-            <li><strong>${this._escape(swapOriginalAssigneeName)}</strong>: "${actorNameEscaped} canceled the one-time swap for ${this._escape(swapWeekLabel)}. You are assigned again."</li>
-            <li><strong>${this._escape(swapCancelPartnerName)}</strong>: "${actorNameEscaped} canceled the one-time swap for ${this._escape(swapWeekLabel)}. You are no longer assigned."</li>
+            <li><strong>${this._escape(swapOriginalAssigneeName)}</strong>: "${actorNameEscaped} canceled the shift swap. You are assigned again for ${this._escape(swapWeekLabel)}."</li>
+            <li><strong>${this._escape(swapCancelPartnerName)}</strong>: "${actorNameEscaped} canceled the shift swap. Your regular assignment on ${this._escape(swapReturnWeekLabel)} is restored."</li>
           </ul>
         `
         : `
           <ul class="effect-list">
-            <li>Apply a one-time swap for <strong>${this._escape(swapWeekLabel)}</strong> only.</li>
-            <li><strong>${this._escape(swapTargetName)}</strong> is assigned for that week instead of <strong>${this._escape(swapOriginalAssigneeName)}</strong>.</li>
-            <li>From the following week onward, the rotation returns automatically to the original order.</li>
+            <li>Swap the two shifts between <strong>${this._escape(swapWeekLabel)}</strong> and <strong>${this._escape(swapReturnWeekLabel)}</strong>.</li>
+            <li><strong>${this._escape(swapTargetName)}</strong> is assigned for <strong>${this._escape(swapWeekLabel)}</strong> instead of <strong>${this._escape(swapOriginalAssigneeName)}</strong>.</li>
+            <li><strong>${this._escape(swapOriginalAssigneeName)}</strong> is assigned for <strong>${this._escape(swapReturnWeekLabel)}</strong> instead of <strong>${this._escape(swapTargetName)}</strong>.</li>
+            <li>All later weeks keep the normal rotation order.</li>
           </ul>
           <p class="effect-subtitle">Who will be notified</p>
           <ul class="effect-list notification-list">
-            <li><strong>${this._escape(swapOriginalAssigneeName)}</strong>: "${actorNameEscaped} ${this._escape(swapActionWord)} a one-time swap with ${this._escape(swapTargetName)} for ${this._escape(swapWeekLabel)}. You are not assigned this week."</li>
-            <li><strong>${this._escape(swapTargetName)}</strong>: "${actorNameEscaped} ${this._escape(swapActionWord)} a one-time swap with ${this._escape(swapOriginalAssigneeName)} for ${this._escape(swapWeekLabel)}. You are assigned this week."</li>
+            <li><strong>${this._escape(swapOriginalAssigneeName)}</strong>: "${actorNameEscaped} ${this._escape(swapActionWord)} the shift swap with ${this._escape(swapTargetName)}. You clean ${this._escape(swapReturnWeekLabel)}."</li>
+            <li><strong>${this._escape(swapTargetName)}</strong>: "${actorNameEscaped} ${this._escape(swapActionWord)} the shift swap with ${this._escape(swapOriginalAssigneeName)}. You clean ${this._escape(swapWeekLabel)}."</li>
           </ul>
         `;
     const swapTargetOptions = [
@@ -1197,15 +1276,20 @@ class HassFlatmateCleaningCard extends HTMLElement {
         if (row.override_type === "manual_swap" && originalName && originalName !== assigneeName) {
           compactNote = `Swapped with ${originalName}`;
         } else if (row.override_type === "compensation") {
-          compactNote = `Make-up shift: ${assigneeName} covers ${originalName || "the original turn"}`;
+          compactNote =
+            row.override_source === "manual"
+              ? `Swap return week: ${assigneeName} covers ${originalName || "the original turn"}`
+              : `Make-up shift: ${assigneeName} covers ${originalName || "the original turn"}`;
         } else if (isDone && completedByName) {
           compactNote = `Done by ${completedByName}`;
         } else if (isMissed) {
           compactNote = "Not confirmed";
         }
 
+        const leftMarked = row.is_current || (row.is_previous && !isDone);
+
         return `
-          <li class="compact-week-row ${row.is_current ? "current" : ""} ${isDone ? "done" : ""} ${isMissed ? "missed" : ""}">
+          <li class="compact-week-row ${row.is_current ? "current" : ""} ${leftMarked ? "left-marked" : ""} ${isDone ? "done" : ""} ${isMissed ? "missed" : ""}">
             <div class="compact-top">
               <span class="compact-assignee">${assigneeName}</span>
               ${
@@ -1323,7 +1407,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
           <div class="modal-backdrop swap-modal-backdrop">
             <div class="modal" role="dialog" aria-modal="true">
               <div class="modal-header">
-                <h3>${swapHasExistingManualSwap ? "Edit one-time swap for this week" : "Set one-time swap for this week"}</h3>
+                <h3>${swapHasExistingManualSwap ? "Edit shift swap (2 weeks)" : "Set shift swap (2 weeks)"}</h3>
                 <button class="icon-btn" type="button" data-action="close-swap-modal" aria-label="Close swap dialog">
                   <ha-icon icon="mdi:close"></ha-icon>
                 </button>
@@ -1340,10 +1424,10 @@ class HassFlatmateCleaningCard extends HTMLElement {
               <div class="choice-group">
                 <label class="choice-option">
                   <input type="radio" name="hf-swap-action" value="swap" ${this._swapModalAction !== "cancel" ? "checked" : ""} />
-                  <span>${swapHasExistingManualSwap ? "Update one-time swap for this week" : "Create one-time swap for this week"}</span>
+                  <span>${swapHasExistingManualSwap ? "Update shift swap" : "Create shift swap"}</span>
                 </label>
                 <p class="choice-help">
-                  This affects only the selected week. Following weeks stay on the normal rotation.
+                  This swaps two weeks: the selected week and the selected flatmate's next regular week.
                 </p>
                 ${
                   swapHasExistingManualSwap
@@ -1353,7 +1437,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
                         <span>Cancel existing swap</span>
                       </label>
                       <p class="choice-help">
-                        Restores the original assignment for this week and notifies both flatmates.
+                        Restores both swapped weeks to their original assignees and notifies both flatmates.
                       </p>
                     `
                     : ""
@@ -1500,9 +1584,12 @@ class HassFlatmateCleaningCard extends HTMLElement {
           border-bottom: none;
         }
 
+        .compact-week-row.left-marked {
+          border-left: 4px solid var(--primary-text-color);
+          padding-left: 6px;
+        }
+
         .compact-week-row.current {
-          border-left: 3px solid var(--primary-text-color);
-          padding-left: 7px;
           font-weight: 700;
         }
 
