@@ -1,0 +1,287 @@
+Implement the following plan:
+
+# Plan: Fix rotation race condition + Add reset endpoint
+
+## Context
+
+Two issues to address:
+1. **Race condition bug**: When HA polls multiple endpoints concurrently at startup, two requests can both find no `rotation_config` row via `session.get()` and both try to INSERT `id=1`, causing `UNIQUE constraint failed`. This blocks `GET /v1/cleaning/current`.
+2. **Reset endpoint**: User needs a way to wipe all data (except members) before re-importing history, to ensure a clean slate.
+
+## Changes
+
+### 1. Fix race condition in `get_or_create_rotation_config`
+
+**File**: `addon/hass_flatmate_service/app/services/cleaning.py` (line 77-83)
+
+Catch `IntegrityError` on the flush and re-fetch the existing row:
+
+```python
+def get_or_create_rotation_config(session: Session) -> RotationConfig:
+    config = session.get(RotationConfig, 1)
+    if config is None:
+        config = RotationConfig(id=1, ordered_member_ids_json=[], anchor_week_start=None)
+        session.add(config)
+        try:
+            session.flush()
+        except IntegrityError:
+            session.rollback()
+            config = session.get(RotationConfig, 1)
+    return config
+```
+
+Add `from sqlalchemy.exc import IntegrityError` to imports.
+
+### 2. Add `POST /v1/admin/reset` endpoint
+
+**Delete order** (respecting FK constraints):
+1. `cleaning_overrides` (references members, activity_events)
+2. `cleaning_assignments` (references members)
+3. `activity_events` (references members)
+4. `shopping_items` (references members)
+5. `shopping_favorites` (references members)
+6. `rotation_config` (standalone singleton)
+
+Members are **preserved** — they come from HA person sync, not from imports.
+
+**Files to modify**:
+- `addon/hass_flatmate_service/app/main.py` — add the route
+- `addon/hass_flatmate_service/app/schemas.py` — no new schema needed, reuse `OperationResponse`
+
+Implementation directly in `main.py` (simple enough, no service module needed):
+
+```python
+@app.post("/v1/admin/reset", response_model=OperationResponse, dependencies=[Depends(require_token)])
+def post_admin_reset(session: Session = Depends(get_session)) -> OperationResponse:
+    session.execute(delete(CleaningOverride))
+    session.execute(delete(CleaningAssignment))
+    session.execute(delete(ActivityEvent))
+    session.execute(delete(ShoppingItem))
+    session.execute(delete(ShoppingFavorite))
+    session.execute(delete(RotationConfig))
+    session.commit()
+    return OperationResponse(ok=True)
+```
+
+### 3. Sync mirror + run tests
+
+- Run `pytest` to verify
+- Run `./scripts/sync_app_service_src.sh`
+- Regenerate `import_payload.json` with a curl to reset first
+
+## Verification
+
+1. `cd addon/hass_flatmate_service && pytest` — all tests pass
+2. `node --check` on frontend JS (no changes expected)
+3. Manual test: curl reset → curl import → curl cleaning/current returns 200
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/ms/.REDACTED.jsonl
+
+---
+
+imported history references members that no longer exist in the members table? -> YES of course!!! that's the whole point of importing the history
+
+---
+
+And yes of course write a test for this.. to make sure all this properly works the import as expected etc
+
+---
+
+Just that those don't have an home assistant id those members that we import I guess.. and we cannot just pick a random one as perhaps the next user created in home assistant once someone moves in perhaps gets that id assigned by hass
+
+---
+
+Hmm why the reset doesnt delete the members I'm wondering? I mean if we want to reset everything perhaps we want to reset everything..
+
+---
+
+yes commit and create release etc
+
+---
+
+The only issue we're having now is that we have a flat mate that in the json file is called Maria and inside home assistant she is called María.. we should match for this and replace it so it fits properly and creates it properly inside our system
+
+---
+
+[Request interrupted by user]
+
+---
+
+WAIT NOT!!!!!!! not inside our code omgggg. Inside the import!!!
+
+---
+
+/Users/ms/Downloads/past_shopping_purchases.json and /Users/ms/Downloads/past_cleaning_events.json
+
+---
+
+Excellent then. I now installed the latest version so now you can use the new reset functionality pls
+
+---
+
+pls do the reset, then run the import and then I do the sync. I gave you already base url and token Downloads BASE_URL=http://192.168.3.13:8099 TOKEN=49348E26-4628-4C1C-9A49-526B07693C00 python3 /Users/ms/Downloads/import_history.py
+Traceback (most recent call last):
+  File "/Users/ms/Downloads/import_history.py", line 7, in <module>
+    import requests
+ModuleNotFoundError: No module named 'requests'
+
+---
+
+run it pls
+
+---
+
+INFO:     Started server process [96]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8099 (Press CTRL+C to quit)
+INFO:     172.30.32.1:41228 - "GET /v1/members HTTP/1.1" 200 OK
+INFO:     172.30.32.1:41160 - "GET /v1/shopping/items HTTP/1.1" 200 OK
+INFO:     172.30.32.1:41220 - "GET /v1/activity?limit=200 HTTP/1.1" 200 OK
+INFO:     172.30.32.1:41176 - "GET /v1/shopping/favorites HTTP/1.1" 200 OK
+INFO:     172.30.32.1:41198 - "GET /v1/stats/buys?window_days=90 HTTP/1.1" 200 OK
+INFO:     172.30.32.1:41152 - "GET /v1/shopping/recents?limit=20 HTTP/1.1" 200 OK
+INFO:     172.30.32.1:41190 - "GET /v1/cleaning/current HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+sqlite3.IntegrityError: UNIQUE constraint failed: rotation_config.id
+The above exception was the direct cause of the following exception:
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/site-packages/uvicorn/protocols/http/h11_impl.py", line 410, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/fastapi/applications.py", line 1134, in __call__
+    await super().__call__(scope, receive, send)
+  File "/usr/lib/python3.12/site-packages/starlette/applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/usr/lib/python3.12/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/usr/lib/python3.12/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/usr/lib/python3.12/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/usr/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/usr/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/usr/lib/python3.12/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/usr/lib/python3.12/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/usr/lib/python3.12/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/usr/lib/python3.12/site-packages/fastapi/routing.py", line 119, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/usr/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/usr/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/lib/python3.12/site-packages/fastapi/routing.py", line 105, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/fastapi/routing.py", line 424, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/fastapi/routing.py", line 314, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/starlette/concurrency.py", line 32, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/anyio/to_thread.py", line 63, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/anyio/_backends/_asyncio.py", line 2502, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/anyio/_backends/_asyncio.py", line 986, in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hass_flatmate/app/main.py", line 306, in get_cleaning_current
+    return CleaningCurrentResponse(**cleaning.get_cleaning_current(session))
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hass_flatmate/app/services/cleaning.py", line 994, in get_cleaning_current
+    assignment = ensure_assignment(session, week_start)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hass_flatmate/app/services/cleaning.py", line 147, in ensure_assignment
+    effective_id, _ = effective_assignee_member_id(session, week_start)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hass_flatmate/app/services/cleaning.py", line 140, in effective_assignee_member_id
+    baseline_id = baseline_assignee_member_id(session, week_start)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hass_flatmate/app/services/cleaning.py", line 109, in baseline_assignee_member_id
+    config = sync_rotation_members(session)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hass_flatmate/app/services/cleaning.py", line 87, in sync_rotation_members
+    config = get_or_create_rotation_config(session)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hass_flatmate/app/services/cleaning.py", line 82, in get_or_create_rotation_config
+    session.flush()
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 4331, in flush
+    self._flush(objects)
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 4466, in _flush
+    with util.safe_reraise():
+         ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/util/langhelpers.py", line 224, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 4427, in _flush
+    flush_context.execute()
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/orm/unitofwork.py", line 466, in execute
+    rec.execute(self)
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/orm/unitofwork.py", line 642, in execute
+    util.preloaded.orm_persistence.save_obj(
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/orm/persistence.py", line 93, in save_obj
+    _emit_insert_statements(
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/orm/persistence.py", line 1048, in _emit_insert_statements
+    result = connection.execute(
+             ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/sql/elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) UNIQUE constraint failed: rotation_config.id
+[SQL: INSERT INTO rotation_config (id, ordered_member_ids_json, anchor_week_start, updated_at) VALUES (?, ?, ?, ?)]
+[parameters: (1, '[]', None, '2026-02-12 20:38:35.449648')]
+(Background on this error at: https://sqlalche.me/e/20/gkpj) failing I guess.. can I ask why you don't run this locally to validate if things work?!
+
+---
+
+[Request interrupted by user for tool use]
+
+---
+
+Why would you first want to sync.. test the reset first. And then sync yes and then import
+
+---
+
+Great then commit and new release or did we not have to change anything?
+
+---
+
+Worked. Now the read only cleaning rotation also remove the outer card pls and allow also an option of the card to show an edit button and configure a link when the edit button is clicked (I want to link to the dashboard where you I have the interactive card)
