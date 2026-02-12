@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "1806b8dcb41e",
+  "session_id": "2a92a9d7-8ebd-43b7-a602-39667bc87cf8",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-12T09:10:24.306366Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "custom_components/hass_flatmate/sensor.py"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "e2ab0176-c96b-4baa-9091-97e472146b81",
+  "checkpoint_transcript_start": 348,
+  "transcript_lines_at_start": 348,
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 7344,
+    "cache_read_tokens": 1108242,
+    "output_tokens": 149,
+    "api_call_count": 12
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-12T09:10:24.234985Z",
+    "agent_lines": 3,
+    "human_added": 174,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 177,
+    "agent_percentage": 1.694915254237288
+  }
+}
