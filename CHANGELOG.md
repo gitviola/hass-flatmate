@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Compact cleaning card now prioritizes assignee-first readability for e-ink: assignee name is shown first in bold, with date/details on following lines.
+
+### Fixed
+- Compact cleaning card now renders week context markers (`this week`, `previous week`, `next week`) in italic styling.
+- Compact cleaning card notes such as `Done by ...` are now italicized for clearer visual separation.
+
 ## [0.1.19] - 2026-02-12
 
 ### Changed

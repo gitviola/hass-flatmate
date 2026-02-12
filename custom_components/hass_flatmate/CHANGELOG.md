@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Changed
+- Compact cleaning card layout now shows assignee name first and in stronger bold to improve glanceability on e-ink displays.
+
+### Fixed
+- Compact cleaning card week-context labels (`this week`, `previous week`, `next week`) now render in italic styling.
+- Compact cleaning card note lines (for example `Done by ...`) now render in italic styling.
+
 ## [0.1.19] - 2026-02-12
 
 ### Changed

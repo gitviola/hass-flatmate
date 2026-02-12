@@ -1128,13 +1128,16 @@ class HassFlatmateCleaningCard extends HTMLElement {
               : "";
         const compactStatusClass = isDone ? "done" : isMissed ? "missed" : "pending";
         const compactContext = row.is_current
-          ? " (this week)"
+          ? "this week"
           : row.is_previous
-            ? " (previous week)"
-          : row.is_next
-              ? " (next week)"
+            ? "previous week"
+            : row.is_next
+              ? "next week"
               : "";
-        const compactHeadline = `${this._rowDateRange(row)}${compactContext}`;
+        const compactDateLabel = this._escape(this._rowDateRange(row));
+        const compactContextHtml = compactContext
+          ? ` <span class="compact-context">(${this._escape(compactContext)})</span>`
+          : "";
 
         const assigneeMemberId = Number(row.assignee_member_id);
         const assigneeLabel =
@@ -1170,14 +1173,14 @@ class HassFlatmateCleaningCard extends HTMLElement {
         return `
           <li class="compact-week-row ${row.is_current ? "current" : ""} ${isDone ? "done" : ""} ${isMissed ? "missed" : ""}">
             <div class="compact-top">
-              <span class="compact-week">${this._escape(compactHeadline)}</span>
+              <span class="compact-assignee">${assigneeName}</span>
               ${
                 compactStatusLabel
                   ? `<span class="compact-status ${compactStatusClass}">${compactStatusLabel}</span>`
                   : ""
               }
             </div>
-            <span class="compact-assignee">${assigneeName}</span>
+            <span class="compact-week"><span class="compact-date">${compactDateLabel}</span>${compactContextHtml}</span>
             ${compactNote ? `<span class="compact-note">${this._escape(compactNote)}</span>` : ""}
           </li>
         `;
@@ -1469,10 +1472,6 @@ class HassFlatmateCleaningCard extends HTMLElement {
           font-weight: 700;
         }
 
-        .compact-week-row.done .compact-assignee {
-          text-decoration: line-through;
-        }
-
         .compact-top {
           display: flex;
           align-items: flex-start;
@@ -1486,12 +1485,22 @@ class HassFlatmateCleaningCard extends HTMLElement {
           overflow-wrap: anywhere;
         }
 
+        .compact-date {
+          font-style: normal;
+        }
+
+        .compact-context {
+          font-style: italic;
+        }
+
         .compact-week-row.current .compact-week {
           color: var(--primary-text-color);
         }
 
         .compact-assignee {
-          font-weight: 600;
+          font-weight: 700;
+          font-size: 0.9rem;
+          line-height: 1.2;
         }
 
         .compact-status {
@@ -1514,6 +1523,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
         .compact-note {
           color: var(--secondary-text-color);
           font-size: 0.78rem;
+          font-style: italic;
           text-align: left;
         }
 
