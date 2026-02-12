@@ -40,6 +40,8 @@ It replaces the flat-sharing features you use with:
 
 1. Install app from this repository (`apps/hass_flatmate_service`) in Home Assistant.
 2. Set app option `api_token`.
+   - Persistent DB path: `/config/hass_flatmate_service/hass_flatmate.db` (Supervisor `addon_config` mount).
+   - Data survives container restarts/image updates; include app/add-on data in HA backups for disaster recovery.
 3. Install custom integration via HACS from this repository.
 4. Configure integration with:
    - `base_url`: service URL (default `http://ebc95cb1-hass-flatmate-service:8099`)

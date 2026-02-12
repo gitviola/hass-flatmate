@@ -17,6 +17,11 @@
 - `api_token`: shared token used by integration.
 4. Start app.
 
+Persistent storage:
+- SQLite is stored at `/config/hass_flatmate_service/hass_flatmate.db`.
+- This path is on the Supervisor-managed persistent app/add-on config mount (`addon_config`), so data survives container restarts and image updates.
+- Include app/add-on data in Home Assistant backups to protect against host/storage failures.
+
 Prebuilt images are pulled from:
 - `ghcr.io/gitviola/hass-flatmate-service-amd64`
 - `ghcr.io/gitviola/hass-flatmate-service-aarch64`

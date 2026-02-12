@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Changed
+- Service DB-path fallback now defaults to `/config/hass_flatmate_service/hass_flatmate.db` whenever the Home Assistant `/config` mount is available, making persistence the safe default.
+
+### Added
+- Tests for DB-path resolution priority (explicit env override, HA persistent path fallback, local-dev fallback).
+
 ## [0.1.21] - 2026-02-12
 
 ### Changed

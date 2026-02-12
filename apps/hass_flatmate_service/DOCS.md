@@ -16,6 +16,7 @@ Backend API for the `hass_flatmate` custom integration.
 
 ## Storage
 - SQLite DB at `/config/hass_flatmate_service/hass_flatmate.db`
+- Stored on Supervisor persistent app/add-on config mount (`addon_config`), so it survives container restarts and image upgrades.
 
 ## Images
 - `ghcr.io/gitviola/hass-flatmate-service-amd64`

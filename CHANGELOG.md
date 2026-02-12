@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Backend DB path resolution now defaults to `/config/hass_flatmate_service/hass_flatmate.db` when running inside Home Assistant, ensuring persistent storage by default.
+
+### Added
+- Backend tests for DB-path fallback behavior to guard persistent-storage defaults in Home Assistant and local-dev fallback behavior.
+
 ## [0.1.21] - 2026-02-12
 
 ### Changed
