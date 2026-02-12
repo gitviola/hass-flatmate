@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity
@@ -56,6 +56,236 @@ def _parse_date(value: Any) -> date | None:
         return date.fromisoformat(str(value))
     except ValueError:
         return None
+
+
+def _parse_week_start_iso(value: Any) -> str | None:
+    parsed = _parse_date(value)
+    if parsed is None:
+        return None
+    return parsed.isoformat()
+
+
+def _activity_actor_name(row: Mapping[str, Any], members: Mapping[int, str]) -> str:
+    actor_id = row.get("actor_member_id")
+    if actor_id is not None:
+        try:
+            member_name = members.get(int(actor_id))
+        except (TypeError, ValueError):
+            member_name = None
+        if member_name:
+            return member_name
+    return "Someone"
+
+
+def _cleaning_event_week_starts(payload: Mapping[str, Any]) -> set[str]:
+    week_starts: set[str] = set()
+    for key in ("week_start", "source_week_start", "compensation_week_start", "return_week_start"):
+        week_start_iso = _parse_week_start_iso(payload.get(key))
+        if week_start_iso:
+            week_starts.add(week_start_iso)
+    return week_starts
+
+
+def _cleaning_history_summary(
+    action: str,
+    payload: Mapping[str, Any],
+    members: Mapping[int, str],
+    actor_name: str,
+) -> str:
+    if action == "cleaning_done":
+        return f"{actor_name} marked this shift done"
+    if action == "cleaning_undone":
+        return f"{actor_name} reverted this shift to pending"
+    if action == "cleaning_takeover_done":
+        cleaner_id = payload.get("cleaner_member_id")
+        cleaner_name = None
+        if cleaner_id is not None:
+            try:
+                cleaner_name = members.get(int(cleaner_id))
+            except (TypeError, ValueError):
+                cleaner_name = None
+        if cleaner_name:
+            return f"{actor_name} recorded takeover by {cleaner_name}"
+        return f"{actor_name} recorded a takeover completion"
+    if action == "cleaning_swap_created":
+        return f"{actor_name} created a shift swap"
+    if action == "cleaning_swap_updated":
+        return f"{actor_name} updated a shift swap"
+    if action == "cleaning_swap_canceled":
+        return f"{actor_name} canceled a shift swap"
+    if action == "cleaning_compensation_planned":
+        return f"{actor_name} planned a make-up shift"
+    if action == "cleaning_override_auto_canceled_member_inactive":
+        return "A planned override was canceled because a flatmate left"
+    if action == "cleaning_notification_dispatch":
+        status = str(payload.get("status", "")).strip().lower()
+        slot = str(payload.get("notification_slot", "")).strip().lower()
+        slot_label_map = {
+            "monday_11": "Mon 11:00 assignment",
+            "sunday_18": "Sun 18:00 reminder",
+            "sunday_21": "Sun 21:00 final reminder",
+        }
+        status_label_map = {
+            "sent": "Sent",
+            "test_redirected": "Sent (test mode)",
+            "failed": "Failed",
+            "skipped": "Skipped",
+            "suppressed": "Suppressed",
+        }
+        slot_label = slot_label_map.get(slot, "notification")
+        status_label = status_label_map.get(status, status.title() or "Unknown")
+        return f"{slot_label}: {status_label}"
+    return action.replace("_", " ")
+
+
+def _build_cleaning_history_by_week(
+    activity_rows: list[Any],
+    *,
+    members: Mapping[int, str],
+) -> dict[str, list[dict[str, Any]]]:
+    now_local = dt_util.now()
+    cutoff = now_local - timedelta(days=7)
+    history_by_week: dict[str, list[dict[str, Any]]] = {}
+
+    for row in activity_rows:
+        if not isinstance(row, Mapping):
+            continue
+
+        if str(row.get("domain", "")).strip().lower() != "cleaning":
+            continue
+
+        payload = row.get("payload_json", {})
+        if not isinstance(payload, Mapping):
+            payload = {}
+
+        week_starts = _cleaning_event_week_starts(payload)
+        if not week_starts:
+            continue
+
+        created_local = _parse_datetime_local(row.get("created_at"))
+        if created_local is None or created_local < cutoff:
+            continue
+
+        action = str(row.get("action", "")).strip().lower()
+        actor_name = _activity_actor_name(row, members)
+        history_item = {
+            "id": row.get("id"),
+            "created_at": created_local.isoformat(),
+            "summary": _cleaning_history_summary(action, payload, members, actor_name),
+            "action": action,
+            "actor_name": actor_name,
+            "notification_slot": payload.get("notification_slot"),
+            "dispatch_status": payload.get("status"),
+            "reason": payload.get("reason"),
+            "_sort_key": created_local.timestamp(),
+        }
+
+        for week_start in week_starts:
+            history_by_week.setdefault(week_start, []).append(dict(history_item))
+
+    for week_start, events in history_by_week.items():
+        events.sort(key=lambda item: float(item.get("_sort_key", 0.0)), reverse=True)
+        trimmed = events[:30]
+        for item in trimmed:
+            item.pop("_sort_key", None)
+        history_by_week[week_start] = trimmed
+
+    return history_by_week
+
+
+def _format_slot_moment(slot_moment: datetime) -> str:
+    return slot_moment.strftime("%a, %b %-d at %H:%M")
+
+
+def _notification_slots_for_week(
+    *,
+    week_start: date,
+    completed_at: datetime | None,
+    week_status: str | None,
+    history: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    now_local = dt_util.now()
+    slot_tz = dt_util.DEFAULT_TIME_ZONE or now_local.tzinfo or dt_util.UTC
+    slot_defs = [
+        ("monday_11", "Monday assignment reminder", 0, 11),
+        ("sunday_18", "Sunday evening reminder", 6, 18),
+        ("sunday_21", "Sunday final reminder", 6, 21),
+    ]
+    status_labels = {
+        "sent": "Sent",
+        "test_redirected": "Sent (test mode)",
+        "failed": "Failed",
+        "skipped": "Skipped",
+        "suppressed": "Suppressed",
+        "scheduled": "Scheduled",
+        "not_required": "Skipped — done early",
+        "no_data": "No data",
+        "missing": "Missing",
+    }
+
+    latest_dispatch_by_slot: dict[str, dict[str, Any]] = {}
+    for event in history:
+        if str(event.get("action", "")).strip().lower() != "cleaning_notification_dispatch":
+            continue
+        slot = str(event.get("notification_slot", "")).strip().lower()
+        if not slot or slot in latest_dispatch_by_slot:
+            continue
+        latest_dispatch_by_slot[slot] = event
+
+    has_any_dispatch = bool(latest_dispatch_by_slot)
+
+    slots: list[dict[str, Any]] = []
+    for slot_id, label, day_offset, hour in slot_defs:
+        slot_moment = datetime.combine(
+            week_start + timedelta(days=day_offset),
+            time(hour=hour, minute=0),
+            tzinfo=slot_tz,
+        )
+
+        dispatch_event = latest_dispatch_by_slot.get(slot_id)
+        if dispatch_event is not None:
+            state = str(dispatch_event.get("dispatch_status", "")).strip().lower() or "sent"
+            detail = dispatch_event.get("summary")
+            slots.append(
+                {
+                    "slot": slot_id,
+                    "label": label,
+                    "state": state,
+                    "state_label": status_labels.get(state, state.title()),
+                    "detail": detail,
+                    "last_event_at": dispatch_event.get("created_at"),
+                }
+            )
+            continue
+
+        if now_local < slot_moment:
+            state = "scheduled"
+            detail = f"Scheduled for {_format_slot_moment(slot_moment)}"
+        elif slot_id.startswith("sunday_") and (
+            (completed_at is not None and completed_at <= slot_moment)
+            or (week_status == "done" and completed_at is None)
+        ):
+            state = "not_required"
+            detail = "Cleaning was completed before this reminder was due"
+        elif has_any_dispatch:
+            state = "missing"
+            detail = "Expected notification was not recorded"
+        else:
+            state = "no_data"
+            detail = "Notification tracking was not available for this week"
+
+        slots.append(
+            {
+                "slot": slot_id,
+                "label": label,
+                "state": state,
+                "state_label": status_labels.get(state, state.title()),
+                "detail": detail,
+                "last_event_at": None,
+            }
+        )
+
+    return slots
 
 
 def _activity_summary(row: Mapping[str, Any], members: Mapping[int, str]) -> str:
@@ -324,6 +554,10 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
         current_week_start_date = _parse_date(current_week_start)
         current_status = current.get("status")
         current_completed_by_id = current.get("completed_by_member_id")
+        history_by_week = _build_cleaning_history_by_week(
+            self.coordinator.data.get("activity", []),
+            members=members,
+        )
 
         weeks = []
         for row in schedule:
@@ -364,6 +598,7 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
             completed_by_member_id = row.get("completed_by_member_id")
             if completed_by_member_id is None and is_current:
                 completed_by_member_id = current_completed_by_id
+            completed_at = _parse_datetime_local(row.get("completed_at"))
 
             completed_by_name = None
             if completed_by_member_id is not None:
@@ -396,9 +631,21 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
                     original_assignee_user_id = member_user_lookup.get(int(baseline_id))
                 except (TypeError, ValueError):
                     original_assignee_user_id = None
+            week_start_iso = week_start.isoformat()
+            week_history = history_by_week.get(week_start_iso, [])
+            notification_slots = _notification_slots_for_week(
+                week_start=week_start,
+                completed_at=completed_at,
+                week_status=status_value,
+                history=week_history,
+            )
+            notification_has_issue = any(
+                slot.get("state") in {"failed", "skipped", "suppressed", "missing"}
+                for slot in notification_slots
+            )
             weeks.append(
                 {
-                    "week_start": week_start.isoformat(),
+                    "week_start": week_start_iso,
                     "week_end": week_end.isoformat(),
                     "week_number": week_start.isocalendar().week,
                     "assignee_member_id": effective_id,
@@ -421,6 +668,10 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
                     "completed_by_member_id": completed_by_member_id,
                     "completed_by_name": completed_by_name,
                     "completion_mode": row.get("completion_mode"),
+                    "completed_at": completed_at.isoformat() if completed_at is not None else row.get("completed_at"),
+                    "history": week_history,
+                    "notification_slots": notification_slots,
+                    "notification_has_issue": notification_has_issue,
                 }
             )
 

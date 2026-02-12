@@ -17,6 +17,8 @@ class HassFlatmateCleaningCard extends HTMLElement {
     this._swapModalAction = "swap";
     this._swapOriginalAssigneeMemberId = "";
     this._swapTargetMemberId = "";
+    this._historyModalOpen = false;
+    this._historyModalWeekStart = "";
   }
 
   static async getConfigElement() {
@@ -91,6 +93,8 @@ class HassFlatmateCleaningCard extends HTMLElement {
       swap_modal_action: this._swapModalAction,
       swap_original_assignee_member_id: this._swapOriginalAssigneeMemberId,
       swap_target_member_id: this._swapTargetMemberId,
+      history_modal_open: this._historyModalOpen,
+      history_modal_week_start: this._historyModalWeekStart,
       pending_done: [...this._pendingDoneWeeks],
       pending_swap: [...this._pendingSwapWeeks],
       optimistic_patches: [...this._optimisticWeekPatches.entries()],
@@ -212,6 +216,13 @@ class HassFlatmateCleaningCard extends HTMLElement {
     return weeks.find((row) => row.week_start === this._swapModalWeekStart) || null;
   }
 
+  _resolveHistoryModalWeek(weeks) {
+    if (!this._historyModalWeekStart) {
+      return null;
+    }
+    return weeks.find((row) => row.week_start === this._historyModalWeekStart) || null;
+  }
+
   _parseWeekDate(value) {
     if (!value) {
       return null;
@@ -255,6 +266,22 @@ class HassFlatmateCleaningCard extends HTMLElement {
       return `${distance} (${range})`;
     }
     return `${this._weekTitle(row, index)} (${range})`;
+  }
+
+  _formatEventDateTime(value) {
+    if (!value) {
+      return "";
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return String(value);
+    }
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(parsed);
   }
 
   _compensationNote(row, assigneeLabel, originalLabel) {
@@ -398,6 +425,24 @@ class HassFlatmateCleaningCard extends HTMLElement {
     this._render();
   }
 
+  _openHistoryModal(weekRow) {
+    if (!weekRow || !weekRow.week_start) {
+      return;
+    }
+    this._historyModalOpen = true;
+    this._historyModalWeekStart = String(weekRow.week_start);
+    this._modalOpen = false;
+    this._swapModalOpen = false;
+    this._errorMessage = "";
+    this._render();
+  }
+
+  _closeHistoryModal() {
+    this._historyModalOpen = false;
+    this._historyModalWeekStart = "";
+    this._render();
+  }
+
   _openDoneModal(weekRow, members) {
     if (!weekRow || !weekRow.week_start) {
       return;
@@ -418,6 +463,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
     this._modalOpen = true;
     this._swapModalOpen = false;
+    this._historyModalOpen = false;
     this._modalWeekStart = weekRow.week_start;
     this._modalChoice = "confirm_assignee";
     this._modalAssigneeMemberId = String(assigneeMemberId);
@@ -462,6 +508,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
     this._swapModalOpen = true;
     this._modalOpen = false;
+    this._historyModalOpen = false;
     this._swapModalWeekStart = String(weekRow.week_start);
     this._swapModalAction = "swap";
     this._swapOriginalAssigneeMemberId = String(originalAssigneeId);
@@ -839,6 +886,21 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
     const weekMap = new Map(weeks.map((row) => [String(row.week_start || ""), row]));
 
+    this._root.querySelectorAll("[data-action='open-history-modal']").forEach((el) => {
+      const openHistory = () => {
+        const weekStart = String(el.dataset.weekStart || "");
+        const row = weekMap.get(weekStart);
+        this._openHistoryModal(row);
+      };
+      el.addEventListener("click", openHistory);
+      el.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openHistory();
+        }
+      });
+    });
+
     this._root.querySelectorAll("[data-action='toggle-done']").forEach((el) => {
       el.addEventListener("click", async () => {
         const weekStart = String(el.dataset.weekStart || "");
@@ -908,6 +970,18 @@ class HassFlatmateCleaningCard extends HTMLElement {
     this._root.querySelector(".swap-modal-backdrop")?.addEventListener("click", (event) => {
       if (event.target?.classList?.contains("modal-backdrop")) {
         this._closeSwapModal();
+      }
+    });
+
+    this._root.querySelectorAll("[data-action='close-history-modal']").forEach((el) => {
+      el.addEventListener("click", () => {
+        this._closeHistoryModal();
+      });
+    });
+
+    this._root.querySelector(".history-modal-backdrop")?.addEventListener("click", (event) => {
+      if (event.target?.classList?.contains("modal-backdrop")) {
+        this._closeHistoryModal();
       }
     });
   }
@@ -1033,6 +1107,21 @@ class HassFlatmateCleaningCard extends HTMLElement {
           doneMeta = '<span class="meta-note missed">Not confirmed</span>';
         }
 
+        const notificationSlots = Array.isArray(row?.notification_slots) ? row.notification_slots : [];
+        const hasNotificationIssue = notificationSlots.some((slot) => {
+          const state = String(slot?.state || "").toLowerCase();
+          return ["failed", "skipped", "suppressed", "missing"].includes(state);
+        });
+        const hasNotificationSent = notificationSlots.some((slot) => {
+          const state = String(slot?.state || "").toLowerCase();
+          return state === "sent" || state === "test_redirected";
+        });
+        const notificationMeta = hasNotificationIssue
+          ? '<span class="meta-note notification-issue">Notification issue</span>'
+          : hasNotificationSent
+            ? '<span class="meta-note">Notifications sent</span>'
+            : "";
+
         const overrideBadge = row.override_type
           ? `<span class="badge">${this._escape(
               row.override_type === "manual_swap"
@@ -1094,7 +1183,14 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
         return `
           <li class="week-row ${isCurrent ? "current" : ""} ${isPast ? "past" : ""} ${isDone ? "done" : ""} ${isMissed ? "missed" : ""}">
-            <div class="week-main">
+            <div
+              class="week-main history-trigger"
+              data-action="open-history-modal"
+              data-week-start="${this._escape(row.week_start)}"
+              role="button"
+              tabindex="0"
+              aria-label="Open shift history for ${this._escape(this._rowDateRange(row))}"
+            >
               <div class="week-top">
                 <span class="week-label">${this._escape(this._weekTitle(row, index))}</span>
                 <span class="week-dates">${this._escape(this._rowDateRange(row))}</span>
@@ -1107,6 +1203,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
               <div class="week-meta">
                 ${secondary}
                 ${doneMeta}
+                ${notificationMeta}
               </div>
             </div>
             <div class="week-actions">
@@ -1288,6 +1385,71 @@ class HassFlatmateCleaningCard extends HTMLElement {
         return `<option value="${memberId}">${name}</option>`;
       }),
     ].join("");
+    const historyModalWeek = this._resolveHistoryModalWeek(scheduleWeeks);
+    const historyWeekIndex = historyModalWeek
+      ? scheduleWeeks.findIndex((row) => row.week_start === historyModalWeek.week_start)
+      : -1;
+    const historyWeekLabel = this._formatWeekLabelWithDistance(
+      historyModalWeek,
+      historyWeekIndex >= 0 ? historyWeekIndex : 0,
+      currentWeekStartForDistance
+    );
+    const historyAssigneeName = this._memberName(
+      memberMap,
+      Number(historyModalWeek?.assignee_member_id)
+    );
+    const historySlots = Array.isArray(historyModalWeek?.notification_slots)
+      ? historyModalWeek.notification_slots
+      : [];
+    const historyEvents = Array.isArray(historyModalWeek?.history)
+      ? historyModalWeek.history
+      : [];
+    const historySlotRows = historySlots.length
+      ? historySlots
+          .map((slot) => {
+            const state = String(slot?.state || "pending").toLowerCase();
+            const stateClass = state.replace(/[^a-z0-9_-]/g, "");
+            const detail = slot?.detail ? this._escape(slot.detail) : "";
+            const timeLabel = slot?.last_event_at
+              ? this._escape(this._formatEventDateTime(slot.last_event_at))
+              : "";
+            return `
+              <li class="history-slot-row">
+                <div class="history-slot-top">
+                  <span class="history-slot-label">${this._escape(slot?.label || "Notification check")}</span>
+                  <span class="slot-state ${stateClass}">${this._escape(slot?.state_label || state)}</span>
+                </div>
+                ${detail ? `<span class="history-slot-detail">${detail}</span>` : ""}
+                ${timeLabel ? `<span class="history-slot-time">${timeLabel}</span>` : ""}
+              </li>
+            `;
+          })
+          .join("")
+      : '<li class="empty-list">No notification checks available for this week.</li>';
+    const historyEventRows = historyEvents.length
+      ? historyEvents
+          .map((event) => {
+            const summary = this._escape(event?.summary || "Activity");
+            const action = this._escape(
+              String(event?.action || "")
+                .replaceAll("_", " ")
+                .trim() || "activity"
+            );
+            const when = this._escape(this._formatEventDateTime(event?.created_at));
+            const reason = event?.reason ? this._escape(event.reason) : "";
+            return `
+              <li class="history-event-row">
+                <div class="history-event-top">
+                  <span class="history-event-summary">${summary}</span>
+                  <span class="history-event-time">${when}</span>
+                </div>
+                <span class="history-event-action">${action}</span>
+                ${reason ? `<span class="history-event-reason">${reason}</span>` : ""}
+              </li>
+            `;
+          })
+          .join("")
+      : '<li class="empty-list">No shift activity in the last 7 days.</li>';
 
     const compactRows = weeks
       .map((row) => {
@@ -1518,6 +1680,40 @@ class HassFlatmateCleaningCard extends HTMLElement {
             </div>
           </div>
         ` : ""}
+
+        ${!compactMode && this._historyModalOpen && historyModalWeek ? `
+          <div class="modal-backdrop history-modal-backdrop">
+            <div class="modal history-modal" role="dialog" aria-modal="true">
+              <div class="modal-header">
+                <h3>Shift history</h3>
+                <button class="icon-btn" type="button" data-action="close-history-modal" aria-label="Close shift history dialog">
+                  <ha-icon icon="mdi:close"></ha-icon>
+                </button>
+              </div>
+
+              <p class="modal-week">${this._escape(historyWeekLabel)}</p>
+              <p class="modal-preview">Assigned flatmate: <strong>${this._escape(historyAssigneeName)}</strong></p>
+
+              <div class="effect-panel history-panel">
+                <p class="effect-title">Notification delivery</p>
+                <ul class="history-slot-list">
+                  ${historySlotRows}
+                </ul>
+              </div>
+
+              <div class="effect-panel history-panel">
+                <p class="effect-title">Recent events (last 7 days)</p>
+                <ul class="history-event-list">
+                  ${historyEventRows}
+                </ul>
+              </div>
+
+              <div class="modal-actions">
+                <button class="btn secondary" type="button" data-action="close-history-modal">Close</button>
+              </div>
+            </div>
+          </div>
+        ` : ""}
       </ha-card>
 
       <style>
@@ -1717,6 +1913,27 @@ class HassFlatmateCleaningCard extends HTMLElement {
           background: color-mix(in srgb, var(--secondary-text-color) 6%, var(--card-background-color));
         }
 
+        .week-main {
+          display: grid;
+          min-width: 0;
+        }
+
+        .week-main.history-trigger {
+          cursor: pointer;
+          border-radius: 8px;
+          padding: 2px;
+          margin: -2px;
+        }
+
+        .week-main.history-trigger:hover {
+          background: color-mix(in srgb, var(--primary-color) 6%, var(--card-background-color));
+        }
+
+        .week-main.history-trigger:focus-visible {
+          outline: 2px solid var(--primary-color);
+          outline-offset: 2px;
+        }
+
         .week-top {
           display: flex;
           align-items: baseline;
@@ -1763,6 +1980,11 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
         .meta-note.missed {
           color: var(--warning-color, #f57c00);
+        }
+
+        .meta-note.notification-issue {
+          color: var(--warning-color, #f57c00);
+          font-weight: 600;
         }
 
         .badge {
@@ -2012,6 +2234,88 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
         .notification-list {
           margin-top: -2px;
+        }
+
+        .history-panel {
+          gap: 8px;
+        }
+
+        .history-slot-list,
+        .history-event-list {
+          list-style: none;
+          margin: 0;
+          padding: 0;
+          display: grid;
+          gap: 8px;
+        }
+
+        .history-slot-row,
+        .history-event-row {
+          border: 1px solid var(--divider-color);
+          border-radius: 10px;
+          padding: 8px 10px;
+          display: grid;
+          gap: 4px;
+          background: var(--card-background-color);
+        }
+
+        .history-slot-top,
+        .history-event-top {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+        }
+
+        .history-slot-label,
+        .history-event-summary {
+          font-weight: 600;
+          min-width: 0;
+        }
+
+        .slot-state {
+          border: 1px solid var(--divider-color);
+          border-radius: 999px;
+          padding: 2px 8px;
+          font-size: 0.72rem;
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
+          white-space: nowrap;
+        }
+
+        .slot-state.sent,
+        .slot-state.test_redirected,
+        .slot-state.not_required {
+          color: var(--success-color, #4caf50);
+          border-color: color-mix(in srgb, var(--success-color, #4caf50) 45%, var(--divider-color));
+        }
+
+        .slot-state.scheduled,
+        .slot-state.no_data {
+          color: var(--secondary-text-color);
+        }
+
+        .slot-state.failed,
+        .slot-state.skipped,
+        .slot-state.suppressed,
+        .slot-state.missing {
+          color: var(--warning-color, #f57c00);
+          border-color: color-mix(in srgb, var(--warning-color, #f57c00) 45%, var(--divider-color));
+        }
+
+        .history-slot-detail,
+        .history-slot-time,
+        .history-event-action,
+        .history-event-reason,
+        .history-event-time {
+          color: var(--secondary-text-color);
+          font-size: 0.8rem;
+        }
+
+        .history-event-action {
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
+          font-size: 0.72rem;
         }
 
         .modal-actions {

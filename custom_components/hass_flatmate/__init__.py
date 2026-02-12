@@ -244,6 +244,47 @@ def _notification_data_payload(*, category: str | None, link: str | None) -> dic
     return data
 
 
+def _coerce_week_start(value: Any) -> str | None:
+    if isinstance(value, date):
+        return value.isoformat()
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().split("T", maxsplit=1)[0]
+    if not normalized:
+        return None
+    try:
+        return date.fromisoformat(normalized).isoformat()
+    except ValueError:
+        return None
+
+
+def _build_cleaning_dispatch_record(
+    item: dict[str, Any],
+    *,
+    notify_service: str | None,
+    status: str,
+    reason: str | None = None,
+) -> dict[str, Any] | None:
+    week_start = _coerce_week_start(item.get("week_start"))
+    if week_start is None:
+        return None
+
+    member_id = _coerce_member_id(item.get("member_id"))
+    return {
+        "week_start": week_start,
+        "member_id": member_id,
+        "notify_service": notify_service,
+        "title": item.get("title"),
+        "message": item.get("message"),
+        "notification_kind": item.get("notification_kind"),
+        "notification_slot": item.get("notification_slot"),
+        "source_action": item.get("source_action"),
+        "status": status,
+        "reason": reason,
+        "dispatched_at": dt_util.utcnow().isoformat(),
+    }
+
+
 def _coerce_activity_id(value: Any) -> int | None:
     try:
         return int(value)
@@ -614,15 +655,34 @@ async def _dispatch_notifications(
 ) -> None:
     test_mode_enabled = bool(runtime.runtime_state.get(CONF_NOTIFICATION_TEST_MODE, DEFAULT_NOTIFICATION_TEST_MODE))
     test_target = _runtime_notification_test_target(runtime) if test_mode_enabled else None
+    dispatch_records: list[dict[str, Any]] = []
+    members_by_id = _runtime_members_by_id(runtime)
+
     if test_mode_enabled and test_target is None:
         _LOGGER.warning(
             "Notification test mode is enabled but no valid target member is configured; "
             "suppressing %s notifications",
             len(notifications),
         )
+        for item in notifications:
+            category = item.get("category") if isinstance(item.get("category"), str) else default_category
+            category = str(category) if category else None
+            if category != "cleaning":
+                continue
+            record = _build_cleaning_dispatch_record(
+                item,
+                notify_service=item.get("notify_service"),
+                status="suppressed",
+                reason="notification_test_mode_enabled_without_target",
+            )
+            if record is not None:
+                dispatch_records.append(record)
+        if dispatch_records:
+            try:
+                await runtime.api.record_cleaning_notification_dispatch(records=dispatch_records)
+            except HassFlatmateApiError as exc:
+                _LOGGER.debug("Failed to persist cleaning notification dispatch log: %s", exc)
         return
-
-    members_by_id = _runtime_members_by_id(runtime)
 
     for item in notifications:
         notify_service = item.get("notify_service")
@@ -644,15 +704,42 @@ async def _dispatch_notifications(
                     message = f"[Intended for member {original_member_id}] {message}"
 
         if not notify_service:
+            if category == "cleaning":
+                record = _build_cleaning_dispatch_record(
+                    item,
+                    notify_service=None,
+                    status="skipped",
+                    reason="missing_notify_service",
+                )
+                if record is not None:
+                    dispatch_records.append(record)
             continue
 
         if "." not in notify_service:
             _LOGGER.warning("Invalid notify service format: %s", notify_service)
+            if category == "cleaning":
+                record = _build_cleaning_dispatch_record(
+                    item,
+                    notify_service=notify_service,
+                    status="skipped",
+                    reason="invalid_notify_service_format",
+                )
+                if record is not None:
+                    dispatch_records.append(record)
             continue
 
         domain, service = notify_service.split(".", 1)
         if domain != "notify":
             _LOGGER.warning("Unsupported notify domain: %s", notify_service)
+            if category == "cleaning":
+                record = _build_cleaning_dispatch_record(
+                    item,
+                    notify_service=notify_service,
+                    status="skipped",
+                    reason="unsupported_notify_domain",
+                )
+                if record is not None:
+                    dispatch_records.append(record)
             continue
 
         link = _runtime_notification_link(runtime, category)
@@ -666,12 +753,37 @@ async def _dispatch_notifications(
         if data_payload:
             payload["data"] = data_payload
 
-        await hass.services.async_call(
-            domain,
-            service,
-            payload,
-            blocking=False,
-        )
+        status_value = "sent"
+        reason: str | None = None
+        try:
+            await hass.services.async_call(
+                domain,
+                service,
+                payload,
+                blocking=False,
+            )
+            if test_mode_enabled and test_target is not None:
+                status_value = "test_redirected"
+        except Exception as err:  # pragma: no cover - depends on runtime service availability
+            status_value = "failed"
+            reason = str(err)
+            _LOGGER.warning("Failed to dispatch notification via %s: %s", notify_service, err)
+
+        if category == "cleaning":
+            record = _build_cleaning_dispatch_record(
+                item,
+                notify_service=notify_service,
+                status=status_value,
+                reason=reason,
+            )
+            if record is not None:
+                dispatch_records.append(record)
+
+    if dispatch_records:
+        try:
+            await runtime.api.record_cleaning_notification_dispatch(records=dispatch_records)
+        except HassFlatmateApiError as exc:
+            _LOGGER.debug("Failed to persist cleaning notification dispatch log: %s", exc)
 
 
 async def _sync_members_from_ha(runtime: HassFlatmateRuntime, hass: HomeAssistant) -> None:

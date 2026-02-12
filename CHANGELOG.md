@@ -2,13 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
+## [0.1.22] - 2026-02-12
+
+### Added
+- Clicking any week row in the interactive cleaning card opens a shift history modal showing 7-day event history and per-slot notification delivery status with contextual explanations (scheduled, sent, skipped because done early, no tracking data for older weeks).
+- Backend `POST /v1/cleaning/notifications/dispatch` endpoint records notification delivery outcomes (sent, failed, skipped, suppressed, test_redirected).
+- Cleaning notifications now carry structured metadata (category, week_start, notification_kind, notification_slot, source_action) for dispatch tracking.
+- Cleaning schedule rows now include `completed_at` timestamp.
+- Backend tests for notification dispatch logging and metadata on due notifications.
 
 ### Changed
 - Backend DB path resolution now defaults to `/config/hass_flatmate_service/hass_flatmate.db` when running inside Home Assistant, ensuring persistent storage by default.
-
-### Added
-- Backend tests for DB-path fallback behavior to guard persistent-storage defaults in Home Assistant and local-dev fallback behavior.
 
 ### Fixed
 - Lovelace storage-mode card resources are now auto-registered with cache-busting version query params, and stale prior-version resource entries are auto-updated to reduce frontend JS caching issues after updates.

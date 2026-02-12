@@ -173,13 +173,32 @@ def mark_past_pending_as_missed(session: Session, current_week_start: date) -> N
         row.status = CleaningAssignmentStatus.MISSED
 
 
-def _member_notification(member: Member | None, title: str, message: str) -> dict:
-    return {
+def _member_notification(
+    member: Member | None,
+    title: str,
+    message: str,
+    *,
+    week_start: date | None = None,
+    notification_kind: str | None = None,
+    notification_slot: str | None = None,
+    source_action: str | None = None,
+) -> dict:
+    payload = {
         "member_id": member.id if member else None,
         "notify_service": member.notify_service if member else None,
         "title": title,
         "message": message,
+        "category": "cleaning",
     }
+    if week_start is not None:
+        payload["week_start"] = week_start
+    if notification_kind:
+        payload["notification_kind"] = notification_kind
+    if notification_slot:
+        payload["notification_slot"] = notification_slot
+    if source_action:
+        payload["source_action"] = source_action
+    return payload
 
 
 def _build_swap_notifications(
@@ -241,8 +260,22 @@ def _build_swap_notifications(
 
     title = "Weekly Cleaning Shift"
     return [
-        _member_notification(member_a, title, msg_a),
-        _member_notification(member_b, title, msg_b),
+        _member_notification(
+            member_a,
+            title,
+            msg_a,
+            week_start=week_start,
+            notification_kind="swap_notice",
+            source_action=f"cleaning_swap_{action}",
+        ),
+        _member_notification(
+            member_b,
+            title,
+            msg_b,
+            week_start=week_start,
+            notification_kind="swap_notice",
+            source_action=f"cleaning_swap_{action}",
+        ),
     ]
 
 
@@ -497,6 +530,9 @@ def mark_cleaning_done(
                     f"{actor_member.display_name} marked your cleaning shift as done for week "
                     f"{week_start.isoformat()}."
                 ),
+                week_start=week_start,
+                notification_kind="completion_confirmation",
+                source_action="cleaning_done",
             )
         )
 
@@ -608,8 +644,22 @@ def _build_compensation_notifications(
         f"{member_to_name} is assigned to your regular week {make_up_label} as a make-up shift."
     )
     return [
-        _member_notification(member_from, title, msg_from),
-        _member_notification(member_to, title, msg_to),
+        _member_notification(
+            member_from,
+            title,
+            msg_from,
+            week_start=week_start,
+            notification_kind="takeover_compensation_notice",
+            source_action="cleaning_takeover_done",
+        ),
+        _member_notification(
+            member_to,
+            title,
+            msg_to,
+            week_start=week_start,
+            notification_kind="takeover_compensation_notice",
+            source_action="cleaning_takeover_done",
+        ),
     ]
 
 
@@ -670,7 +720,16 @@ def _build_inactive_member_override_notifications(
         member = get_member_by_id(session, member_id)
         if member is None or not member.active:
             continue
-        notifications.append(_member_notification(member, "Weekly Cleaning Shift", message))
+        notifications.append(
+            _member_notification(
+                member,
+                "Weekly Cleaning Shift",
+                message,
+                week_start=override.week_start,
+                notification_kind="override_canceled_notice",
+                source_action="cleaning_override_auto_canceled_member_inactive",
+            )
+        )
 
     return notifications
 
@@ -898,6 +957,7 @@ def get_schedule(session: Session, *, weeks_ahead: int, from_week_start: date | 
                 "status": assignment.status.value,
                 "completed_by_member_id": assignment.completed_by_member_id,
                 "completion_mode": assignment.completion_mode,
+                "completed_at": assignment.completed_at,
             }
         )
 
@@ -928,7 +988,17 @@ def due_notifications(session: Session, at: datetime) -> list[dict]:
             warning = " Warning: last week is still unconfirmed."
 
         message = f"It is your turn to clean the common areas this week.{warning}".strip()
-        notifications.append(_member_notification(member, "Weekly Cleaning Shift", message))
+        notifications.append(
+            _member_notification(
+                member,
+                "Weekly Cleaning Shift",
+                message,
+                week_start=week_start,
+                notification_kind="weekly_assignment",
+                notification_slot="monday_11",
+                source_action="cleaning_notifications_due",
+            )
+        )
 
     if local_at.weekday() == 6 and minute == 0 and local_at.hour in {18, 21}:
         member, assignment = assignee_member_for_week(week_start)
@@ -943,7 +1013,82 @@ def due_notifications(session: Session, at: datetime) -> list[dict]:
                     "Final reminder: mark this week's cleaning as done in Home Assistant now "
                     "so next week's reminder can be sent correctly."
                 )
-            notifications.append(_member_notification(member, "Weekly Cleaning Shift", message))
+            notifications.append(
+                _member_notification(
+                    member,
+                    "Weekly Cleaning Shift",
+                    message,
+                    week_start=week_start,
+                    notification_kind="weekly_reminder",
+                    notification_slot=f"sunday_{local_at.hour}",
+                    source_action="cleaning_notifications_due",
+                )
+            )
 
     session.commit()
     return notifications
+
+
+def record_notification_dispatches(session: Session, *, records: list[dict]) -> int:
+    if not records:
+        return 0
+
+    allowed_statuses = {
+        "sent",
+        "failed",
+        "skipped",
+        "suppressed",
+        "test_redirected",
+    }
+    inserted = 0
+
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+
+        week_start_raw = record.get("week_start")
+        if not isinstance(week_start_raw, date):
+            raise ValueError("week_start is required for cleaning notification dispatch records")
+        _ensure_week_start_is_monday(week_start_raw)
+
+        status_raw = str(record.get("status") or "").strip().lower()
+        if status_raw not in allowed_statuses:
+            raise ValueError(
+                "status must be one of: sent, failed, skipped, suppressed, test_redirected"
+            )
+
+        member_id_raw = record.get("member_id")
+        member_id = None
+        if member_id_raw is not None:
+            try:
+                member_id = int(member_id_raw)
+            except (TypeError, ValueError):
+                member_id = None
+
+        dispatched_at = record.get("dispatched_at")
+        created_at = dispatched_at if isinstance(dispatched_at, datetime) else None
+
+        log_event(
+            session,
+            domain="cleaning",
+            action="cleaning_notification_dispatch",
+            actor_member_id=None,
+            actor_user_id_raw=None,
+            payload={
+                "week_start": week_start_raw.isoformat(),
+                "member_id": member_id,
+                "notify_service": str(record.get("notify_service") or "") or None,
+                "title": str(record.get("title") or "") or None,
+                "message": str(record.get("message") or "") or None,
+                "notification_kind": str(record.get("notification_kind") or "") or None,
+                "notification_slot": str(record.get("notification_slot") or "") or None,
+                "source_action": str(record.get("source_action") or "") or None,
+                "status": status_raw,
+                "reason": str(record.get("reason") or "") or None,
+            },
+            created_at=created_at,
+        )
+        inserted += 1
+
+    session.commit()
+    return inserted

@@ -112,6 +112,10 @@ def test_due_notifications_schedule(client, auth_headers) -> None:
     monday_notifications = monday_due.json()["notifications"]
     assert len(monday_notifications) == 1
     assert "Warning:" in monday_notifications[0]["message"]
+    assert monday_notifications[0]["category"] == "cleaning"
+    assert monday_notifications[0]["week_start"] == week_start.isoformat()
+    assert monday_notifications[0]["notification_kind"] == "weekly_assignment"
+    assert monday_notifications[0]["notification_slot"] == "monday_11"
 
     # Sunday reminders fire if still pending.
     sunday = week_start + timedelta(days=6)
@@ -121,7 +125,9 @@ def test_due_notifications_schedule(client, auth_headers) -> None:
         params={"at": _iso_at(sunday, 18, 0)},
     )
     assert sunday_18.status_code == 200
-    assert len(sunday_18.json()["notifications"]) == 1
+    sunday_18_notifications = sunday_18.json()["notifications"]
+    assert len(sunday_18_notifications) == 1
+    assert sunday_18_notifications[0]["notification_slot"] == "sunday_18"
 
     sunday_21 = client.get(
         "/v1/cleaning/notifications/due",
@@ -129,7 +135,70 @@ def test_due_notifications_schedule(client, auth_headers) -> None:
         params={"at": _iso_at(sunday, 21, 0)},
     )
     assert sunday_21.status_code == 200
-    assert len(sunday_21.json()["notifications"]) == 1
+    sunday_21_notifications = sunday_21.json()["notifications"]
+    assert len(sunday_21_notifications) == 1
+    assert sunday_21_notifications[0]["notification_slot"] == "sunday_21"
+
+
+def test_notification_dispatch_events_are_logged(client, auth_headers) -> None:
+    _sync_members(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    week_start = date.fromisoformat(current.json()["week_start"])
+
+    log_response = client.post(
+        "/v1/cleaning/notifications/dispatch",
+        headers=auth_headers,
+        json={
+            "records": [
+                {
+                    "week_start": week_start.isoformat(),
+                    "member_id": 1,
+                    "notify_service": "notify.mobile_app_alex",
+                    "title": "Weekly Cleaning Shift",
+                    "message": "It is your turn.",
+                    "notification_kind": "weekly_assignment",
+                    "notification_slot": "monday_11",
+                    "source_action": "cleaning_notifications_due",
+                    "status": "sent",
+                }
+            ]
+        },
+    )
+    assert log_response.status_code == 200
+
+    activity = client.get("/v1/activity?limit=20", headers=auth_headers)
+    assert activity.status_code == 200
+    dispatch_event = next(
+        row for row in activity.json() if row.get("action") == "cleaning_notification_dispatch"
+    )
+    payload = dispatch_event["payload_json"]
+    assert payload["week_start"] == week_start.isoformat()
+    assert payload["status"] == "sent"
+    assert payload["notification_slot"] == "monday_11"
+
+
+def test_notification_dispatch_rejects_invalid_status(client, auth_headers) -> None:
+    _sync_members(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    week_start = date.fromisoformat(current.json()["week_start"])
+
+    response = client.post(
+        "/v1/cleaning/notifications/dispatch",
+        headers=auth_headers,
+        json={
+            "records": [
+                {
+                    "week_start": week_start.isoformat(),
+                    "status": "unknown",
+                }
+            ]
+        },
+    )
+    assert response.status_code == 400
 
 
 def test_sunday_reminders_suppressed_after_completion(client, auth_headers) -> None:
@@ -152,6 +221,7 @@ def test_sunday_reminders_suppressed_after_completion(client, auth_headers) -> N
     assert current_row["status"] == "done"
     assert current_row["completed_by_member_id"] == 1
     assert current_row["completion_mode"] == "own"
+    assert current_row["completed_at"] is not None
 
     sunday = week_start + timedelta(days=6)
     sunday_18 = client.get(

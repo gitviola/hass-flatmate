@@ -1,6 +1,11 @@
 # Hass Flatmate Integration Changelog
 
-## [Unreleased]
+## [0.1.22] - 2026-02-12
+
+### Added
+- Clicking any week row in the interactive cleaning card opens a shift history modal with 7-day event timeline and per-slot notification delivery status (Monday assignment, Sunday reminders) with human-friendly state labels and contextual detail for every state (scheduled, sent, skipped because done early, no data for pre-tracking weeks, missing when expected).
+- Integration now logs every cleaning notification dispatch outcome back to the backend for history tracking.
+- Cleaning schedule sensor now computes notification slot states (sent, pending, missing, not_required) and attaches per-week history.
 
 ### Fixed
 - Lovelace storage-mode frontend resources are now registered with cache-busting version query params and stale older-url resource entries are upgraded automatically to avoid card JS cache issues after updates.

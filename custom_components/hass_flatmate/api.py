@@ -253,3 +253,14 @@ class HassFlatmateApiClient:
             "/v1/cleaning/notifications/due",
             params={"at": at.isoformat()},
         )
+
+    async def record_cleaning_notification_dispatch(
+        self,
+        *,
+        records: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        return await self._request(
+            "POST",
+            "/v1/cleaning/notifications/dispatch",
+            json={"records": records},
+        )

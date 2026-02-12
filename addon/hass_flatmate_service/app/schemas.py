@@ -119,6 +119,11 @@ class NotificationItem(BaseModel):
     notify_service: str | None
     title: str
     message: str
+    category: str | None = None
+    week_start: date | None = None
+    notification_kind: str | None = None
+    notification_slot: str | None = None
+    source_action: str | None = None
 
 
 class MembersSyncResponse(BaseModel):
@@ -141,6 +146,24 @@ class CleaningNotificationDueResponse(BaseModel):
     notifications: list[NotificationItem]
 
 
+class CleaningNotificationDispatchItem(BaseModel):
+    week_start: date
+    member_id: int | None = None
+    notify_service: str | None = None
+    title: str | None = None
+    message: str | None = None
+    notification_kind: str | None = None
+    notification_slot: str | None = None
+    source_action: str | None = None
+    status: str
+    reason: str | None = None
+    dispatched_at: datetime | None = None
+
+
+class CleaningNotificationDispatchRequest(BaseModel):
+    records: list[CleaningNotificationDispatchItem]
+
+
 class CleaningCurrentResponse(BaseModel):
     week_start: date
     baseline_assignee_member_id: int | None
@@ -159,6 +182,7 @@ class CleaningScheduleRow(BaseModel):
     status: str | None = None
     completed_by_member_id: int | None = None
     completion_mode: str | None = None
+    completed_at: datetime | None = None
 
 
 class CleaningScheduleResponse(BaseModel):

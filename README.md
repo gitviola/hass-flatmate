@@ -103,6 +103,7 @@ Features:
 - Strike-through visual once completed
 - Mark-done action in-card
 - Non-assignee completion modal (confirm for assignee vs takeover)
+- Click any week row (interactive layout) to open 7-day shift history and notification delivery status
 - Optional `layout: compact` read-only mode for e-ink/non-touch dashboards
 - Compact mode still shows swap/compensation annotations and who is assigned
 

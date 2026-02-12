@@ -19,6 +19,7 @@ from .schemas import (
     CleaningMarkDoneRequest,
     CleaningMarkUndoneRequest,
     CleaningMarkTakeoverDoneRequest,
+    CleaningNotificationDispatchRequest,
     CleaningNotificationDueResponse,
     CleaningScheduleResponse,
     CleaningSwapRequest,
@@ -425,3 +426,22 @@ def get_due_notifications(
 
     notifications = cleaning.due_notifications(session, at=moment)
     return CleaningNotificationDueResponse(notifications=notifications)
+
+
+@app.post(
+    "/v1/cleaning/notifications/dispatch",
+    response_model=OperationResponse,
+    dependencies=[Depends(require_token)],
+)
+def post_cleaning_notification_dispatch(
+    payload: CleaningNotificationDispatchRequest,
+    session: Session = Depends(get_session),
+) -> OperationResponse:
+    try:
+        cleaning.record_notification_dispatches(
+            session,
+            records=[record.model_dump() for record in payload.records],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return OperationResponse(ok=True)
