@@ -1,0 +1,162 @@
+Implement the following plan:
+
+# Plan: Redesign cleaning shift detail modal and fix swap display
+
+## Context
+
+Three issues to address:
+
+1. **Week row swap display is confusing** — When a swap happens and the swapped-in person marks it done, the card shows their name struck through with "Done by {same person}". Should instead show the person who did it clearly, with context about the swap.
+
+2. **History modal needs to become a shift detail view** — Currently shows two separate sections (notification slots + recent events). Needs to be a comprehensive shift detail view explaining the full context (status, swap details, takeover info) with a unified timeline merging notifications and events, using icons, newest-first ordering, with future scheduled notifications shown at top.
+
+3. **Modal not scrollable** — Long content overflows instead of scrolling.
+
+## Files to modify
+
+- `custom_components/hass_flatmate/frontend/hass-flatmate-cleaning-card.js` — Week row template + modal template + CSS
+- `custom_components/hass_flatmate/sensor.py` — Enrich week data with timeline entries merging notifications + events
+
+## Changes
+
+### 1. Fix week row display for swaps/takeovers (card.js)
+
+**Current behavior (wrong):**
+- Shows: ~~Martin~~ [Swap badge] / "Swapped with María" / "Done by Martin"
+- The assignee name (Martin, the swapped-in person) gets struck through, then "Done by Martin" is redundant
+
+**New behavior:**
+- When `completion_mode === "own"` and `override_type === "manual_swap"`:
+  - Show: ✓ Martin [Swap badge] (with strikethrough on name, green check)
+  - Below: "Originally María's shift"
+  - No "Done by" line (redundant — assignee did it themselves)
+- When `completion_mode === "takeover"` (someone else did the shift):
+  - Show: ~~AssigneeName~~ (strikethrough)
+  - Below: "Taken over by {completed_by_name}"
+- When `completion_mode === "own"` and no override:
+  - Show: ✓ AssigneeName (strikethrough, green check)
+  - No "Done by" (they did their own shift, obvious)
+- Only show "Done by {name}" when `completed_by_member_id !== assignee_member_id` (actual different person doing it)
+
+**Summary of `secondary` note changes:**
+- `manual_swap`: "Originally {originalName}'s shift" (instead of "Swapped with {originalName}")
+- `compensation` with `override_source === "manual"`: "Swap return — {originalName}'s regular week" with relative timing
+- `compensation` with takeover: "Make-up for {originalName}" (shorter)
+
+### 2. Make modal scrollable (card.js CSS)
+
+Add to `.history-modal`:
+```css
+max-height: min(85vh, 680px);
+overflow-y: auto;
+```
+
+### 3. Redesign modal as shift detail view (card.js + sensor.py)
+
+#### 3a. Shift context section (top of modal, replaces current simple "Assigned flatmate: X")
+
+Show a rich context block explaining the shift:
+
+- **Header**: "Shift details" (rename from "Shift history")
+- **Week label**: "This week (Feb 10 – 16)" — already exists
+- **Status pill**: Done / Pending / Missed — reuse existing badge styling
+- **Assignee**: "{Name}" with clear label "Assigned to"
+- **If swap**: Explain "This shift was swapped with {otherPerson}. {otherPerson}'s regular week is {dateRange} ({relativeLabel})."
+- **If swap return (compensation/manual)**: "This is a swap return week. Originally {person}'s turn, swapped with {assigneeName} {relativeLabel}."
+- **If takeover compensation**: "This is a make-up shift. {assigneeName} is covering for {originalName} after a takeover on {sourceWeekRange}."
+- **If done**: "Completed by {name} on {date}" or "Completed on {date}" if same as assignee
+- **If takeover done**: "{completedByName} took over this shift from {assigneeName}"
+- **If missed**: "This shift was not confirmed as done"
+
+#### 3b. Unified timeline (replaces two separate sections)
+
+**In sensor.py**, build a `timeline` list per week that merges:
+- Notification slots (both dispatched and scheduled future ones)
+- Activity events (cleaning_done, cleaning_undone, swap events, etc.)
+
+Each timeline entry has:
+```python
+{
+    "type": "notification" | "event",
+    "timestamp": "ISO datetime" | None,  # actual time or scheduled time
+    "is_future": bool,
+    "icon": "mdi:bell-outline" | "mdi:check" | "mdi:swap-horizontal" | "mdi:undo" | ...,
+    "summary": str,
+    "detail": str | None,
+    "state": str | None,  # for notifications: sent/scheduled/etc.
+    "state_label": str | None,
+}
+```
+
+**Sorting**: Future items first (sorted by scheduled time ascending), then past items sorted by timestamp descending (newest first). This means you see upcoming notifications at top, then scroll down through history.
+
+**Timeline entry icons** (by type):
+- `cleaning_notification_dispatch` (sent): `mdi:bell-check`
+- `cleaning_notification_dispatch` (failed/skipped/suppressed): `mdi:bell-off`
+- Scheduled notification (future): `mdi:bell-clock`
+- `cleaning_done`: `mdi:check-circle`
+- `cleaning_undone`: `mdi:undo-variant`
+- `cleaning_takeover_done`: `mdi:account-switch`
+- `cleaning_swap_created`: `mdi:swap-horizontal`
+- `cleaning_swap_updated`: `mdi:swap-horizontal`
+- `cleaning_swap_canceled`: `mdi:close-circle`
+- `cleaning_compensation_planned`: `mdi:calendar-plus`
+- `cleaning_override_auto_canceled_member_inactive`: `mdi:account-remove`
+- Scheduled notification (not_required): `mdi:bell-minus`
+- Default: `mdi:information`
+
+#### 3c. Timeline rendering in card (card.js)
+
+Each timeline entry rendered as:
+```html
+<li class="timeline-entry ${entry.is_future ? 'future' : ''} ${entry.type}">
+  <div class="timeline-icon">
+    <ha-icon icon="${icon}"></ha-icon>
+  </div>
+  <div class="timeline-content">
+    <div class="timeline-top">
+      <span class="timeline-summary">${summary}</span>
+      ${state_badge_if_notification}
+    </div>
+    ${detail ? `<span class="timeline-detail">${detail}</span>` : ""}
+    ${timestamp ? `<span class="timeline-time">${formatted_time}</span>` : ""}
+  </div>
+</li>
+```
+
+Visual: vertical timeline line on the left connecting the icon dots, future entries have a subtle dashed border or lighter styling to distinguish from past.
+
+#### 3d. Remove `notification_slots` separate section
+
+The notification slots data is now merged into the unified timeline. Remove the `notification_slots` key from sensor data and the separate "Notification delivery" panel from the modal.
+
+**Actually, keep `notification_slots` in sensor data** — it's still used by the inline `notificationMeta` on week rows. But the modal no longer renders them as a separate section.
+
+### 4. Sensor changes (sensor.py)
+
+Add new function `_build_week_timeline()` that:
+1. Takes the week's `history` list and `notification_slots` list
+2. Converts each history event into a timeline entry with icon
+3. Converts each notification slot into a timeline entry with icon
+4. Filters out notification dispatch events from history (they're already represented by notification slots to avoid duplicates)
+5. Merges and sorts: future items first (ascending by time), then past items (descending by time)
+6. Returns the `timeline` list
+
+Add `timeline` to each week row dict in `CleaningScheduleSensor.extra_state_attributes`.
+
+### 5. Keep notification_has_issue for inline week row display
+
+The `notification_has_issue` flag and inline `notificationMeta` on week rows stay as-is — they give a quick at-a-glance indicator without opening the modal.
+
+## Verification
+
+1. `node --check custom_components/hass_flatmate/frontend/hass-flatmate-cleaning-card.js` — JS syntax valid
+2. `python3 -m compileall custom_components/hass_flatmate` — integration compiles
+3. `cd addon/hass_flatmate_service && pytest` — backend tests pass (no backend changes)
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/ms/.REDACTED.jsonl
+
+---
+
+yes commit
