@@ -308,10 +308,27 @@ class HassFlatmateShoppingCard extends HTMLElement {
     }
   }
 
-  async _completeItem(id, name = "") {
+  async _completeItem(id, name = "", buttonEl = null) {
     if (!id || this._pendingItemIds.has(id)) {
       return;
     }
+
+    // Animate: swap icon to checkmark, pop the button, fade out the row
+    const rowEl = buttonEl?.closest(".item-row");
+    if (buttonEl) {
+      const icon = buttonEl.querySelector("ha-icon");
+      if (icon) {
+        icon.setAttribute("icon", "mdi:check-circle");
+      }
+      buttonEl.classList.add("completing");
+    }
+    if (rowEl) {
+      rowEl.classList.add("fade-out");
+    }
+
+    // Wait for animation before removing
+    await new Promise((resolve) => setTimeout(resolve, 420));
+
     const optimisticRecentToken = this._pushOptimisticRecent(name);
     this._errorMessage = "";
     this._pendingItemIds.add(id);
@@ -440,7 +457,7 @@ class HassFlatmateShoppingCard extends HTMLElement {
 
     this._root.querySelectorAll("[data-action='complete-item']").forEach((el) => {
       el.addEventListener("click", async () => {
-        await this._completeItem(Number(el.dataset.itemId), el.dataset.itemName || "");
+        await this._completeItem(Number(el.dataset.itemId), el.dataset.itemName || "", el);
       });
     });
 
@@ -764,6 +781,30 @@ class HassFlatmateShoppingCard extends HTMLElement {
           color: var(--success-color, #4caf50);
           border-color: color-mix(in srgb, var(--success-color, #4caf50) 45%, var(--divider-color));
           background: color-mix(in srgb, var(--success-color, #4caf50) 10%, var(--card-background-color));
+        }
+
+        .todo-check.completing {
+          color: var(--success-color, #4caf50);
+          border-color: color-mix(in srgb, var(--success-color, #4caf50) 45%, var(--divider-color));
+          background: color-mix(in srgb, var(--success-color, #4caf50) 14%, var(--card-background-color));
+          animation: check-pop 360ms ease;
+          pointer-events: none;
+        }
+
+        @keyframes check-pop {
+          0% { transform: scale(1); }
+          40% { transform: scale(1.3); }
+          100% { transform: scale(1); }
+        }
+
+        .item-row.fade-out {
+          animation: row-fade-out 400ms ease forwards;
+          pointer-events: none;
+        }
+
+        @keyframes row-fade-out {
+          0% { opacity: 1; transform: translateX(0); }
+          100% { opacity: 0; transform: translateX(20px); }
         }
 
         .add-btn:hover,
