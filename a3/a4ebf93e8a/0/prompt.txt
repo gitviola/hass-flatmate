@@ -1,0 +1,175 @@
+Implement the following plan:
+
+# Plan: Cleaning card — swap edge case, visual polish
+
+## Context
+
+Three improvements to the interactive cleaning schedule card:
+
+1. **Compensation weeks are locked** — If a swap is created (e.g. Alice ↔ Bob), the compensation/return week shows "Upcoming" with no action buttons. If that person also can't do it, they're stuck with no escape hatch. Need a way to cancel the swap from the compensation side.
+
+2. **Green left border when current week is done** — The current week already has a thick left border (`border-left: 4px solid var(--primary-color)`). When the shift is marked done, this should turn green (`--success-color`).
+
+3. **Past weeks more transparent, undo button stays visible** — Past weeks use `opacity: 0.75` but the undo button inside should remain fully opaque/white so it's clearly actionable.
+
+## File to modify
+
+- `custom_components/hass_flatmate/frontend/hass-flatmate-cleaning-card.js`
+
+## Changes
+
+### 1. Allow canceling swaps from compensation weeks
+
+The `canSwap` condition currently blocks compensation weeks:
+```javascript
+const canSwap = members.length > 1 && !isPast && !isDone && row.override_type !== "compensation";
+```
+
+**Approach**: Don't change `canSwap` (we don't want the full swap modal on compensation weeks). Instead, add a dedicated **"Cancel swap"** button on future compensation weeks. This is simpler than opening the swap modal — it directly cancels the linked swap pair.
+
+**Button logic** (in the action buttons section, ~line 1172–1205):
+- New condition: `const canCancelSwap = !isPast && !isDone && row.override_type === "compensation"`
+- When `canCancelSwap` is true, render a "Cancel swap" button (neutral styling, `mdi:close-circle-outline` icon)
+- On click → calls `_cancelLinkedSwap(row)` with `event.stopPropagation()`
+
+**New method `_cancelLinkedSwap(row)`**:
+- Find the source swap week using `row.source_week_start` — scan schedule weeks for the row with `override_type === "manual_swap"` and `week_start === row.source_week_start`
+- Extract `originalAssigneeId` (= `baseline_assignee_member_id` of the source week) and `swappedWithId` (= `assignee_member_id` of the source week)
+- Call `_swapWeek(sourceRow, originalAssigneeId, swappedWithId, true)` — reuses existing cancel logic
+- This cancels the whole swap pair (both manual_swap + compensation revert)
+
+### 2. Green left border for done current week
+
+Add a CSS rule:
+```css
+.week-row.current.done {
+  border-left-color: var(--success-color, #43a047);
+}
+```
+
+### 3. Past week opacity with visible undo button
+
+Replace the current `.week-row.past { opacity: 0.75; }` with a more targeted approach:
+
+```css
+.week-row.past .week-main {
+  opacity: 0.55;
+}
+.week-row.past .week-actions .status-chip {
+  opacity: 0.55;
+}
+```
+
+This dims the text content and status chips but leaves action buttons (like undo) at full opacity. The undo button inherits the base `.action` styling which has `background: var(--card-background-color)` — stays crisp and clickable.
+
+## Verification
+
+1. `node --check custom_components/hass_flatmate/frontend/hass-flatmate-cleaning-card.js`
+2. Visual: current week done → green left border; past week → dimmed content, visible undo button; compensation week → "Cancel swap" button
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/ms/.REDACTED.jsonl
+
+---
+
+Then remove the upcoming bedge pls to have it cleanrer
+
+---
+
+Okay better. But still the content on the top is way to glued together, I said so many times already to space it out more pls
+
+---
+
+[Request interrupted by user]
+
+---
+
+sorry wrong chat
+
+---
+
+Somehow the font or typeface btw is not like on the homepage hero.. make sure we use the same style as on the homepage hero
+
+---
+
+[Request interrupted by user for tool use]
+
+---
+
+Again wrong chat
+
+---
+
+Now what happens if the week that was swapped with already is done, can we still cancel the swap or basically need a new swap? Idk what we should do for that edge case. But sounds likely
+
+---
+
+Yes sounds excellent!! Sounds good. And how do we keep it fair? Like how does this work so bob doesn't have to clean again ideally and Alice has to clean more? Any idea? Or should we be prgamatic or what do you suggest?
+
+---
+
+Excellent yes go ahead
+
+---
+
+And then we also still have too much noise in the cards and duplications of communication. Like we show some bedge swap return and then we have an explenation text below. The badges are a bit too much I guess. And I guess we should unify things that are not regular and somehow show them in the alert/orange color using the right token. Like the notification issue one. But no need to actually show notification issue there, better show this inside the modal to see the details where the notification intent is listed in the timeline instead.. So regular stuff no description, irregular stuff gets a description
+
+---
+
+Then the undo thing also takes forever if the server is slow. We should make sure we use opportunistic ui everywhere
+
+---
+
+And then let's remove the redunant thing on top of the interactive cleaning thing where it shows the status right next to the card title and the person and the status. We show this in the cards, no need. And no need to show the SCHEDULE thing either. I can put this into the card title
+
+---
+
+And I'd say let's leverage the whole space no? I mean as we removed the outside card thing to have our schedule card look like proper home assitant tile cards lets make sure we're not wasting the space to the side, so it aligns with other cards from home assistant
+
+---
+
+Btw the previous week needs to become way way more transparent.. still way too visible
+
+---
+
+And don't put a color on the strike through pls, keep it the normal text color
+
+---
+
+But if previous week is not done yet don't make it transparent obviously..
+
+---
+
+And instead of Missed write pending or late in the non interactive one for the previous week
+
+---
+
+And when no swap exists make the button look like undo in terms of coloring
+
+---
+
+And the canel swap should look like the edit swap color wise..
+
+---
+
+And then make sure the notifications all make sense and we have them implemented with the right wording to the right person in all cases. Like edit swap, cancel swap, changing swap etc. Undo if there was an original person and it was swaped I guess. Then the reminders etc
+
+---
+
+great lets commit, create release and push tag and everything properly
+
+---
+
+Great make sure committed, released etc
+
+---
+
+but the rlease includes he fix with the wording of the notification?
+
+---
+
+Now the undo and mark done buttons should at least have an easy confirmation or something to not click them by mistake
+
+---
+
+No the sure is weird.. why not just a confirmation thing like when you delete an entry from the shopping list..
