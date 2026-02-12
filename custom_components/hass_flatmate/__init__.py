@@ -1157,17 +1157,26 @@ async def _migrate_legacy_entity_ids(hass: HomeAssistant, entry: ConfigEntry) ->
             continue
 
         unique_id = entity_entry.unique_id
-        if not isinstance(unique_id, str) or not unique_id.startswith(f"{DOMAIN}_"):
+        if not isinstance(unique_id, str) or not unique_id:
             continue
 
+        expected_object_id = unique_id if unique_id.startswith(f"{DOMAIN}_") else f"{DOMAIN}_{unique_id}"
         # Legacy installs used object ids derived from entity names, i.e. without
         # domain prefix (shopping_open_count instead of hass_flatmate_shopping_open_count).
-        legacy_object_id = unique_id[len(f"{DOMAIN}_") :]
+        legacy_object_id = (
+            unique_id[len(f"{DOMAIN}_") :]
+            if unique_id.startswith(f"{DOMAIN}_")
+            else unique_id
+        )
         current_object_id = entity_entry.entity_id.split(".", 1)[1]
-        if current_object_id != legacy_object_id:
+        # Respect explicit user custom entity ids unless they still match the
+        # old non-prefixed defaults (including numeric collision variants).
+        is_legacy_default = current_object_id == legacy_object_id
+        is_legacy_collision = current_object_id.startswith(f"{legacy_object_id}_")
+        if not (is_legacy_default or is_legacy_collision):
             continue
 
-        new_entity_id = f"{entity_entry.entity_id.split('.', 1)[0]}.{unique_id}"
+        new_entity_id = f"{entity_entry.entity_id.split('.', 1)[0]}.{expected_object_id}"
         if new_entity_id == entity_entry.entity_id:
             continue
 
@@ -1279,9 +1288,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = _get_domain_data(hass)
     data.entries[entry.entry_id] = runtime
 
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await _migrate_legacy_entity_ids(hass, entry)
     await _register_lovelace_card_resource(hass)
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
