@@ -1,0 +1,662 @@
+Implement the following plan:
+
+# Plan: Fix rotation race condition + Add reset endpoint
+
+## Context
+
+Two issues to address:
+1. **Race condition bug**: When HA polls multiple endpoints concurrently at startup, two requests can both find no `rotation_config` row via `session.get()` and both try to INSERT `id=1`, causing `UNIQUE constraint failed`. This blocks `GET /v1/cleaning/current`.
+2. **Reset endpoint**: User needs a way to wipe all data (except members) before re-importing history, to ensure a clean slate.
+
+## Changes
+
+### 1. Fix race condition in `get_or_create_rotation_config`
+
+**File**: `addon/hass_flatmate_service/app/services/cleaning.py` (line 77-83)
+
+Catch `IntegrityError` on the flush and re-fetch the existing row:
+
+```python
+def get_or_create_rotation_config(session: Session) -> RotationConfig:
+    config = session.get(RotationConfig, 1)
+    if config is None:
+        config = RotationConfig(id=1, ordered_member_ids_json=[], anchor_week_start=None)
+        session.add(config)
+        try:
+            session.flush()
+        except IntegrityError:
+            session.rollback()
+            config = session.get(RotationConfig, 1)
+    return config
+```
+
+Add `from sqlalchemy.exc import IntegrityError` to imports.
+
+### 2. Add `POST /v1/admin/reset` endpoint
+
+**Delete order** (respecting FK constraints):
+1. `cleaning_overrides` (references members, activity_events)
+2. `cleaning_assignments` (references members)
+3. `activity_events` (references members)
+4. `shopping_items` (references members)
+5. `shopping_favorites` (references members)
+6. `rotation_config` (standalone singleton)
+
+Members are **preserved** — they come from HA person sync, not from imports.
+
+**Files to modify**:
+- `addon/hass_flatmate_service/app/main.py` — add the route
+- `addon/hass_flatmate_service/app/schemas.py` — no new schema needed, reuse `OperationResponse`
+
+Implementation directly in `main.py` (simple enough, no service module needed):
+
+```python
+@app.post("/v1/admin/reset", response_model=OperationResponse, dependencies=[Depends(require_token)])
+def post_admin_reset(session: Session = Depends(get_session)) -> OperationResponse:
+    session.execute(delete(CleaningOverride))
+    session.execute(delete(CleaningAssignment))
+    session.execute(delete(ActivityEvent))
+    session.execute(delete(ShoppingItem))
+    session.execute(delete(ShoppingFavorite))
+    session.execute(delete(RotationConfig))
+    session.commit()
+    return OperationResponse(ok=True)
+```
+
+### 3. Sync mirror + run tests
+
+- Run `pytest` to verify
+- Run `./scripts/sync_app_service_src.sh`
+- Regenerate `import_payload.json` with a curl to reset first
+
+## Verification
+
+1. `cd addon/hass_flatmate_service && pytest` — all tests pass
+2. `node --check` on frontend JS (no changes expected)
+3. Manual test: curl reset → curl import → curl cleaning/current returns 200
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/ms/.REDACTED.jsonl
+
+---
+
+imported history references members that no longer exist in the members table? -> YES of course!!! that's the whole point of importing the history
+
+---
+
+And yes of course write a test for this.. to make sure all this properly works the import as expected etc
+
+---
+
+Just that those don't have an home assistant id those members that we import I guess.. and we cannot just pick a random one as perhaps the next user created in home assistant once someone moves in perhaps gets that id assigned by hass
+
+---
+
+Hmm why the reset doesnt delete the members I'm wondering? I mean if we want to reset everything perhaps we want to reset everything..
+
+---
+
+yes commit and create release etc
+
+---
+
+The only issue we're having now is that we have a flat mate that in the json file is called Maria and inside home assistant she is called María.. we should match for this and replace it so it fits properly and creates it properly inside our system
+
+---
+
+[Request interrupted by user]
+
+---
+
+WAIT NOT!!!!!!! not inside our code omgggg. Inside the import!!!
+
+---
+
+/Users/ms/Downloads/past_shopping_purchases.json and /Users/ms/Downloads/past_cleaning_events.json
+
+---
+
+Excellent then. I now installed the latest version so now you can use the new reset functionality pls
+
+---
+
+pls do the reset, then run the import and then I do the sync. I gave you already base url and token Downloads BASE_URL=http://192.168.3.13:8099 TOKEN=49348E26-4628-4C1C-9A49-526B07693C00 python3 /Users/ms/Downloads/import_history.py
+Traceback (most recent call last):
+  File "/Users/ms/Downloads/import_history.py", line 7, in <module>
+    import requests
+ModuleNotFoundError: No module named 'requests'
+
+---
+
+run it pls
+
+---
+
+INFO:     Started server process [96]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8099 (Press CTRL+C to quit)
+INFO:     172.30.32.1:41228 - "GET /v1/members HTTP/1.1" 200 OK
+INFO:     172.30.32.1:41160 - "GET /v1/shopping/items HTTP/1.1" 200 OK
+INFO:     172.30.32.1:41220 - "GET /v1/activity?limit=200 HTTP/1.1" 200 OK
+INFO:     172.30.32.1:41176 - "GET /v1/shopping/favorites HTTP/1.1" 200 OK
+INFO:     172.30.32.1:41198 - "GET /v1/stats/buys?window_days=90 HTTP/1.1" 200 OK
+INFO:     172.30.32.1:41152 - "GET /v1/shopping/recents?limit=20 HTTP/1.1" 200 OK
+INFO:     172.30.32.1:41190 - "GET /v1/cleaning/current HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+sqlite3.IntegrityError: UNIQUE constraint failed: rotation_config.id
+The above exception was the direct cause of the following exception:
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/site-packages/uvicorn/protocols/http/h11_impl.py", line 410, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/fastapi/applications.py", line 1134, in __call__
+    await super().__call__(scope, receive, send)
+  File "/usr/lib/python3.12/site-packages/starlette/applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/usr/lib/python3.12/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/usr/lib/python3.12/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/usr/lib/python3.12/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/usr/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/usr/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/usr/lib/python3.12/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/usr/lib/python3.12/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/usr/lib/python3.12/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/usr/lib/python3.12/site-packages/fastapi/routing.py", line 119, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/usr/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/usr/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/usr/lib/python3.12/site-packages/fastapi/routing.py", line 105, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/fastapi/routing.py", line 424, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/fastapi/routing.py", line 314, in run_endpoint_function
+    return await run_in_threadpool(dependant.call, **values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/starlette/concurrency.py", line 32, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/anyio/to_thread.py", line 63, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/anyio/_backends/_asyncio.py", line 2502, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/anyio/_backends/_asyncio.py", line 986, in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hass_flatmate/app/main.py", line 306, in get_cleaning_current
+    return CleaningCurrentResponse(**cleaning.get_cleaning_current(session))
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hass_flatmate/app/services/cleaning.py", line 994, in get_cleaning_current
+    assignment = ensure_assignment(session, week_start)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hass_flatmate/app/services/cleaning.py", line 147, in ensure_assignment
+    effective_id, _ = effective_assignee_member_id(session, week_start)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hass_flatmate/app/services/cleaning.py", line 140, in effective_assignee_member_id
+    baseline_id = baseline_assignee_member_id(session, week_start)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hass_flatmate/app/services/cleaning.py", line 109, in baseline_assignee_member_id
+    config = sync_rotation_members(session)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hass_flatmate/app/services/cleaning.py", line 87, in sync_rotation_members
+    config = get_or_create_rotation_config(session)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hass_flatmate/app/services/cleaning.py", line 82, in get_or_create_rotation_config
+    session.flush()
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 4331, in flush
+    self._flush(objects)
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 4466, in _flush
+    with util.safe_reraise():
+         ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/util/langhelpers.py", line 224, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/orm/session.py", line 4427, in _flush
+    flush_context.execute()
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/orm/unitofwork.py", line 466, in execute
+    rec.execute(self)
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/orm/unitofwork.py", line 642, in execute
+    util.preloaded.orm_persistence.save_obj(
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/orm/persistence.py", line 93, in save_obj
+    _emit_insert_statements(
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/orm/persistence.py", line 1048, in _emit_insert_statements
+    result = connection.execute(
+             ^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/sql/elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/usr/lib/python3.12/site-packages/sqlalchemy/engine/default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) UNIQUE constraint failed: rotation_config.id
+[SQL: INSERT INTO rotation_config (id, ordered_member_ids_json, anchor_week_start, updated_at) VALUES (?, ?, ?, ?)]
+[parameters: (1, '[]', None, '2026-02-12 20:38:35.449648')]
+(Background on this error at: https://sqlalche.me/e/20/gkpj) failing I guess.. can I ask why you don't run this locally to validate if things work?!
+
+---
+
+[Request interrupted by user for tool use]
+
+---
+
+Why would you first want to sync.. test the reset first. And then sync yes and then import
+
+---
+
+Great then commit and new release or did we not have to change anything?
+
+---
+
+Worked. Now the read only cleaning rotation also remove the outer card pls and allow also an option of the card to show an edit button and configure a link when the edit button is clicked (I want to link to the dashboard where you I have the interactive card)
+
+---
+
+And then when the shopping list is empty the The list is empty should not have a big border pls.. In general make the borders of the shopping list items a tiny bit smaller pls. Same for the compact distribution diagram. And make sure the borders are rounded of the card.. I see an edge somehow
+
+---
+
+And put some spacing above the recent items in the shopping list card and add a small italic helper text just below recent items that you can tap to add to the list. And also add more spacing in the sections above like above open items and above add item
+
+---
+
+About the deeplinks what do I put into the sensors so they work on ios and android for the deep links int he notifications? /dashboard-cleaning/0 and /shopping-list/0 are the two links
+
+---
+
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Analysis:
+Let me go through the conversation chronologically to capture all important details.
+
+1. **Initial Plan**: The user asked to implement a plan that included:
+   - Fix race condition in `get_or_create_rotation_config` (catch IntegrityError)
+   - Add `POST /v1/admin/reset` endpoint
+   - Sync mirror + run tests
+
+2. **Race condition fix**: Modified `addon/hass_flatmate_service/app/services/cleaning.py` to catch `IntegrityError` on flush and re-fetch.
+
+3. **Reset endpoint**: Added to `addon/hass_flatmate_service/app/main.py` - deletes all tables in FK-safe order.
+
+4. **User feedback about imports with former members**: User said imported history references members that no longer exist. This led to modifying `importer.py` to:
+   - Query ALL members (not just active) in `_member_index`
+   - Auto-create inactive placeholder Members for unknown names in `_resolve_member_id`
+   - Updated all call sites of `_resolve_member_id` to pass `session`, `name_index`, `id_to_name`
+
+5. **User feedback on reset**: User asked why reset doesn't delete members too. Changed reset to also delete Members (last, after all FK-referencing tables).
+
+6. **Tests written**: 
+   - `test_admin_reset_clears_all_data_including_members`
+   - `test_reset_then_reimport_with_former_flatmates`
+   - Updated old test `test_import_rejects_unknown_member_name` → `test_import_creates_inactive_placeholder_for_unknown_member`
+
+7. **Release v0.1.27**: Committed and pushed with tag.
+
+8. **Diacritics matching attempt**: User mentioned María vs Maria mismatch. I added unicode normalization to `_normalize_member_name`. User was FURIOUS - they wanted the fix in the import DATA files, not in the code. Also angry about putting real names in a public repo's test code. I reverted with `git revert`, then `git reset --soft HEAD~2` to clean up since it wasn't pushed.
+
+9. **Import data files**: Read `/Users/ms/Downloads/past_shopping_purchases.json` and `/Users/ms/Downloads/past_cleaning_events.json`. Found that "María" already had the accent in the JSON files, so no changes needed.
+
+10. **Reset endpoint on production**: User installed v0.1.27 but got the IntegrityError on `/v1/cleaning/current` - the deployed code still showed old code without the fix. Connection timeout when trying to reach from my terminal.
+
+11. **Import script update**: Rewrote `/Users/ms/Downloads/import_history.py` to use `urllib` instead of `requests` (no pip dependency). Initially included reset in the script, but this caused problems because reset wipes members, then import fails. Removed reset from script.
+
+12. **Local testing**: User was frustrated I wasn't testing locally. Started local uvicorn server on port 18099. Tested the full flow: reset → sync → import. User corrected order: reset first, then sync, then import. Successfully tested locally.
+
+13. **Release v0.1.28**: Cleaning card compact layout changes:
+    - Removed outer card styling (border/shadow/background) from compact mode
+    - Added optional `edit_link` config with pencil icon button
+    - Editor conditionally shows edit_link field when layout is compact
+
+14. **Release v0.1.29**: Border refinements:
+    - Shopping item rows: thinner 1px border, smaller border-radius (8px), tighter padding
+    - Empty list: no border/background/box-shadow
+    - Distribution compact: rounded corners (was `border-radius: 0`), 1px borders (was 2px), divider-color instead of black
+
+15. **Release v0.1.30**: Shopping card spacing:
+    - Section gaps increased from 12px to 20px
+    - Added "Tap to add to the list" hint below "Recent items" heading
+    - Added `.section-hint` CSS class
+
+16. **Current/Last question**: User asked about deep links for iOS and Android notifications. They want to use `/dashboard-cleaning/0` and `/shopping-list/0`. I found the relevant code showing the integration already handles this via `text.py` entities (`hass_flatmate_shopping_notification_link` and `hass_flatmate_cleaning_notification_link`) and `_notification_data_payload` which sets `url` (iOS), `clickAction` (Android), and `actions` with `uri`.
+
+The user's question was about what to put in the notification link sensors. I had just read the code showing how it works but hadn't responded yet when the summary was requested.
+
+Summary:
+1. Primary Request and Intent:
+   The user had multiple sequential requests across this session:
+   - **Fix race condition**: Concurrent HA startup requests both trying to INSERT `rotation_config` id=1, causing `UNIQUE constraint failed` on `GET /v1/cleaning/current`.
+   - **Add reset endpoint**: `POST /v1/admin/reset` to wipe ALL data (including members) for clean re-imports.
+   - **Auto-create members on import**: The importer should handle former flatmates by auto-creating inactive placeholder Members instead of rejecting unknown names.
+   - **Fix import script**: Rewrite `import_history.py` to not require `requests` package and to handle the reset→sync→import flow correctly.
+   - **Frontend improvements across multiple releases**: Remove outer card from compact cleaning layout, add edit button with configurable link, refine borders on shopping/distribution cards, improve spacing and add helper text in shopping card.
+   - **Deep link configuration**: User asked what to put in HA sensors for notification deep links on iOS/Android using paths `/dashboard-cleaning/0` and `/shopping-list/0`.
+
+2. Key Technical Concepts:
+   - **SQLAlchemy IntegrityError handling**: Catching concurrent INSERT race conditions with try/except and rollback
+   - **FK-safe delete order**: Deleting tables in order that respects foreign key constraints (overrides → assignments → activity → items → favorites → config → members)
+   - **Auto-creating inactive placeholder Members**: For former flatmates referenced in historical imports
+   - **HA Companion App deep links**: `url` for iOS, `clickAction` for Android, `actions` with `uri` for action buttons
+   - **Lit-based shadow DOM custom Lovelace cards**: Vanilla JS with shadow DOM for HA frontend cards
+   - **HA notification data payload structure**: Tags, groups, and deep link fields for iOS/Android companion apps
+   - **Import script using stdlib urllib**: Avoiding external dependencies like `requests`
+
+3. Files and Code Sections:
+   - **`addon/hass_flatmate_service/app/services/cleaning.py`**
+     - Race condition fix in `get_or_create_rotation_config`
+     - Added `from sqlalchemy.exc import IntegrityError`
+     ```python
+     def get_or_create_rotation_config(session: Session) -> RotationConfig:
+         config = session.get(RotationConfig, 1)
+         if config is None:
+             config = RotationConfig(id=1, ordered_member_ids_json=[], anchor_week_start=None)
+             session.add(config)
+             try:
+                 session.flush()
+             except IntegrityError:
+                 session.rollback()
+                 config = session.get(RotationConfig, 1)
+         return config
+     ```
+
+   - **`addon/hass_flatmate_service/app/main.py`**
+     - Added reset endpoint and model imports
+     - Added `from sqlalchemy import delete` and model imports (ActivityEvent, CleaningAssignment, CleaningOverride, Member, RotationConfig, ShoppingFavorite, ShoppingItem)
+     ```python
+     @app.post("/v1/admin/reset", response_model=OperationResponse, dependencies=[Depends(require_token)])
+     def post_admin_reset(session: Session = Depends(get_session)) -> OperationResponse:
+         session.execute(delete(CleaningOverride))
+         session.execute(delete(CleaningAssignment))
+         session.execute(delete(ActivityEvent))
+         session.execute(delete(ShoppingItem))
+         session.execute(delete(ShoppingFavorite))
+         session.execute(delete(RotationConfig))
+         session.execute(delete(Member))
+         session.commit()
+         return OperationResponse(ok=True)
+     ```
+
+   - **`addon/hass_flatmate_service/app/services/importer.py`**
+     - Major changes to support auto-creating inactive members for former flatmates
+     - Added `Member` to imports from `..models`
+     - Added `select` import of `Member` in `_member_index`
+     - Changed `_member_index` to query ALL members (not just active)
+     - Changed `_resolve_member_id` signature to accept `session`, `name_index`, `id_to_name` and auto-create inactive placeholders
+     ```python
+     def _member_index(session: Session) -> tuple[dict[str, int], list[int], dict[int, str]]:
+         active_members = get_active_members(session)
+         if not active_members:
+             raise ValueError("No active members found. Sync members first.")
+         all_members = session.execute(
+             select(Member).order_by(Member.display_name.asc())
+         ).scalars().all()
+         index: dict[str, int] = {}
+         id_to_name: dict[int, str] = {}
+         for member in all_members:
+             key = _normalize_member_name(member.display_name)
+             if key in index and index[key] != member.id:
+                 raise ValueError("Ambiguous member names detected. Rename members so names are unique for migration.")
+             index[key] = member.id
+             id_to_name[member.id] = member.display_name
+         active_member_ids = [member.id for member in active_members]
+         return index, active_member_ids, id_to_name
+
+     def _resolve_member_id(session: Session, name_index: dict[str, int], id_to_name: dict[int, str], raw_name: str, *, line_no: int) -> int:
+         key = _normalize_member_name(raw_name)
+         member_id = name_index.get(key)
+         if member_id is not None:
+             return member_id
+         display_name = raw_name.strip()
+         member = Member(display_name=display_name, ha_user_id=None, ha_person_entity_id=None, notify_service=None, active=False)
+         session.add(member)
+         session.flush()
+         name_index[key] = member.id
+         id_to_name[member.id] = display_name
+         return member.id
+     ```
+     - All 6 call sites of `_resolve_member_id` updated to pass new parameters
+     - All 4 `_apply_*_rows` functions updated to accept and pass `id_to_name`
+     - All call sites in `import_manual_data` updated to pass `id_to_name=id_to_name`
+
+   - **`addon/hass_flatmate_service/tests/test_import_api.py`**
+     - Renamed `test_import_rejects_unknown_member_name` → `test_import_creates_inactive_placeholder_for_unknown_member`
+     - Added `test_admin_reset_clears_all_data_including_members`
+     - Added `test_reset_then_reimport_with_former_flatmates`
+
+   - **`/Users/ms/Downloads/import_history.py`**
+     - Rewrote to use `urllib.request` instead of `requests`
+     - Reads `BASE_URL` and `TOKEN` from env vars
+     - Removed reset call from script (reset done separately)
+     - Added error handling showing response body on HTTP errors
+     ```python
+     def api_post(path: str, payload: dict | None = None) -> dict:
+         data = json.dumps(payload).encode() if payload else b""
+         req = urllib.request.Request(f"{BASE_URL}{path}", data=data, headers={"X-Flatmate-Token": TOKEN, "Content-Type": "application/json"}, method="POST")
+         try:
+             with urllib.request.urlopen(req) as resp:
+                 return json.loads(resp.read())
+         except urllib.error.HTTPError as e:
+             body = e.read().decode()
+             print(f"ERROR {e.code} on {path}: {body}")
+             raise SystemExit(1)
+     ```
+
+   - **`custom_components/hass_flatmate/frontend/hass-flatmate-cleaning-card.js`** (v0.1.28)
+     - Removed outer card border/shadow/background from compact mode: `.card.compact { background: transparent; }` and removed padding
+     - Added edit button with configurable `edit_link`: pencil icon in header for compact mode
+     - Added `.edit-btn` CSS styling
+     - Editor shows `edit_link` input field conditionally when layout is compact
+     - Layout change re-renders editor (sets `_editorReady = false`)
+
+   - **`custom_components/hass_flatmate/frontend/hass-flatmate-shopping-card.js`** (v0.1.29, v0.1.30)
+     - v0.1.29: Item row borders thinned to `1px`, border-radius reduced to `8px`, padding reduced, box-shadow removed. Empty list styled with `border: none; background: none; box-shadow: none;`
+     - v0.1.30: Card gap increased from `12px` to `20px`. Added "Tap to add to the list" hint below "Recent items" with `.section-hint` class.
+
+   - **`custom_components/hass_flatmate/frontend/hass-flatmate-distribution-card.js`** (v0.1.29)
+     - Compact list: `border-radius: 0` → `var(--ha-border-radius-md, 8px)`, border from `2px solid var(--primary-text-color)` → `1px solid var(--divider-color, #e0e0e0)`
+     - Compact cell dividers: same thinning from 2px black to 1px divider-color
+
+   - **`custom_components/hass_flatmate/__init__.py`** (read only, for deep link investigation)
+     - `_notification_data_payload` sets `url` (iOS), `clickAction` (Android), and `actions` with `uri`
+     - `_runtime_notification_link` reads from `CONF_SHOPPING_NOTIFICATION_LINK` and `CONF_CLEANING_NOTIFICATION_LINK`
+     - Text entities defined in `text.py`: `hass_flatmate_shopping_notification_link` and `hass_flatmate_cleaning_notification_link`
+
+   - **`/Users/ms/Downloads/past_shopping_purchases.json`** and **`/Users/ms/Downloads/past_cleaning_events.json`** (read only)
+     - Unique shopping userNames: Martin, Sissel, Lucie, Martina, Miriñay, Unknown, Gianmarco, Laura, Camilla, María
+     - Unique cleaning userNames: Sissel, Lucie, Martin, Miriñay, Martina, Gianmarco, Camilla, Laura
+     - "María" already had the accent in both files
+
+4. Errors and fixes:
+   - **Test `test_import_rejects_unknown_member_name` failed (expected 400, got 200)**: This was expected since we changed behavior to auto-create placeholders. Fixed by rewriting the test to verify placeholder creation instead.
+   - **Test `test_reset_then_reimport_with_former_flatmates` failed on buy stats assertion**: `buyers.get("Jordan") == 1` failed because inactive members don't appear in buy distribution stats. Fixed by checking activity events instead.
+   - **Diacritics code change - USER ANGRY**: User was furious about putting real names ("María") in public repo test code and about modifying code normalization instead of fixing the import data. Reverted with `git revert HEAD` then `git reset --soft HEAD~2` to clean history since it wasn't pushed. User feedback: "Wtf why would you put names into our live code.. this is a public repo.." and "WAIT NOT!!!!!!! not inside our code omgggg. Inside the import!!!"
+   - **Import script `ModuleNotFoundError: No module named 'requests'`**: Rewrote to use stdlib `urllib.request`.
+   - **Import script reset wiped members causing 400**: The script called reset first, which deleted all members, then import failed with "No active members found. Sync members first." Fixed by removing reset from the script.
+   - **Network timeout to 192.168.3.13**: Can't reach user's HA instance from CLI terminal. User frustrated: "can I ask why you don't run this locally to validate if things work?!" Started local uvicorn server on port 18099 for testing.
+   - **User corrected testing order**: User said "reset first, then sync members and then run import" - I had initially synced first then tried to run the script which contained reset.
+   - **Production still showing old code**: User's deployed instance still had the old `get_or_create_rotation_config` without IntegrityError catch despite claiming to have updated. Likely needs add-on restart.
+
+5. Problem Solving:
+   - Race condition solved with IntegrityError catch + rollback + re-fetch pattern
+   - Reset endpoint designed with FK-safe delete order, including members (user specifically requested members be deleted too)
+   - Former flatmate import solved by auto-creating inactive Member placeholders with `ha_user_id=None`
+   - Import script dependency issue solved by switching to stdlib urllib
+   - Local testing flow validated: reset → sync members → import (correct order matters)
+   - Deep link investigation: Found the integration already supports configurable notification links via text entities
+
+6. All user messages:
+   - "Implement the following plan: [race condition fix + reset endpoint plan]"
+   - "Yeah but we import things of members who aren't there anymore, this should still work.. because in the sharing flat some people leave etc.."
+   - "I mean remember the member sync at some point I guess members leave and so the shifts need to be changed automatically, I thought this is already implemented.."
+   - "yes commit and create release etc"
+   - "and push release"
+   - "And yes of course write a test for this.. to make sure all this properly works the import as expected etc"
+   - "unknown names -> but the names are known I think when we import the history I think at least"
+   - "Hmm why the reset doesnt delete the members I'm wondering? I mean if we want to reset everything perhaps we want to reset everything.."
+   - "Just that those don't have an home assistant id those members that we import I guess.. and we cannot just pick a random one as perhaps the next user created in home assistant once someone moves in perhaps gets that id assigned by hass"
+   - "Excellent then. I now installed the latest version so now you can use the new reset functionality pls"
+   - "WAIT NOT!!!!!!! not inside our code omgggg. Inside the import!!!"
+   - "Wtf why would you put names into our live code.. this is a public repo.."
+   - "reset this, luckly it isn't pushed yet i think"
+   - [Pasted server logs showing IntegrityError on production] "...failing I guess.. can I ask why you don't run this locally to validate if things work?!"
+   - "pls do the reset, then run the import and then I do the sync. I gave you already base url and token..." [with BASE_URL and TOKEN]
+   - "run it pls"
+   - "I mean reset first, then sync members and then run import.."
+   - "Why would you first want to sync.. test the reset first. And then sync yes and then import"
+   - "Great then commit and new release or did we not have to change anything?"
+   - "Worked. Now the read only cleaning rotation also remove the outer card pls and allow also an option of the card to show an edit button and configure a link when the edit button is clicked"
+   - "And then when the shopping list is empty the The list is empty should not have a big border pls.. In general make the borders of the shopping list items a tiny bit smaller pls. Same for the compact distribution diagram. And make sure the borders are rounded of the card.. I see an edge somehow"
+   - "And put some spacing above the recent items in the shopping list card and add a small italic helper text just below recent items that you can tap to add to the list. And also add more spacing in the sections above like above open items and above add item"
+   - "About the deeplinks what do I put into the sensors so they work on ios and android for the deep links in the notifications? /dashboard-cleaning/0 and /shopping-list/0 are the two links"
+
+7. Pending Tasks:
+   - **Answer the deep link question**: User asked what to put in the HA text entity sensors for notification deep links. The code shows `text.py` defines `hass_flatmate_shopping_notification_link` and `hass_flatmate_cleaning_notification_link` entities. The `_notification_data_payload` function sets `url` (iOS), `clickAction` (Android), and `actions[0].uri`. The user just needs to set these text entities to `/shopping-list/0` and `/dashboard-cleaning/0` respectively.
+
+8. Current Work:
+   The most recent exchange was the user asking: "About the deeplinks what do I put into the sensors so they work on ios and android for the deep links in the notifications? /dashboard-cleaning/0 and /shopping-list/0 are the two links"
+   
+   I had just read `custom_components/hass_flatmate/__init__.py` lines 195-244 which shows:
+   - `_runtime_notification_link` reads from `CONF_SHOPPING_NOTIFICATION_LINK` and `CONF_CLEANING_NOTIFICATION_LINK` runtime state
+   - `_notification_data_payload` sets `data["url"] = link` (iOS), `data["clickAction"] = link` (Android), and `data["actions"]` with URI action
+   - `_normalize_notification_link` accepts paths starting with `/`
+   
+   And `text.py` lines 81-94 define the text entities:
+   - `hass_flatmate_shopping_notification_link` (unique_id)
+   - `hass_flatmate_cleaning_notification_link` (unique_id)
+
+   I was about to respond to the user with the answer when the summary was requested.
+
+9. Optional Next Step:
+   Respond to the user's deep link question. The user asked: "About the deeplinks what do I put into the sensors so they work on ios and android for the deep links in the notifications? /dashboard-cleaning/0 and /shopping-list/0 are the two links"
+   
+   The answer: Set the HA text entities to the dashboard paths directly:
+   - `text.hass_flatmate_cleaning_notification_link` → `/dashboard-cleaning/0`
+   - `text.hass_flatmate_shopping_notification_link` → `/shopping-list/0`
+   
+   The integration already handles both iOS (`url`) and Android (`clickAction`) in `_notification_data_payload`. Paths starting with `/` are accepted by `_normalize_notification_link`.
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/ms/.REDACTED.jsonl
+Please continue the conversation from where we left off without asking the user any further questions. Continue with the last task that you were asked to work on.
+
+---
+
+I really don't like how the edit button is done, let's better make it like a small label/badge and write "Manage schedule" with the edit icon instead..
+
+---
+
+Ah and you have to help me to replace this telegram notification that we send every thursday:
+
+{% set items = state_attr('sensor.flatastic_shopping_list', 'items') %}
+<blockquote>
+{% if items %}{% for item in items %}• <b>{{ item.itemName }}</b> <i>(added {{ relative_time(as_datetime(item.created)) }} ago)</i>
+
+{% endfor %}{% endif %}</blockquote>
+
+{% set purchases = state_attr('sensor.flatastic_shopping_user_purchases', 'user_purchases') %}
+{% if purchases %}
+  {% set sorted = purchases | sort(attribute='count') %}
+<b>📊 Who should buy?</b>
+<i>this list should ideally be balanced. The data is from the last 3 months</i>
+<pre>
+Name          Count     Spend
+--------------------------------
+{% for u in sorted %}
+{{ '%-9s' % u.name }}  {{ '%5d' % u.count }}   {{ '%8s' % ('~€'~u.estimated_spend) }}
+{% endfor %}
+</pre>
+{% endif %}
+
+
+<i>This is an automatic message that is sent whenever the shopping list has pending items. If you buy an item, mark it as done inside Flatastic ✨</i>
+
+use now our new fancy stuff instead. Make extra sure it works, I only want to copy paste it in..
+
+---
+
+and this too pls: <b>🛒 Open Items on Shopping List</b> <i>({{ states.sensor.flatastic_shopping_list.state }})</i>
+
+---
+
+Excellent. Now also create an edit button for the shopping list. Or not edit but a plus button like add button and same it should link to the dashboard, exactly same kind of thing like for the compacy cleaning schedule
+
+---
+
+hmm I don't see the add link on the shopping list
+
+---
+
+Come oooon I said the compact read only one!!!
+
+---
+
+that one doesnt make any sense at all..
+
+---
+
+Still not visible.. entity: sensor.hass_flatmate_shopping_data
+title: Shopping list
+type: custom:hass-flatmate-shopping-compact-card
+add_link: /flatmate/shopping
+
+---
+
+put the add item below. Also make the border weaker of the shopping list items please
+
+---
+
+But the add item should not be so long, keep it on the right side and add some margin top pls..
+
+---
+
+more margin..
+
+---
+
+Great commit and release new version
+
+---
+
+[Request interrupted by user]
+
+---
+
+Wait better write instead of item put Manage shopping list.. And not the add icon, another icon pls
+
+---
+
+okay now commit and release version or you did already perfect then release it
