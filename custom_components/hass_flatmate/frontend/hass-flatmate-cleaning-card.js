@@ -1102,12 +1102,28 @@ class HassFlatmateCleaningCard extends HTMLElement {
             : row.completed_by_name || "";
         const completedByName = completedByLabel ? this._escape(completedByLabel) : "";
 
-        const completionMode = String(row.completion_mode || "");
+        const completedByDifferent =
+          isDone &&
+          Number.isInteger(completedByMemberId) &&
+          completedByMemberId > 0 &&
+          Number.isInteger(assigneeMemberId) &&
+          assigneeMemberId > 0 &&
+          completedByMemberId !== assigneeMemberId;
+
+        const displayName = completedByDifferent && completedByName
+          ? completedByName
+          : assigneeName;
+
         let doneMeta = "";
-        if (isDone && completionMode === "takeover" && completedByName) {
-          doneMeta = `<span class="meta-note">Taken over by ${completedByName}</span>`;
-        } else if (isDone && completedByMemberId && assigneeMemberId && completedByMemberId !== assigneeMemberId && completedByName) {
-          doneMeta = `<span class="meta-note">Done by ${completedByName}</span>`;
+        if (completedByDifferent) {
+          const completionMode = String(row.completion_mode || "");
+          if (completionMode === "takeover") {
+            doneMeta = `<span class="meta-note">Took over ${assigneeName}'s shift</span>`;
+          } else if (row.override_type === "manual_swap") {
+            doneMeta = `<span class="meta-note">Originally ${assigneeName}'s shift (swapped)</span>`;
+          } else {
+            doneMeta = `<span class="meta-note">Originally ${assigneeName}'s shift</span>`;
+          }
         } else if (isMissed) {
           doneMeta = '<span class="meta-note missed">Not confirmed</span>';
         }
@@ -1137,17 +1153,19 @@ class HassFlatmateCleaningCard extends HTMLElement {
             )}</span>`
           : "";
 
-        const secondary =
-          row.override_type === "manual_swap" && originalLabel && originalLabel !== assigneeLabel
-            ? `<span class="meta-note">${this._escape(`Originally ${originalLabel}'s shift`)}</span>`
-            : row.override_type === "compensation"
-              ? (() => {
-                  const compensationNote = this._compensationNote(row, assigneeLabel, originalLabel);
-                  return compensationNote
-                    ? `<span class="meta-note">${this._escape(compensationNote)}</span>`
-                    : "";
-                })()
-              : "";
+        let secondary = "";
+        if (row.override_type === "manual_swap" && originalLabel && originalLabel !== assigneeLabel) {
+          if (completedByDifferent) {
+            secondary = `<span class="meta-note">${this._escape(`Swapped from ${originalLabel}`)}</span>`;
+          } else {
+            secondary = `<span class="meta-note">${this._escape(`Originally ${originalLabel}'s shift`)}</span>`;
+          }
+        } else if (row.override_type === "compensation") {
+          const compensationNote = this._compensationNote(row, assigneeLabel, originalLabel);
+          secondary = compensationNote
+            ? `<span class="meta-note">${this._escape(compensationNote)}</span>`
+            : "";
+        }
 
         const actionParts = [];
         if (canToggle) {
@@ -1194,7 +1212,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
               data-week-start="${this._escape(row.week_start)}"
               role="button"
               tabindex="0"
-              aria-label="Open shift history for ${this._escape(this._rowDateRange(row))}"
+              aria-label="Open shift details for ${this._escape(this._rowDateRange(row))}"
             >
               <div class="week-top">
                 <span class="week-label">${this._escape(this._weekTitle(row, index))}</span>
@@ -1202,7 +1220,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
               </div>
               <div class="assignee ${isDone ? "striked" : ""}">
                 ${isDone ? '<ha-icon icon="mdi:check"></ha-icon>' : ""}
-                <span>${assigneeName}</span>
+                <span>${displayName}</span>
                 ${overrideBadge}
               </div>
               <div class="week-meta">
@@ -1560,13 +1578,31 @@ class HassFlatmateCleaningCard extends HTMLElement {
               : "";
         const completedByName = completedByLabel ? this._escape(completedByLabel) : "";
 
+        const compactCompletedByDifferent =
+          isDone &&
+          Number.isInteger(completedByMemberId) &&
+          completedByMemberId > 0 &&
+          Number.isInteger(assigneeMemberId) &&
+          assigneeMemberId > 0 &&
+          completedByMemberId !== assigneeMemberId;
+        const compactDisplayName = compactCompletedByDifferent && completedByName
+          ? completedByName
+          : assigneeName;
+
         let compactNote = "";
-        if (row.override_type === "manual_swap" && originalLabel && originalLabel !== assigneeLabel) {
-          compactNote = `Swapped with ${originalLabel}`;
+        if (compactCompletedByDifferent) {
+          const compactCompletionMode = String(row.completion_mode || "");
+          if (compactCompletionMode === "takeover") {
+            compactNote = `Took over ${assigneeName}'s shift`;
+          } else if (row.override_type === "manual_swap") {
+            compactNote = `Originally ${assigneeName}'s shift (swapped)`;
+          } else {
+            compactNote = `Originally ${assigneeName}'s shift`;
+          }
+        } else if (row.override_type === "manual_swap" && originalLabel && originalLabel !== assigneeLabel) {
+          compactNote = `Originally ${originalLabel}'s shift`;
         } else if (row.override_type === "compensation") {
           compactNote = this._compensationNote(row, assigneeLabel, originalLabel);
-        } else if (isDone && completedByLabel) {
-          compactNote = `Done by ${completedByLabel}`;
         } else if (isMissed) {
           compactNote = "Not confirmed";
         }
@@ -1576,7 +1612,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
         return `
           <li class="compact-week-row ${row.is_current ? "current" : ""} ${leftMarked ? "left-marked" : ""} ${isDone ? "done" : ""} ${isMissed ? "missed" : ""}">
             <div class="compact-top">
-              <span class="compact-assignee">${assigneeName}</span>
+              <span class="compact-assignee ${isDone ? "striked" : ""}">${compactDisplayName}</span>
               ${
                 compactStatusLabel
                   ? `<span class="compact-status ${compactStatusClass}">${compactStatusLabel}</span>`
@@ -1940,6 +1976,12 @@ class HassFlatmateCleaningCard extends HTMLElement {
           font-weight: 700;
           font-size: 0.9rem;
           line-height: 1.2;
+        }
+
+        .compact-assignee.striked {
+          text-decoration: line-through;
+          text-decoration-thickness: 1.5px;
+          text-decoration-color: color-mix(in srgb, var(--success-color, #4caf50) 65%, currentColor);
         }
 
         .compact-status {
