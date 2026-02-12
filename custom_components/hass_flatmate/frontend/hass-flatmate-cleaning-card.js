@@ -1502,7 +1502,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
           : "";
         const sourceLabel = sourceRange ? ` (${sourceRange})` : "";
         ctxParts.push(
-          `Return shift shift. ${this._escape(historyAssigneeName)} is covering for ${this._escape(historyOriginalName || "the original assignee")} after a takeover${sourceLabel}.`
+          `Return shift. ${this._escape(historyAssigneeName)} is covering for ${this._escape(historyOriginalName || "the original assignee")} after a takeover${sourceLabel}.`
         );
       }
 
