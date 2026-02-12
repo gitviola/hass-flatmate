@@ -144,6 +144,10 @@ class HassFlatmateShoppingCompactCard extends HTMLElement {
       )
       .join("");
 
+    const addBadgeHtml = this._config.add_link
+      ? `<a class="add-badge" href="${this._escape(this._config.add_link)}"><ha-icon icon="mdi:cart-outline"></ha-icon> Manage shopping list</a>`
+      : "";
+
     const headerHtml = titleText
       ? `
           <div class="header">
@@ -161,6 +165,8 @@ class HassFlatmateShoppingCompactCard extends HTMLElement {
           <ul class="list">
             ${rowsHtml || '<li class="empty-list">The list is empty.</li>'}
           </ul>
+
+          ${addBadgeHtml ? `<div class="add-badge-row">${addBadgeHtml}</div>` : ""}
         </div>
       </ha-card>
 
@@ -182,6 +188,32 @@ class HassFlatmateShoppingCompactCard extends HTMLElement {
           gap: 8px;
         }
 
+        .add-badge-row {
+          display: flex;
+          justify-content: flex-end;
+          margin-top: 10px;
+        }
+
+        .add-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 2px 10px 2px 6px;
+          border-radius: 12px;
+          background: var(--secondary-background-color, #f5f5f5);
+          color: var(--secondary-text-color);
+          font-size: 0.75rem;
+          font-weight: 500;
+          text-decoration: none;
+          cursor: pointer;
+          --mdc-icon-size: 14px;
+        }
+
+        .add-badge:hover {
+          background: var(--divider-color, #e0e0e0);
+          color: var(--primary-text-color);
+        }
+
         .header h2 {
           margin: 0;
           font-size: 1rem;
@@ -190,8 +222,8 @@ class HassFlatmateShoppingCompactCard extends HTMLElement {
         }
 
         .count-chip {
-          border: 2px solid var(--primary-text-color, #000);
-          border-radius: 0;
+          border: 1px solid var(--divider-color, #e0e0e0);
+          border-radius: var(--ha-border-radius-md, 8px);
           padding: 2px 8px;
           font-size: 0.75rem;
           font-weight: 700;
@@ -204,15 +236,15 @@ class HassFlatmateShoppingCompactCard extends HTMLElement {
           list-style: none;
           margin: 0;
           padding: 0;
-          border: 2px solid var(--primary-text-color, #000);
-          border-radius: 0;
+          border: 1px solid var(--divider-color, #e0e0e0);
+          border-radius: var(--ha-border-radius-md, 8px);
           overflow: hidden;
         }
 
         .item-row {
           margin: 0;
           padding: 6px 8px;
-          border-bottom: 1px solid var(--primary-text-color, #000);
+          border-bottom: 1px solid var(--divider-color, #e0e0e0);
         }
 
         .item-row:last-child {
@@ -249,8 +281,8 @@ class HassFlatmateShoppingCompactCard extends HTMLElement {
 
         .empty-list {
           padding: 8px 10px;
-          border: 2px solid var(--primary-text-color, #000);
-          border-radius: 0;
+          border: 1px solid var(--divider-color, #e0e0e0);
+          border-radius: var(--ha-border-radius-md, 8px);
           list-style: none;
         }
 
@@ -317,6 +349,9 @@ class HassFlatmateShoppingCompactCardEditor extends HTMLElement {
         <label for="hf-editor-title">Card title</label>
         <input id="hf-editor-title" type="text" value="${this._config.title || ""}" />
 
+        <label for="hf-editor-add-link">Add item link</label>
+        <input id="hf-editor-add-link" type="text" placeholder="/shopping-list/0" value="${this._config.add_link || ""}" />
+
         <label for="hf-editor-entity">Data entity</label>
         <ha-entity-picker id="hf-editor-entity"></ha-entity-picker>
       </div>
@@ -356,6 +391,14 @@ class HassFlatmateShoppingCompactCardEditor extends HTMLElement {
       });
     });
 
+    const addLinkInput = this._root.querySelector("#hf-editor-add-link");
+    addLinkInput?.addEventListener("input", (event) => {
+      this._emitConfig({
+        ...this._config,
+        add_link: event.target.value || "",
+      });
+    });
+
     const entityPicker = this._root.querySelector("#hf-editor-entity");
     if (entityPicker) {
       entityPicker.includeDomains = ["sensor"];
@@ -382,6 +425,11 @@ class HassFlatmateShoppingCompactCardEditor extends HTMLElement {
     const titleInput = this._root.querySelector("#hf-editor-title");
     if (titleInput && active !== titleInput) {
       titleInput.value = this._config.title || "";
+    }
+
+    const addLinkInput = this._root.querySelector("#hf-editor-add-link");
+    if (addLinkInput && active !== addLinkInput) {
+      addLinkInput.value = this._config.add_link || "";
     }
 
     const entityPicker = this._root.querySelector("#hf-editor-entity");

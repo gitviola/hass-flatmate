@@ -1676,7 +1676,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
         <div class="card ${compactMode ? "compact" : ""}">
           <div class="header ${compactMode ? "compact-header" : ""}">
             <h2>${this._escape(this._config.title)}</h2>
-            ${compactMode && this._config.edit_link ? `<a class="edit-btn" href="${this._escape(this._config.edit_link)}"><ha-icon icon="mdi:pencil"></ha-icon></a>` : ""}
+            ${compactMode && this._config.edit_link ? `<a class="edit-badge" href="${this._escape(this._config.edit_link)}"><ha-icon icon="mdi:pencil"></ha-icon> Manage schedule</a>` : ""}
           </div>
 
           <section>
@@ -1884,17 +1884,23 @@ class HassFlatmateCleaningCard extends HTMLElement {
           justify-content: space-between;
         }
 
-        .edit-btn {
-          display: flex;
+        .edit-badge {
+          display: inline-flex;
           align-items: center;
-          justify-content: center;
+          gap: 4px;
+          padding: 2px 10px 2px 6px;
+          border-radius: 12px;
+          background: var(--secondary-background-color, #f5f5f5);
           color: var(--secondary-text-color);
+          font-size: 0.75rem;
+          font-weight: 500;
           text-decoration: none;
           cursor: pointer;
-          --mdc-icon-size: 18px;
+          --mdc-icon-size: 14px;
         }
 
-        .edit-btn:hover {
+        .edit-badge:hover {
+          background: var(--divider-color, #e0e0e0);
           color: var(--primary-text-color);
         }
 
