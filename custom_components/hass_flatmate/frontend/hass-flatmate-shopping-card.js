@@ -650,6 +650,7 @@ class HassFlatmateShoppingCard extends HTMLElement {
 
           <section>
             <h3>Recent items</h3>
+            <p class="section-hint">Tap to add to the list</p>
             <div class="chips-wrap">
               ${quickChips || '<span class="empty-list">No recent items yet</span>'}
             </div>
@@ -670,7 +671,7 @@ class HassFlatmateShoppingCard extends HTMLElement {
         .card {
           padding: var(--ha-space-4, 16px);
           display: grid;
-          gap: var(--ha-space-3, 12px);
+          gap: var(--ha-space-5, 20px);
         }
 
         .header h2 {
@@ -693,6 +694,13 @@ class HassFlatmateShoppingCard extends HTMLElement {
           color: var(--secondary-text-color);
           text-transform: uppercase;
           letter-spacing: 0.04em;
+        }
+
+        .section-hint {
+          margin: -4px 0 var(--ha-space-2, 8px);
+          font-size: var(--ha-font-size-xs, 0.75rem);
+          font-style: italic;
+          color: var(--secondary-text-color);
         }
 
         .item-list {
