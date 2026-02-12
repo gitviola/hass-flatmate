@@ -962,6 +962,12 @@ class HassFlatmateCleaningCard extends HTMLElement {
         event.stopPropagation();
         const weekStart = String(el.dataset.weekStart || "");
         const row = weekMap.get(weekStart);
+        if (!row) return;
+        const status = String(row.status || "pending");
+        const prompt = status === "done"
+          ? "Undo completion for this week?"
+          : "Mark this week as done?";
+        if (!window.confirm(prompt)) return;
         await this._toggleDone(row, members);
       });
     });
@@ -1670,6 +1676,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
         <div class="card ${compactMode ? "compact" : ""}">
           <div class="header ${compactMode ? "compact-header" : ""}">
             <h2>${this._escape(this._config.title)}</h2>
+            ${compactMode && this._config.edit_link ? `<a class="edit-btn" href="${this._escape(this._config.edit_link)}"><ha-icon icon="mdi:pencil"></ha-icon></a>` : ""}
           </div>
 
           <section>
@@ -1846,10 +1853,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
         }
 
         .card.compact {
-          box-shadow: var(--ha-card-box-shadow, none);
-          border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #e0e0e0));
-          background: var(--ha-card-background, var(--card-background-color, #fff));
-          border-radius: var(--ha-card-border-radius, 12px);
+          background: transparent;
         }
 
         .card {
@@ -1859,7 +1863,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
         }
 
         .card.compact {
-          padding: var(--ha-space-3, 12px);
+          padding: 0;
           gap: var(--ha-space-2, 8px);
         }
 
@@ -1877,7 +1881,21 @@ class HassFlatmateCleaningCard extends HTMLElement {
         }
 
         .compact-header {
-          justify-content: flex-start;
+          justify-content: space-between;
+        }
+
+        .edit-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: var(--secondary-text-color);
+          text-decoration: none;
+          cursor: pointer;
+          --mdc-icon-size: 18px;
+        }
+
+        .edit-btn:hover {
+          color: var(--primary-text-color);
         }
 
         .card.compact .header h2 {
@@ -2682,6 +2700,11 @@ class HassFlatmateCleaningCardEditor extends HTMLElement {
           <option value="interactive" ${this._config.layout === "compact" ? "" : "selected"}>Interactive</option>
           <option value="compact" ${this._config.layout === "compact" ? "selected" : ""}>Compact (read-only)</option>
         </select>
+
+        ${this._config.layout === "compact" ? `
+          <label for="hf-editor-edit-link">Edit link (optional)</label>
+          <input id="hf-editor-edit-link" type="text" placeholder="/flatmate/cleaning" value="${this._config.edit_link || ""}" />
+        ` : ""}
       </div>
 
       <style>
@@ -2758,11 +2781,23 @@ class HassFlatmateCleaningCardEditor extends HTMLElement {
 
     const layoutInput = this._root.querySelector("#hf-editor-layout");
     layoutInput?.addEventListener("change", (event) => {
+      this._editorReady = false;
       this._emitConfig({
         ...this._config,
         layout: event.target.value || "interactive",
       });
+      this._render();
+      this._syncEditorValues();
     });
+
+    const editLinkInput = this._root.querySelector("#hf-editor-edit-link");
+    editLinkInput?.addEventListener("input", (event) => {
+      this._emitConfig({
+        ...this._config,
+        edit_link: event.target.value || "",
+      });
+    });
+
     this._editorReady = true;
   }
 
@@ -2801,6 +2836,11 @@ class HassFlatmateCleaningCardEditor extends HTMLElement {
       if (layoutInput.value !== nextLayout) {
         layoutInput.value = nextLayout;
       }
+    }
+
+    const editLinkInput = this._root.querySelector("#hf-editor-edit-link");
+    if (editLinkInput && active !== editLinkInput) {
+      editLinkInput.value = this._config.edit_link || "";
     }
   }
 }
