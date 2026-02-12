@@ -8,6 +8,7 @@ class HassFlatmateShoppingCard extends HTMLElement {
     this._pendingItemIds = new Set();
     this._pendingAdds = [];
     this._deferredSnapshot = "";
+    this._optimisticRecents = [];
   }
 
   static async getConfigElement() {
@@ -103,6 +104,66 @@ class HassFlatmateShoppingCard extends HTMLElement {
     };
   }
 
+  _normalizeName(value) {
+    const name = String(value || "").trim();
+    return {
+      name,
+      key: name.toLowerCase(),
+    };
+  }
+
+  _pushOptimisticRecent(name) {
+    const normalized = this._normalizeName(name);
+    if (!normalized.name) {
+      return null;
+    }
+    const token = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    this._optimisticRecents = [
+      { token, key: normalized.key, name: normalized.name },
+      ...this._optimisticRecents.filter((entry) => entry.key !== normalized.key),
+    ].slice(0, 120);
+    return token;
+  }
+
+  _dropOptimisticRecentByToken(token) {
+    if (!token) {
+      return;
+    }
+    this._optimisticRecents = this._optimisticRecents.filter((entry) => entry.token !== token);
+  }
+
+  _dropOptimisticRecentByName(name) {
+    const normalized = this._normalizeName(name);
+    if (!normalized.key) {
+      return;
+    }
+    this._optimisticRecents = this._optimisticRecents.filter((entry) => entry.key !== normalized.key);
+  }
+
+  _toTimestamp(value) {
+    const parsed = Date.parse(String(value || ""));
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+
+  _sortOpenItems(items) {
+    return [...items].sort((a, b) => {
+      const aPending = a?.pending_add ? 1 : 0;
+      const bPending = b?.pending_add ? 1 : 0;
+      if (aPending !== bPending) {
+        return bPending - aPending;
+      }
+
+      const byDate = this._toTimestamp(b?.added_at) - this._toTimestamp(a?.added_at);
+      if (byDate !== 0) {
+        return byDate;
+      }
+
+      return String(a?.name || "").localeCompare(String(b?.name || ""), undefined, {
+        sensitivity: "base",
+      });
+    });
+  }
+
   _relativeAdded(isoString) {
     if (!isoString) {
       return "added recently";
@@ -158,6 +219,7 @@ class HassFlatmateShoppingCard extends HTMLElement {
     }
 
     const key = normalized.toLowerCase();
+    this._dropOptimisticRecentByName(normalized);
     if (this._pendingAdds.some((row) => row.key === key)) {
       return;
     }
@@ -193,10 +255,11 @@ class HassFlatmateShoppingCard extends HTMLElement {
     }
   }
 
-  async _completeItem(id) {
+  async _completeItem(id, name = "") {
     if (!id || this._pendingItemIds.has(id)) {
       return;
     }
+    const optimisticRecentToken = this._pushOptimisticRecent(name);
     this._errorMessage = "";
     this._pendingItemIds.add(id);
     this._render();
@@ -204,6 +267,7 @@ class HassFlatmateShoppingCard extends HTMLElement {
       const meta = this._serviceMeta(this._stateObj.attributes || {});
       await this._callService(meta.completeItem, { item_id: id });
     } catch (error) {
+      this._dropOptimisticRecentByToken(optimisticRecentToken);
       this._pendingItemIds.delete(id);
       this._errorMessage = error?.message || "Unable to mark item as bought";
       this._render();
@@ -219,6 +283,7 @@ class HassFlatmateShoppingCard extends HTMLElement {
       return;
     }
 
+    const optimisticRecentToken = this._pushOptimisticRecent(name);
     this._errorMessage = "";
     this._pendingItemIds.add(id);
     this._render();
@@ -226,6 +291,7 @@ class HassFlatmateShoppingCard extends HTMLElement {
       const meta = this._serviceMeta(this._stateObj.attributes || {});
       await this._callService(meta.deleteItem, { item_id: id });
     } catch (error) {
+      this._dropOptimisticRecentByToken(optimisticRecentToken);
       this._pendingItemIds.delete(id);
       this._errorMessage = error?.message || "Unable to remove item";
       this._render();
@@ -276,7 +342,7 @@ class HassFlatmateShoppingCard extends HTMLElement {
 
     this._root.querySelectorAll("[data-action='complete-item']").forEach((el) => {
       el.addEventListener("click", async () => {
-        await this._completeItem(Number(el.dataset.itemId));
+        await this._completeItem(Number(el.dataset.itemId), el.dataset.itemName || "");
       });
     });
 
@@ -344,27 +410,38 @@ class HassFlatmateShoppingCard extends HTMLElement {
     const visibleOpenItems = openItems.filter(
       (item) => !this._pendingItemIds.has(Number(item?.id))
     );
-    const renderedOpenItems = [...pendingOpenItems, ...visibleOpenItems];
+    const renderedOpenItems = this._sortOpenItems([...pendingOpenItems, ...visibleOpenItems]);
 
     const rawRecents = Array.isArray(attrs.suggestions) ? attrs.suggestions : [];
+    const rawRecentRows = rawRecents
+      .map((name) => this._normalizeName(name))
+      .filter((row) => row.name);
+    const rawRecentKeySet = new Set(rawRecentRows.map((row) => row.key));
     const openNameSet = new Set(
       renderedOpenItems
         .map((item) => String(item?.name || "").trim().toLowerCase())
         .filter((name) => name.length > 0)
     );
+    this._optimisticRecents = this._optimisticRecents
+      .filter((entry) => !openNameSet.has(entry.key))
+      .filter((entry) => !rawRecentKeySet.has(entry.key))
+      .slice(0, 120);
     const seenRecentNames = new Set();
-    const recents = rawRecents
-      .map((name) => String(name || "").trim())
-      .filter((name) => name.length > 0)
+    const mergedRecents = [
+      ...this._optimisticRecents.map((entry) => ({ name: entry.name, key: entry.key })),
+      ...rawRecentRows,
+    ];
+    const recents = mergedRecents
       .filter((name) => {
-        const key = name.toLowerCase();
+        const key = name.key;
         if (seenRecentNames.has(key)) {
           return false;
         }
         seenRecentNames.add(key);
         return true;
       })
-      .filter((name) => !openNameSet.has(name.toLowerCase()));
+      .filter((name) => !openNameSet.has(name.key))
+      .map((row) => row.name);
     const openCount = renderedOpenItems.length;
 
     const itemRows = renderedOpenItems
@@ -379,7 +456,7 @@ class HassFlatmateShoppingCard extends HTMLElement {
         const actionButtons = isPendingAdd
           ? '<span class="pending-pill">Saving...</span>'
           : `
-              <button class="todo-check" type="button" data-action="complete-item" data-item-id="${id}" title="Mark as bought" aria-label="Mark ${name} as bought"><ha-icon icon="mdi:check-circle-outline"></ha-icon></button>
+              <button class="todo-check" type="button" data-action="complete-item" data-item-id="${id}" data-item-name="${name}" title="Mark as bought" aria-label="Mark ${name} as bought"><ha-icon icon="mdi:check-circle-outline"></ha-icon></button>
               <button class="todo-delete" type="button" data-action="delete-item" data-item-id="${id}" data-item-name="${name}" title="Remove from shopping list" aria-label="Remove ${name} from shopping list"><ha-icon icon="mdi:close-circle-outline"></ha-icon></button>
             `;
         return `
