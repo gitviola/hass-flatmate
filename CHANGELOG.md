@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.19] - 2026-02-12
+
+### Changed
+- Cleaning completion/swap services now return faster by scheduling refresh/activity sync in the background instead of blocking service calls.
+
+### Fixed
+- Cleaning interactive card now applies optimistic week updates (done/undone/swap) so status changes are visible immediately without manual page refresh.
+- Cleaning UI wording now uses user-friendly "make-up shift" labels/messages instead of technical "compensation override" phrasing.
+- Compact cleaning card now highlights the current week with a stronger left-side marker instead of the previous arrow prefix.
+
 ## [0.1.18] - 2026-02-12
 
 ### Changed

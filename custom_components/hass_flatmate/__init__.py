@@ -734,7 +734,7 @@ async def _register_services(hass: HomeAssistant) -> None:
             response.get("notifications", []),
             default_category="cleaning",
         )
-        await _refresh_and_process_activity(hass, runtime)
+        _schedule_refresh_and_process_activity(hass, runtime)
 
     async def mark_cleaning_undone(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
@@ -743,7 +743,7 @@ async def _register_services(hass: HomeAssistant) -> None:
             week_start=week_start,
             actor_user_id=call.context.user_id,
         )
-        await _refresh_and_process_activity(hass, runtime)
+        _schedule_refresh_and_process_activity(hass, runtime)
 
     async def mark_cleaning_takeover_done(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
@@ -760,7 +760,7 @@ async def _register_services(hass: HomeAssistant) -> None:
             response.get("notifications", []),
             default_category="cleaning",
         )
-        await _refresh_and_process_activity(hass, runtime)
+        _schedule_refresh_and_process_activity(hass, runtime)
 
     async def swap_cleaning_week(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
@@ -778,7 +778,7 @@ async def _register_services(hass: HomeAssistant) -> None:
             response.get("notifications", []),
             default_category="cleaning",
         )
-        await _refresh_and_process_activity(hass, runtime)
+        _schedule_refresh_and_process_activity(hass, runtime)
 
     async def sync_members(_call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)

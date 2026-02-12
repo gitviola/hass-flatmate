@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.1.19] - 2026-02-12
+
+### Changed
+- Compensation notification text now uses clearer "make-up shift" wording.
+
 ## [0.1.15] - 2026-02-11
 
 ### Fixed

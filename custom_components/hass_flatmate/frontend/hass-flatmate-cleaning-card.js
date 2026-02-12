@@ -6,6 +6,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
     this._errorMessage = "";
     this._pendingDoneWeeks = new Set();
     this._pendingSwapWeeks = new Set();
+    this._optimisticWeekPatches = new Map();
     this._modalOpen = false;
     this._modalWeekStart = "";
     this._modalChoice = "confirm_assignee";
@@ -92,6 +93,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
       swap_target_member_id: this._swapTargetMemberId,
       pending_done: [...this._pendingDoneWeeks],
       pending_swap: [...this._pendingSwapWeeks],
+      optimistic_patches: [...this._optimisticWeekPatches.entries()],
     });
   }
 
@@ -219,6 +221,28 @@ class HassFlatmateCleaningCard extends HTMLElement {
       return null;
     }
     return parsed;
+  }
+
+  _normalizePatchValue(value) {
+    return value == null ? null : value;
+  }
+
+  _setWeekPatch(weekStart, patch) {
+    if (!weekStart || !patch || typeof patch !== "object") {
+      return;
+    }
+    const nextPatch = {};
+    for (const [key, value] of Object.entries(patch)) {
+      nextPatch[key] = this._normalizePatchValue(value);
+    }
+    this._optimisticWeekPatches.set(String(weekStart), nextPatch);
+  }
+
+  _clearWeekPatch(weekStart) {
+    if (!weekStart) {
+      return;
+    }
+    this._optimisticWeekPatches.delete(String(weekStart));
   }
 
   _findCompensationPreviewWeek(weeks, cleanerMemberId, sourceWeekStart) {
@@ -387,21 +411,34 @@ class HassFlatmateCleaningCard extends HTMLElement {
     } catch (_error) {}
   }
 
-  async _runWeekAction(weekStart, action, fallbackError) {
+  async _runWeekAction(
+    weekStart,
+    action,
+    fallbackError,
+    { optimisticPatch = null, rollbackPatch = null } = {}
+  ) {
     if (!weekStart || this._pendingDoneWeeks.has(weekStart)) {
       return false;
     }
 
     this._pendingDoneWeeks.add(weekStart);
+    if (optimisticPatch) {
+      this._setWeekPatch(weekStart, optimisticPatch);
+    }
     this._errorMessage = "";
     this._render();
 
     let ok = false;
     try {
       await action();
-      await this._requestEntityRefresh();
+      this._requestEntityRefresh();
       ok = true;
     } catch (error) {
+      if (rollbackPatch) {
+        this._setWeekPatch(weekStart, rollbackPatch);
+      } else {
+        this._clearWeekPatch(weekStart);
+      }
       this._errorMessage = error?.message || fallbackError;
       this._render();
     } finally {
@@ -412,7 +449,18 @@ class HassFlatmateCleaningCard extends HTMLElement {
     return ok;
   }
 
-  async _markDone(weekStart, completedByMemberId = null) {
+  async _markDone(row, completedByMemberId = null) {
+    const weekStart = String(row?.week_start || "");
+    if (!weekStart) {
+      return false;
+    }
+    const assigneeMemberId = Number(row?.assignee_member_id);
+    const completedById =
+      Number.isInteger(completedByMemberId) && completedByMemberId > 0
+        ? completedByMemberId
+        : Number.isInteger(assigneeMemberId) && assigneeMemberId > 0
+          ? assigneeMemberId
+          : null;
     const payload = completedByMemberId
       ? { week_start: weekStart, completed_by_member_id: completedByMemberId }
       : { week_start: weekStart };
@@ -422,22 +470,54 @@ class HassFlatmateCleaningCard extends HTMLElement {
       async () => {
         await this._callService(meta.markDone, payload);
       },
-      "Unable to mark cleaning as done"
+      "Unable to mark cleaning as done",
+      {
+        optimisticPatch: {
+          status: "done",
+          completion_mode: "own",
+          completed_by_member_id: completedById,
+        },
+        rollbackPatch: {
+          status: row?.status || "pending",
+          completion_mode: row?.completion_mode || null,
+          completed_by_member_id: row?.completed_by_member_id || null,
+        },
+      }
     );
   }
 
-  async _markUndone(weekStart) {
+  async _markUndone(row) {
+    const weekStart = String(row?.week_start || "");
+    if (!weekStart) {
+      return false;
+    }
     const meta = this._serviceMeta(this._stateObj?.attributes || {});
     return this._runWeekAction(
       weekStart,
       async () => {
         await this._callService(meta.markUndone, { week_start: weekStart });
       },
-      "Unable to mark cleaning as undone"
+      "Unable to mark cleaning as undone",
+      {
+        optimisticPatch: {
+          status: "pending",
+          completion_mode: null,
+          completed_by_member_id: null,
+        },
+        rollbackPatch: {
+          status: row?.status || "done",
+          completion_mode: row?.completion_mode || null,
+          completed_by_member_id: row?.completed_by_member_id || null,
+        },
+      }
     );
   }
 
-  async _markTakeoverDone(weekStart, originalAssigneeMemberId, cleanerMemberId) {
+  async _markTakeoverDone(row, originalAssigneeMemberId, cleanerMemberId) {
+    const weekStart = String(row?.week_start || "");
+    if (!weekStart) {
+      return false;
+    }
     const meta = this._serviceMeta(this._stateObj?.attributes || {});
     return this._runWeekAction(
       weekStart,
@@ -448,25 +528,50 @@ class HassFlatmateCleaningCard extends HTMLElement {
           cleaner_member_id: cleanerMemberId,
         });
       },
-      "Unable to record takeover completion"
+      "Unable to record takeover completion",
+      {
+        optimisticPatch: {
+          status: "done",
+          completion_mode: "takeover",
+          completed_by_member_id: cleanerMemberId,
+        },
+        rollbackPatch: {
+          status: row?.status || "pending",
+          completion_mode: row?.completion_mode || null,
+          completed_by_member_id: row?.completed_by_member_id || null,
+        },
+      }
     );
   }
 
-  async _runSwapAction(weekStart, action, fallbackError) {
+  async _runSwapAction(
+    weekStart,
+    action,
+    fallbackError,
+    { optimisticPatch = null, rollbackPatch = null } = {}
+  ) {
     if (!weekStart || this._pendingSwapWeeks.has(weekStart)) {
       return false;
     }
 
     this._pendingSwapWeeks.add(weekStart);
+    if (optimisticPatch) {
+      this._setWeekPatch(weekStart, optimisticPatch);
+    }
     this._errorMessage = "";
     this._render();
 
     let ok = false;
     try {
       await action();
-      await this._requestEntityRefresh();
+      this._requestEntityRefresh();
       ok = true;
     } catch (error) {
+      if (rollbackPatch) {
+        this._setWeekPatch(weekStart, rollbackPatch);
+      } else {
+        this._clearWeekPatch(weekStart);
+      }
       this._errorMessage = error?.message || fallbackError;
       this._render();
     } finally {
@@ -477,8 +582,20 @@ class HassFlatmateCleaningCard extends HTMLElement {
     return ok;
   }
 
-  async _swapWeek(weekStart, memberAId, memberBId, cancel = false) {
+  async _swapWeek(row, memberAId, memberBId, cancel = false) {
+    const weekStart = String(row?.week_start || "");
+    if (!weekStart) {
+      return false;
+    }
     const meta = this._serviceMeta(this._stateObj?.attributes || {});
+    const memberMap = this._memberMap(Array.isArray(this._stateObj?.attributes?.members) ? this._stateObj.attributes.members : []);
+    const rollbackEffectiveId = row?.assignee_member_id ?? null;
+    const rollbackOverrideType = row?.override_type || null;
+    const rollbackName =
+      Number.isInteger(Number(rollbackEffectiveId)) && Number(rollbackEffectiveId) > 0
+        ? this._memberName(memberMap, Number(rollbackEffectiveId))
+        : row?.assignee_name || null;
+    const optimisticEffectiveId = cancel ? memberAId : memberBId;
     return this._runSwapAction(
       weekStart,
       async () => {
@@ -489,7 +606,19 @@ class HassFlatmateCleaningCard extends HTMLElement {
           cancel,
         });
       },
-      cancel ? "Unable to cancel swap" : "Unable to apply swap"
+      cancel ? "Unable to cancel swap" : "Unable to apply swap",
+      {
+        optimisticPatch: {
+          override_type: cancel ? null : "manual_swap",
+          assignee_member_id: optimisticEffectiveId,
+          assignee_name: this._memberName(memberMap, optimisticEffectiveId),
+        },
+        rollbackPatch: {
+          override_type: rollbackOverrideType,
+          assignee_member_id: rollbackEffectiveId,
+          assignee_name: rollbackName,
+        },
+      }
     );
   }
 
@@ -500,7 +629,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
     const weekStart = String(row.week_start);
     const status = String(row.status || "pending");
     if (status === "done") {
-      await this._markUndone(weekStart);
+      await this._markUndone(row);
       return;
     }
 
@@ -509,7 +638,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
       return;
     }
 
-    await this._markDone(weekStart);
+    await this._markDone(row);
   }
 
   async _submitDoneModal(weeks, members) {
@@ -539,9 +668,9 @@ class HassFlatmateCleaningCard extends HTMLElement {
         this._render();
         return;
       }
-      ok = await this._markTakeoverDone(String(row.week_start), assigneeMemberId, cleanerMemberId);
+      ok = await this._markTakeoverDone(row, assigneeMemberId, cleanerMemberId);
     } else {
-      ok = await this._markDone(String(row.week_start), assigneeMemberId);
+      ok = await this._markDone(row, assigneeMemberId);
     }
 
     if (ok) {
@@ -584,7 +713,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
         this._render();
         return;
       }
-      ok = await this._swapWeek(String(row.week_start), originalAssigneeId, swappedWithId, true);
+      ok = await this._swapWeek(row, originalAssigneeId, swappedWithId, true);
     } else {
       const swapWithId = Number(this._swapTargetMemberId);
       if (!Number.isInteger(swapWithId) || swapWithId <= 0) {
@@ -597,7 +726,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
         this._render();
         return;
       }
-      ok = await this._swapWeek(String(row.week_start), originalAssigneeId, swapWithId, false);
+      ok = await this._swapWeek(row, originalAssigneeId, swapWithId, false);
     }
 
     if (ok) {
@@ -716,10 +845,38 @@ class HassFlatmateCleaningCard extends HTMLElement {
         this._pendingSwapWeeks.delete(weekStart);
       }
     }
+    for (const weekStart of [...this._optimisticWeekPatches.keys()]) {
+      if (!activeWeekStarts.has(weekStart)) {
+        this._optimisticWeekPatches.delete(weekStart);
+      }
+    }
+
+    const rawByWeekStart = new Map(rawWeeks.map((row) => [String(row.week_start || ""), row]));
+    for (const [weekStart, patch] of [...this._optimisticWeekPatches.entries()]) {
+      const rawRow = rawByWeekStart.get(weekStart);
+      if (!rawRow) {
+        this._optimisticWeekPatches.delete(weekStart);
+        continue;
+      }
+      const patchApplied = Object.entries(patch).every(
+        ([key, value]) => this._normalizePatchValue(rawRow?.[key]) === value
+      );
+      if (patchApplied) {
+        this._optimisticWeekPatches.delete(weekStart);
+      }
+    }
 
     const weeksToShow = this._coerceWeeks(this._config.weeks);
     const weeks = rawWeeks
       .slice()
+      .map((row) => {
+        const weekStart = String(row.week_start || "");
+        const patch = this._optimisticWeekPatches.get(weekStart);
+        if (!patch) {
+          return row;
+        }
+        return { ...row, ...patch };
+      })
       .sort((a, b) => String(a.week_start || "").localeCompare(String(b.week_start || "")))
       .slice(0, weeksToShow);
 
@@ -752,19 +909,24 @@ class HassFlatmateCleaningCard extends HTMLElement {
           !isDone &&
           row.override_type !== "compensation";
 
-        const assigneeName = this._escape(
-          row.assignee_name || (row.assignee_member_id ? `Member ${row.assignee_member_id}` : "Unassigned")
-        );
-        const originalName = row.original_assignee_name
-          ? this._escape(row.original_assignee_name)
-          : row.original_assignee_member_id
-            ? `Member ${row.original_assignee_member_id}`
-            : "";
-        const completedByName = row.completed_by_name
-          ? this._escape(row.completed_by_name)
-          : row.completed_by_member_id
-            ? `Member ${row.completed_by_member_id}`
-            : "";
+        const assigneeMemberId = Number(row.assignee_member_id);
+        const assigneeLabel =
+          Number.isInteger(assigneeMemberId) && assigneeMemberId > 0
+            ? this._memberName(memberMap, assigneeMemberId)
+            : row.assignee_name || "Unassigned";
+        const assigneeName = this._escape(assigneeLabel);
+        const originalMemberId = Number(row.original_assignee_member_id);
+        const originalLabel =
+          Number.isInteger(originalMemberId) && originalMemberId > 0
+            ? this._memberName(memberMap, originalMemberId)
+            : row.original_assignee_name || "";
+        const originalName = originalLabel ? this._escape(originalLabel) : "";
+        const completedByMemberId = Number(row.completed_by_member_id);
+        const completedByLabel =
+          Number.isInteger(completedByMemberId) && completedByMemberId > 0
+            ? this._memberName(memberMap, completedByMemberId)
+            : row.completed_by_name || "";
+        const completedByName = completedByLabel ? this._escape(completedByLabel) : "";
 
         let doneMeta = "";
         if (isDone && completedByName) {
@@ -774,14 +936,14 @@ class HassFlatmateCleaningCard extends HTMLElement {
         }
 
         const overrideBadge = row.override_type
-          ? `<span class="badge">${this._escape(row.override_type === "manual_swap" ? "Swap" : "Compensation")}</span>`
+          ? `<span class="badge">${this._escape(row.override_type === "manual_swap" ? "Swap" : "Make-up")}</span>`
           : "";
 
         const secondary =
           row.override_type === "manual_swap" && originalName && originalName !== assigneeName
-            ? `<span class="meta-note">Original: ${originalName}</span>`
+            ? `<span class="meta-note">Swapped with ${originalName}</span>`
             : row.override_type === "compensation"
-              ? '<span class="meta-note">Compensation override</span>'
+              ? `<span class="meta-note">Make-up shift: ${assigneeName} covers ${originalName || "the original turn"}</span>`
               : "";
 
         const actionParts = [];
@@ -877,7 +1039,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
           <ul class="effect-list">
             <li>Record that <strong>${this._escape(modalCleanerName)}</strong> took over this shift from <strong>${this._escape(modalAssigneeName)}</strong>.</li>
             <li>Automatically assign <strong>${this._escape(modalAssigneeName)}</strong> to <strong>${this._escape(modalCleanerName)}</strong>'s next original turn in <strong>${this._escape(modalCompensationWeekLabel)}</strong>.</li>
-            <li>Send a notification to both flatmates with the takeover and compensation details.</li>
+            <li>Send a notification to both flatmates with the takeover and make-up shift details.</li>
           </ul>
         `
         : `
@@ -953,11 +1115,10 @@ class HassFlatmateCleaningCard extends HTMLElement {
     ].join("");
 
     const compactRows = weeks
-      .map((row, index) => {
+      .map((row) => {
         const status = String(row?.status || "pending");
         const isDone = status === "done";
         const isMissed = status === "missed";
-        const isFuture = !row.is_current && !row.is_previous && !row.is_past;
         const compactStatusLabel = isDone
           ? "Done"
           : isMissed
@@ -970,28 +1131,38 @@ class HassFlatmateCleaningCard extends HTMLElement {
           ? " (this week)"
           : row.is_previous
             ? " (previous week)"
-            : row.is_next
+          : row.is_next
               ? " (next week)"
               : "";
-        const compactIndicator = row.is_current ? '<span class="compact-pointer">=&gt;</span>' : "";
         const compactHeadline = `${this._rowDateRange(row)}${compactContext}`;
 
-        const assigneeName = this._escape(
-          row.assignee_name || (row.assignee_member_id ? `Member ${row.assignee_member_id}` : "Unassigned")
-        );
-        const originalName = row.original_assignee_name
-          ? this._escape(row.original_assignee_name)
-          : row.original_assignee_member_id
-            ? `Member ${row.original_assignee_member_id}`
-            : "";
+        const assigneeMemberId = Number(row.assignee_member_id);
+        const assigneeLabel =
+          Number.isInteger(assigneeMemberId) && assigneeMemberId > 0
+            ? this._memberName(memberMap, assigneeMemberId)
+            : row.assignee_name || "Unassigned";
+        const assigneeName = this._escape(assigneeLabel);
+        const originalMemberId = Number(row.original_assignee_member_id);
+        const originalLabel =
+          Number.isInteger(originalMemberId) && originalMemberId > 0
+            ? this._memberName(memberMap, originalMemberId)
+            : row.original_assignee_name || "";
+        const originalName = originalLabel ? this._escape(originalLabel) : "";
+        const completedByMemberId = Number(row.completed_by_member_id);
+        const completedByName =
+          Number.isInteger(completedByMemberId) && completedByMemberId > 0
+            ? this._escape(this._memberName(memberMap, completedByMemberId))
+            : row.completed_by_name
+              ? this._escape(row.completed_by_name)
+              : "";
 
         let compactNote = "";
         if (row.override_type === "manual_swap" && originalName && originalName !== assigneeName) {
-          compactNote = `Swap (original: ${originalName})`;
+          compactNote = `Swapped with ${originalName}`;
         } else if (row.override_type === "compensation") {
-          compactNote = "Compensation week";
-        } else if (isDone && row.completed_by_name) {
-          compactNote = `Done by ${this._escape(row.completed_by_name)}`;
+          compactNote = `Make-up shift: ${assigneeName} covers ${originalName || "the original turn"}`;
+        } else if (isDone && completedByName) {
+          compactNote = `Done by ${completedByName}`;
         } else if (isMissed) {
           compactNote = "Not confirmed";
         }
@@ -999,7 +1170,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
         return `
           <li class="compact-week-row ${row.is_current ? "current" : ""} ${isDone ? "done" : ""} ${isMissed ? "missed" : ""}">
             <div class="compact-top">
-              <span class="compact-week">${compactIndicator}${this._escape(compactHeadline)}</span>
+              <span class="compact-week">${this._escape(compactHeadline)}</span>
               ${
                 compactStatusLabel
                   ? `<span class="compact-status ${compactStatusClass}">${compactStatusLabel}</span>`
@@ -1081,7 +1252,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
                   <span>Someone else cleaned and took over this shift.</span>
                 </label>
                 <p class="choice-help">
-                  Use takeover when another flatmate actually cleaned so compensation is planned automatically.
+                  Use takeover when another flatmate actually cleaned so a make-up shift is planned automatically.
                 </p>
               </div>
 
@@ -1293,6 +1464,8 @@ class HassFlatmateCleaningCard extends HTMLElement {
         }
 
         .compact-week-row.current {
+          border-left: 3px solid var(--primary-text-color);
+          padding-left: 7px;
           font-weight: 700;
         }
 
@@ -1315,12 +1488,6 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
         .compact-week-row.current .compact-week {
           color: var(--primary-text-color);
-        }
-
-        .compact-pointer {
-          font-weight: 800;
-          margin-right: 4px;
-          letter-spacing: 0.01em;
         }
 
         .compact-assignee {

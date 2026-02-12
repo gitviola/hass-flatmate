@@ -494,12 +494,12 @@ def _build_compensation_notifications(
 
     title = "Weekly Cleaning Shift"
     msg_from = (
-        f"Compensation override planned for week {week_start.isoformat()}: "
-        f"{member_to.display_name if member_to else 'Another member'} will cover your turn."
+        f"Make-up shift planned for week {week_start.isoformat()}: "
+        f"{member_to.display_name if member_to else 'Another member'} will cover your regular turn."
     )
     msg_to = (
-        f"Compensation override planned for week {week_start.isoformat()}: "
-        f"you are scheduled to cover {member_from.display_name if member_from else 'another member'}'s turn."
+        f"Make-up shift planned for week {week_start.isoformat()}: "
+        f"you are scheduled to cover {member_from.display_name if member_from else 'another member'}'s regular turn."
     )
     return [
         _member_notification(member_from, title, msg_from),
@@ -555,7 +555,7 @@ def _build_inactive_member_override_notifications(
         )
     else:
         message = (
-            f"A planned cleaning compensation for week {override.week_start.isoformat()} was canceled because "
+            f"A planned cleaning make-up shift for week {override.week_start.isoformat()} was canceled because "
             f"{inactive_label} is no longer active in the flat."
         )
 

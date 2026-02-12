@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.1.19] - 2026-02-12
+
+### Changed
+- Cleaning completion and swap service handlers now schedule refresh/activity sync in the background for faster action response in the UI.
+
+### Fixed
+- Cleaning card now applies optimistic updates for done/undone/swap actions so rows update immediately without requiring manual page refresh.
+- Cleaning override wording in card and sensor metadata is now user-friendly ("make-up shift") instead of technical compensation language.
+- Compact cleaning card now marks the current week with a strong left border rather than the previous arrow marker.
+
 ## [0.1.18] - 2026-02-12
 
 ### Changed

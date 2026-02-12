@@ -353,7 +353,7 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
             if override_type == "manual_swap":
                 note = "swap"
             elif override_type == "compensation":
-                note = "compensation"
+                note = "make-up shift"
 
             is_current = week_start.isoformat() == current_week_start
             status_value = row.get("status")
