@@ -7,8 +7,7 @@ class HassFlatmateShoppingCard extends HTMLElement {
     this._stateSnapshot = "";
     this._pendingItemIds = new Set();
     this._pendingAdds = [];
-    this._suggestionsOpen = false;
-    this._suggestionIndex = -1;
+    this._deferredSnapshot = "";
   }
 
   static async getConfigElement() {
@@ -45,9 +44,21 @@ class HassFlatmateShoppingCard extends HTMLElement {
     if (!this._config) {
       return;
     }
-    if (inputIsFocused && nextSnapshot === this._stateSnapshot) {
+
+    if (inputIsFocused) {
+      if (nextSnapshot !== this._stateSnapshot) {
+        this._deferredSnapshot = nextSnapshot;
+      }
       return;
     }
+
+    if (this._deferredSnapshot && this._deferredSnapshot !== this._stateSnapshot) {
+      this._stateSnapshot = this._deferredSnapshot;
+      this._deferredSnapshot = "";
+      this._render();
+      return;
+    }
+
     if (nextSnapshot !== this._stateSnapshot) {
       this._stateSnapshot = nextSnapshot;
       this._render();
@@ -168,8 +179,6 @@ class HassFlatmateShoppingCard extends HTMLElement {
     });
 
     this._draftName = "";
-    this._suggestionsOpen = false;
-    this._suggestionIndex = -1;
     this._errorMessage = "";
     this._render();
 
@@ -223,121 +232,40 @@ class HassFlatmateShoppingCard extends HTMLElement {
     }
   }
 
-  _filteredSuggestions(suggestions) {
-    const base = Array.isArray(suggestions) ? suggestions : [];
-    const query = String(this._draftName || "").trim().toLowerCase();
-    if (!query) {
-      return base.slice(0, 8);
-    }
-
-    const starts = [];
-    const includes = [];
-    for (const name of base) {
-      const text = String(name || "");
-      const key = text.toLowerCase();
-      if (key.startsWith(query)) {
-        starts.push(text);
-      } else if (key.includes(query)) {
-        includes.push(text);
-      }
-      if (starts.length + includes.length >= 8) {
-        break;
-      }
-    }
-    return [...starts, ...includes].slice(0, 8);
-  }
-
-  async _addSuggestionAt(filteredSuggestions, index) {
-    if (!Array.isArray(filteredSuggestions) || filteredSuggestions.length === 0) {
-      return;
-    }
-    const safeIndex = Math.max(0, Math.min(index, filteredSuggestions.length - 1));
-    const value = String(filteredSuggestions[safeIndex] || "").trim();
-    if (!value) {
-      return;
-    }
-    await this._addItem(value);
-  }
-
-  _bindEvents(filteredSuggestions) {
+  _bindEvents() {
     const form = this._root.querySelector("#hf-add-form");
     const input = this._root.querySelector("#hf-item-input");
-    const suggestionCount = Array.isArray(filteredSuggestions) ? filteredSuggestions.length : 0;
     const stopBubble = (event) => event.stopPropagation();
 
     input?.addEventListener("input", (event) => {
       this._draftName = event.target.value;
-      this._suggestionsOpen = true;
-      this._suggestionIndex = -1;
-      this._render();
     });
     input?.addEventListener("click", stopBubble);
-    input?.addEventListener("focus", (event) => {
-      stopBubble(event);
-      this._suggestionsOpen = true;
-      this._render();
-    });
+    input?.addEventListener("focus", stopBubble);
     input?.addEventListener("blur", () => {
       window.setTimeout(() => {
-        this._suggestionsOpen = false;
-        this._suggestionIndex = -1;
+        if (this._deferredSnapshot && this._deferredSnapshot !== this._stateSnapshot) {
+          this._stateSnapshot = this._deferredSnapshot;
+          this._deferredSnapshot = "";
+        }
         this._render();
       }, 120);
     });
     input?.addEventListener("mousedown", stopBubble);
     input?.addEventListener("pointerdown", stopBubble);
-    input?.addEventListener("keydown", async (event) => {
+    input?.addEventListener("keydown", (event) => {
       stopBubble(event);
-      if (event.key === "ArrowDown" && suggestionCount > 0) {
-        event.preventDefault();
-        this._suggestionsOpen = true;
-        this._suggestionIndex = this._suggestionIndex < 0
-          ? 0
-          : Math.min(this._suggestionIndex + 1, suggestionCount - 1);
-        this._render();
-        return;
-      }
-      if (event.key === "ArrowUp" && suggestionCount > 0) {
-        event.preventDefault();
-        this._suggestionsOpen = true;
-        this._suggestionIndex = this._suggestionIndex <= 0
-          ? suggestionCount - 1
-          : this._suggestionIndex - 1;
-        this._render();
-        return;
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        this._suggestionsOpen = false;
-        this._suggestionIndex = -1;
-        this._render();
-        return;
-      }
-      if (event.key === "Enter" && this._suggestionsOpen && this._suggestionIndex >= 0) {
-        event.preventDefault();
-        await this._addSuggestionAt(filteredSuggestions, this._suggestionIndex);
-      }
     });
     input?.addEventListener("keyup", stopBubble);
     input?.addEventListener("keypress", stopBubble);
+    input?.addEventListener("beforeinput", stopBubble);
     form?.addEventListener("click", stopBubble);
     form?.addEventListener("mousedown", stopBubble);
     form?.addEventListener("pointerdown", stopBubble);
 
     form?.addEventListener("submit", async (event) => {
       event.preventDefault();
-      if (this._suggestionsOpen && this._suggestionIndex >= 0) {
-        await this._addSuggestionAt(filteredSuggestions, this._suggestionIndex);
-        return;
-      }
       await this._addItem(this._draftName);
-    });
-
-    this._root.querySelectorAll("[data-action='add-suggestion']").forEach((el) => {
-      el.addEventListener("mousedown", (event) => event.preventDefault());
-      el.addEventListener("click", async () => {
-        await this._addItem(el.dataset.name);
-      });
     });
 
     this._root.querySelectorAll("[data-action='add-quick']").forEach((el) => {
@@ -478,37 +406,10 @@ class HassFlatmateShoppingCard extends HTMLElement {
 
     const draftName = this._escape(this._draftName || "");
     const errorMessage = this._errorMessage ? this._escape(this._errorMessage) : "";
-    const filteredSuggestions = this._filteredSuggestions(recents);
-    if (this._suggestionIndex >= filteredSuggestions.length) {
-      this._suggestionIndex = filteredSuggestions.length - 1;
-    }
-    const showSuggestions = this._suggestionsOpen && filteredSuggestions.length > 0;
-    const suggestionList = showSuggestions
-      ? `
-          <ul class="suggestion-list" role="listbox" aria-label="Item suggestions">
-            ${filteredSuggestions
-              .map((name, idx) => {
-                const escaped = this._escape(name);
-                const selectedClass = idx === this._suggestionIndex ? "selected" : "";
-                return `
-                  <li>
-                    <button
-                      class="suggestion ${selectedClass}"
-                      type="button"
-                      data-action="add-suggestion"
-                      data-name="${escaped}"
-                      role="option"
-                      aria-selected="${idx === this._suggestionIndex ? "true" : "false"}"
-                    >
-                      ${escaped}
-                    </button>
-                  </li>
-                `;
-              })
-              .join("")}
-          </ul>
-        `
-      : "";
+    const datalistOptions = recents
+      .slice(0, 60)
+      .map((name) => `<option value="${this._escape(name)}"></option>`)
+      .join("");
 
     this._root.innerHTML = `
       <ha-card>
@@ -529,8 +430,10 @@ class HassFlatmateShoppingCard extends HTMLElement {
             <h3>Add item</h3>
             <form id="hf-add-form" class="add-row" autocomplete="off">
               <div class="add-field">
-                <input id="hf-item-input" type="text" placeholder="Type an item" value="${draftName}" autocomplete="off" autocapitalize="none" spellcheck="false" />
-                ${suggestionList}
+                <input id="hf-item-input" list="hf-item-suggestions" type="text" placeholder="Type an item" value="${draftName}" autocomplete="off" autocapitalize="none" spellcheck="false" />
+                <datalist id="hf-item-suggestions">
+                  ${datalistOptions}
+                </datalist>
               </div>
               <button class="add-btn" type="submit">Add</button>
             </form>
@@ -705,41 +608,6 @@ class HassFlatmateShoppingCard extends HTMLElement {
           background: color-mix(in srgb, var(--primary-color) 18%, var(--card-background-color));
         }
 
-        .suggestion-list {
-          list-style: none;
-          margin: 4px 0 0;
-          padding: 4px;
-          border: 1px solid var(--divider-color);
-          border-radius: 10px;
-          background: var(--card-background-color);
-          box-shadow: 0 8px 18px rgba(0, 0, 0, 0.14);
-          display: grid;
-          gap: 2px;
-          position: absolute;
-          z-index: 8;
-          left: 0;
-          right: 0;
-          max-height: 220px;
-          overflow-y: auto;
-        }
-
-        .suggestion {
-          border: none;
-          background: transparent;
-          color: var(--primary-text-color);
-          text-align: left;
-          width: 100%;
-          border-radius: 8px;
-          padding: 7px 9px;
-          font: inherit;
-          cursor: pointer;
-        }
-
-        .suggestion:hover,
-        .suggestion.selected {
-          background: color-mix(in srgb, var(--primary-color) 16%, var(--card-background-color));
-        }
-
         .chips-wrap {
           display: flex;
           flex-wrap: wrap;
@@ -769,7 +637,7 @@ class HassFlatmateShoppingCard extends HTMLElement {
       </style>
     `;
 
-    this._bindEvents(filteredSuggestions);
+    this._bindEvents();
 
     if (shouldRestoreInputFocus) {
       const nextInput = this._root.querySelector("#hf-item-input");

@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.1.20] - 2026-02-12
+
 ### Changed
 - Compact cleaning card now prioritizes assignee-first readability for e-ink: assignee name is shown first in bold, with date/details on following lines.
 - Cleaning confirmation/swap modals now use clearer one-time wording and expanded consequence previews.
@@ -12,6 +14,7 @@ All notable changes to this project are documented in this file.
 - Compact cleaning card now renders week context markers (`this week`, `previous week`, `next week`) in italic styling.
 - Compact cleaning card notes such as `Done by ...` are now italicized for clearer visual separation.
 - Cleaning modal preview now explicitly lists per-person notifications and actor-aware messages so outcomes are unambiguous.
+- Shopping add-item input now keeps focus and typing stability during Home Assistant state updates (no more input-lock/focus-loss behavior while typing).
 
 ## [0.1.19] - 2026-02-12
 
