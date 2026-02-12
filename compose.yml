@@ -1,0 +1,33 @@
+services:
+  homeassistant:
+    image: homeassistant/home-assistant:latest
+    volumes:
+      - ./dev/ha-config:/config
+      - ./custom_components/hass_flatmate:/config/custom_components/hass_flatmate
+    ports:
+      - "8123:8123"
+    networks:
+      - hass-flatmate-dev
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: dev/Dockerfile.backend
+    volumes:
+      - ./addon/hass_flatmate_service:/app
+      - ./dev/backend-data:/data
+    ports:
+      - "8099:8099"
+    environment:
+      HASS_FLATMATE_API_TOKEN: dev-token
+      HASS_FLATMATE_DB_PATH: /data/hass_flatmate.db
+    networks:
+      - hass-flatmate-dev
+    restart: unless-stopped
+
+networks:
+  hass-flatmate-dev:
+    driver: bridge

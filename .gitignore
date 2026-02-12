@@ -12,3 +12,5 @@ addon/hass_flatmate_service/data/
 apps/hass_flatmate_service/service_src/.venv/
 apps/hass_flatmate_service/service_src/.pytest_cache/
 apps/hass_flatmate_service/service_src/data/
+
+dev/backend-data/
