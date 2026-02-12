@@ -223,6 +223,51 @@ class HassFlatmateCleaningCard extends HTMLElement {
     return parsed;
   }
 
+  _weekDistanceLabel(targetWeekStart, currentWeekStart) {
+    const target = this._parseWeekDate(targetWeekStart);
+    const current = this._parseWeekDate(currentWeekStart);
+    if (!target || !current) {
+      return "";
+    }
+    const diffWeeks = Math.round((target.getTime() - current.getTime()) / (7 * 24 * 60 * 60 * 1000));
+    if (diffWeeks === 0) {
+      return "in 0 weeks";
+    }
+    if (diffWeeks === 1) {
+      return "in 1 week";
+    }
+    if (diffWeeks > 1) {
+      return `in ${diffWeeks} weeks`;
+    }
+    if (diffWeeks === -1) {
+      return "1 week ago";
+    }
+    return `${Math.abs(diffWeeks)} weeks ago`;
+  }
+
+  _formatWeekLabelWithDistance(row, index, currentWeekStart) {
+    if (!row) {
+      return "the selected week";
+    }
+    const base = `${this._weekTitle(row, index)} (${this._rowDateRange(row)})`;
+    const distance = this._weekDistanceLabel(row?.week_start, currentWeekStart);
+    return distance ? `${base} (${distance})` : base;
+  }
+
+  _compensationNote(row, assigneeLabel, originalLabel) {
+    if (row?.override_type !== "compensation") {
+      return "";
+    }
+
+    if (row?.override_source === "manual") {
+      const swappedWith = originalLabel || "another flatmate";
+      const elapsed = this._weekDistanceLabel(row?.source_week_start, row?.week_start);
+      return elapsed ? `Swapped with ${swappedWith} ${elapsed}` : `Swapped with ${swappedWith}`;
+    }
+
+    return `Make-up shift: ${assigneeLabel} covers ${originalLabel || "the original turn"}`;
+  }
+
   _normalizePatchValue(value) {
     return value == null ? null : value;
   }
@@ -970,7 +1015,6 @@ class HassFlatmateCleaningCard extends HTMLElement {
           Number.isInteger(originalMemberId) && originalMemberId > 0
             ? this._memberName(memberMap, originalMemberId)
             : row.original_assignee_name || "";
-        const originalName = originalLabel ? this._escape(originalLabel) : "";
         const completedByMemberId = Number(row.completed_by_member_id);
         const completedByLabel =
           Number.isInteger(completedByMemberId) && completedByMemberId > 0
@@ -996,12 +1040,15 @@ class HassFlatmateCleaningCard extends HTMLElement {
           : "";
 
         const secondary =
-          row.override_type === "manual_swap" && originalName && originalName !== assigneeName
-            ? `<span class="meta-note">Swapped with ${originalName}</span>`
+          row.override_type === "manual_swap" && originalLabel && originalLabel !== assigneeLabel
+            ? `<span class="meta-note">${this._escape(`Swapped with ${originalLabel}`)}</span>`
             : row.override_type === "compensation"
-              ? row.override_source === "manual"
-                ? `<span class="meta-note">Swap return week: ${assigneeName} covers ${originalName || "the original turn"}</span>`
-                : `<span class="meta-note">Make-up shift: ${assigneeName} covers ${originalName || "the original turn"}</span>`
+              ? (() => {
+                  const compensationNote = this._compensationNote(row, assigneeLabel, originalLabel);
+                  return compensationNote
+                    ? `<span class="meta-note">${this._escape(compensationNote)}</span>`
+                    : "";
+                })()
               : "";
 
         const actionParts = [];
@@ -1074,6 +1121,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
         ? this._memberName(memberMap, actorMemberId)
         : String(this._hass?.user?.name || "Someone");
     const actorNameEscaped = this._escape(actorName);
+    const currentWeekStartForDistance = weeks.find((row) => row.is_current)?.week_start || weeks[0]?.week_start || "";
     const modalWeek = this._resolveModalWeek(weeks);
     const modalAssigneeId = Number(this._modalAssigneeMemberId || modalWeek?.assignee_member_id);
     const modalAssigneeName = this._memberName(memberMap, modalAssigneeId);
@@ -1085,9 +1133,11 @@ class HassFlatmateCleaningCard extends HTMLElement {
       ? this._memberName(memberMap, modalCleanerId)
       : "the selected flatmate";
     const modalCleanerNameEscaped = this._escape(modalCleanerName);
-    const modalWeekLabel = modalWeek
-      ? `${this._weekTitle(modalWeek, 0)} (${this._rowDateRange(modalWeek)})`
-      : "the selected week";
+    const modalWeekLabel = this._formatWeekLabelWithDistance(
+      modalWeek,
+      0,
+      currentWeekStartForDistance
+    );
     const modalCompensationWeek =
       this._modalChoice === "takeover" && hasValidModalCleaner
         ? this._findCompensationPreviewWeek(weeks, modalCleanerId, modalWeek?.week_start)
@@ -1096,10 +1146,11 @@ class HassFlatmateCleaningCard extends HTMLElement {
       ? weeks.findIndex((row) => row.week_start === modalCompensationWeek.week_start)
       : -1;
     const modalCompensationWeekLabel = modalCompensationWeek
-      ? `${this._weekTitle(
+      ? this._formatWeekLabelWithDistance(
           modalCompensationWeek,
-          modalCompensationWeekIndex >= 0 ? modalCompensationWeekIndex : 0
-        )} (${this._rowDateRange(modalCompensationWeek)})`
+          modalCompensationWeekIndex >= 0 ? modalCompensationWeekIndex : 0,
+          currentWeekStartForDistance
+        )
       : "the next eligible original shift in the visible schedule";
     const modalCompensationWeekLabelEscaped = this._escape(modalCompensationWeekLabel);
 
@@ -1158,9 +1209,11 @@ class HassFlatmateCleaningCard extends HTMLElement {
     const swapWeekIndex = swapModalWeek
       ? weeks.findIndex((row) => row.week_start === swapModalWeek.week_start)
       : -1;
-    const swapWeekLabel = swapModalWeek
-      ? `${this._weekTitle(swapModalWeek, swapWeekIndex >= 0 ? swapWeekIndex : 0)} (${this._rowDateRange(swapModalWeek)})`
-      : "the selected week";
+    const swapWeekLabel = this._formatWeekLabelWithDistance(
+      swapModalWeek,
+      swapWeekIndex >= 0 ? swapWeekIndex : 0,
+      currentWeekStartForDistance
+    );
     const swapReturnWeek =
       hasValidSwapTarget && swapModalWeek
         ? this._findSwapReturnPreviewWeek(
@@ -1176,10 +1229,11 @@ class HassFlatmateCleaningCard extends HTMLElement {
             swapModalWeek?.week_start
           );
     const swapReturnWeekLabel = swapReturnWeek
-      ? `${this._weekTitle(
+      ? this._formatWeekLabelWithDistance(
           swapReturnWeek,
-          Math.max(0, weeks.findIndex((row) => row.week_start === swapReturnWeek.week_start))
-        )} (${this._rowDateRange(swapReturnWeek)})`
+          Math.max(0, weeks.findIndex((row) => row.week_start === swapReturnWeek.week_start)),
+          currentWeekStartForDistance
+        )
       : "the next eligible regular week in the schedule";
     const swapCancelPartnerName =
       Number.isInteger(swapExistingPartnerId) &&
@@ -1265,23 +1319,21 @@ class HassFlatmateCleaningCard extends HTMLElement {
             : row.original_assignee_name || "";
         const originalName = originalLabel ? this._escape(originalLabel) : "";
         const completedByMemberId = Number(row.completed_by_member_id);
-        const completedByName =
+        const completedByLabel =
           Number.isInteger(completedByMemberId) && completedByMemberId > 0
-            ? this._escape(this._memberName(memberMap, completedByMemberId))
+            ? this._memberName(memberMap, completedByMemberId)
             : row.completed_by_name
-              ? this._escape(row.completed_by_name)
+              ? row.completed_by_name
               : "";
+        const completedByName = completedByLabel ? this._escape(completedByLabel) : "";
 
         let compactNote = "";
-        if (row.override_type === "manual_swap" && originalName && originalName !== assigneeName) {
-          compactNote = `Swapped with ${originalName}`;
+        if (row.override_type === "manual_swap" && originalLabel && originalLabel !== assigneeLabel) {
+          compactNote = `Swapped with ${originalLabel}`;
         } else if (row.override_type === "compensation") {
-          compactNote =
-            row.override_source === "manual"
-              ? `Swap return week: ${assigneeName} covers ${originalName || "the original turn"}`
-              : `Make-up shift: ${assigneeName} covers ${originalName || "the original turn"}`;
-        } else if (isDone && completedByName) {
-          compactNote = `Done by ${completedByName}`;
+          compactNote = this._compensationNote(row, assigneeLabel, originalLabel);
+        } else if (isDone && completedByLabel) {
+          compactNote = `Done by ${completedByLabel}`;
         } else if (isMissed) {
           compactNote = "Not confirmed";
         }
@@ -1356,7 +1408,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
                 </button>
               </div>
 
-              <p class="modal-week">${this._escape(this._weekTitle(modalWeek, 0))} • ${this._escape(this._rowDateRange(modalWeek))}</p>
+              <p class="modal-week">${this._escape(modalWeekLabel)}</p>
               <p class="modal-preview">Original assignee: <strong>${this._escape(modalAssigneeName)}</strong></p>
 
               <div class="choice-group">

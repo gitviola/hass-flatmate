@@ -848,15 +848,45 @@ def get_cleaning_current(session: Session, at: datetime | None = None) -> dict:
     }
 
 
+def _parse_source_week_start(payload: dict | None) -> date | None:
+    if not isinstance(payload, dict):
+        return None
+
+    source_value = payload.get("source_week_start") or payload.get("week_start")
+    if isinstance(source_value, date):
+        return source_value
+    if not isinstance(source_value, str):
+        return None
+
+    normalized = source_value.strip()
+    if not normalized:
+        return None
+    normalized = normalized.split("T", maxsplit=1)[0].split(" ", maxsplit=1)[0]
+    try:
+        return date.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+
 def get_schedule(session: Session, *, weeks_ahead: int, from_week_start: date | None = None) -> list[dict]:
     start = from_week_start or week_start_for(now_utc())
     rows: list[dict] = []
+    source_week_by_event_id: dict[int, date | None] = {}
 
     for offset in range(max(weeks_ahead, 0)):
         week = add_weeks(start, offset)
         assignment = ensure_assignment(session, week)
         baseline_id = baseline_assignee_member_id(session, week)
         effective_id, override = effective_assignee_member_id(session, week)
+        source_week_start = None
+        if override is not None and override.source_event_id is not None:
+            event_id = int(override.source_event_id)
+            if event_id not in source_week_by_event_id:
+                event = session.get(ActivityEvent, event_id)
+                source_week_by_event_id[event_id] = _parse_source_week_start(
+                    event.payload_json if event is not None else None
+                )
+            source_week_start = source_week_by_event_id.get(event_id)
         rows.append(
             {
                 "week_start": week,
@@ -864,6 +894,7 @@ def get_schedule(session: Session, *, weeks_ahead: int, from_week_start: date | 
                 "effective_assignee_member_id": effective_id,
                 "override_type": override.type.value if override else None,
                 "override_source": override.source.value if override else None,
+                "source_week_start": source_week_start,
                 "status": assignment.status.value,
                 "completed_by_member_id": assignment.completed_by_member_id,
                 "completion_mode": assignment.completion_mode,

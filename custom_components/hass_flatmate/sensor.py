@@ -411,6 +411,7 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
                     "baseline_assignee_name": baseline_name,
                     "override_type": override_type,
                     "override_source": override_source,
+                    "source_week_start": row.get("source_week_start"),
                     "note": note,
                     "is_current": is_current,
                     "is_past": is_past,

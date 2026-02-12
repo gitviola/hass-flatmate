@@ -2,11 +2,15 @@
 
 ## [Unreleased]
 
+## [0.1.21] - 2026-02-12
+
 ### Changed
 - Cleaning card swap UX now describes and previews a two-week shift exchange (selected week + return week) rather than a single-week replacement.
+- Cleaning done/swap modal week labels now include relative timing hints (for example `in 2 weeks`) for clearer consequence previews.
 
 ### Fixed
 - Cleaning schedule sensor now exposes `override_source` and labels manual compensation rows as swap-return weeks for clearer UI wording.
+- Cleaning schedule sensor now exposes `source_week_start`, enabling concise swap-return notes like `Swapped with Martina 3 weeks ago`.
 
 ## [0.1.20] - 2026-02-12
 

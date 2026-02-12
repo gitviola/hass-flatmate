@@ -155,6 +155,7 @@ class CleaningScheduleRow(BaseModel):
     effective_assignee_member_id: int | None
     override_type: str | None
     override_source: str | None = None
+    source_week_start: date | None = None
     status: str | None = None
     completed_by_member_id: int | None = None
     completion_mode: str | None = None

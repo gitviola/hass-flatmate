@@ -361,6 +361,7 @@ def test_swap_exchanges_two_weeks_and_cancel_restores_both(client, auth_headers)
     return_row = row_map[expected_return_week]
     assert return_row["override_type"] == "compensation"
     assert return_row["override_source"] == "manual"
+    assert return_row["source_week_start"] == week_start.isoformat()
     assert return_row["baseline_assignee_member_id"] == member_b_id
     assert return_row["effective_assignee_member_id"] == member_a_id
 
