@@ -159,7 +159,7 @@ class HassFlatmateShoppingCompactCard extends HTMLElement {
 
     this._root.innerHTML = `
       <ha-card>
-        <div class="card ${titleText ? "with-title" : "without-title"}">
+        <div class="card ${titleText ? "with-title" : "without-title"} ${this._config.eink ? "eink" : ""}">
           ${headerHtml}
 
           <ul class="list">
@@ -281,8 +281,7 @@ class HassFlatmateShoppingCompactCard extends HTMLElement {
 
         .empty-list {
           padding: 8px 10px;
-          border: 1px solid var(--divider-color, #e0e0e0);
-          border-radius: var(--ha-border-radius-md, 8px);
+          border: none;
           list-style: none;
         }
 
@@ -296,6 +295,20 @@ class HassFlatmateShoppingCompactCard extends HTMLElement {
             text-align: left;
             white-space: normal;
           }
+        }
+
+        .card.eink {
+          --divider-color: #000;
+          --secondary-text-color: #000;
+          --secondary-background-color: #fff;
+        }
+
+        .card.eink .add-badge {
+          border: 1px solid #000;
+        }
+
+        .card.eink .count-chip {
+          border-color: #000;
         }
       </style>
     `;
@@ -352,6 +365,11 @@ class HassFlatmateShoppingCompactCardEditor extends HTMLElement {
         <label for="hf-editor-add-link">Add item link</label>
         <input id="hf-editor-add-link" type="text" placeholder="/shopping-list/0" value="${this._config.add_link || ""}" />
 
+        <label>
+          <input id="hf-editor-eink" type="checkbox" ${this._config.eink ? "checked" : ""} />
+          E-ink display mode (high contrast)
+        </label>
+
         <label for="hf-editor-entity">Data entity</label>
         <ha-entity-picker id="hf-editor-entity"></ha-entity-picker>
       </div>
@@ -369,7 +387,7 @@ class HassFlatmateShoppingCompactCardEditor extends HTMLElement {
           margin-bottom: -4px;
         }
 
-        .editor input {
+        .editor input[type="text"] {
           box-sizing: border-box;
           width: 100%;
           min-height: 40px;
@@ -396,6 +414,14 @@ class HassFlatmateShoppingCompactCardEditor extends HTMLElement {
       this._emitConfig({
         ...this._config,
         add_link: event.target.value || "",
+      });
+    });
+
+    const einkCheckbox = this._root.querySelector("#hf-editor-eink");
+    einkCheckbox?.addEventListener("change", (event) => {
+      this._emitConfig({
+        ...this._config,
+        eink: event.target.checked,
       });
     });
 
@@ -430,6 +456,11 @@ class HassFlatmateShoppingCompactCardEditor extends HTMLElement {
     const addLinkInput = this._root.querySelector("#hf-editor-add-link");
     if (addLinkInput && active !== addLinkInput) {
       addLinkInput.value = this._config.add_link || "";
+    }
+
+    const einkCheckbox = this._root.querySelector("#hf-editor-eink");
+    if (einkCheckbox) {
+      einkCheckbox.checked = !!this._config.eink;
     }
 
     const entityPicker = this._root.querySelector("#hf-editor-entity");

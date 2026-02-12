@@ -1673,7 +1673,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
     this._root.innerHTML = `
       <ha-card>
-        <div class="card ${compactMode ? "compact" : ""}">
+        <div class="card ${compactMode ? "compact" : ""} ${this._config.eink ? "eink" : ""}">
           <div class="header ${compactMode ? "compact-header" : ""}">
             <h2>${this._escape(this._config.title)}</h2>
             ${compactMode && this._config.edit_link ? `<a class="edit-badge" href="${this._escape(this._config.edit_link)}"><ha-icon icon="mdi:pencil"></ha-icon> Manage schedule</a>` : ""}
@@ -2630,6 +2630,20 @@ class HassFlatmateCleaningCard extends HTMLElement {
             align-items: flex-start;
           }
         }
+
+        .card.eink {
+          --divider-color: #000;
+          --secondary-text-color: #000;
+          --secondary-background-color: #fff;
+        }
+
+        .card.eink .edit-badge {
+          border: 1px solid #000;
+        }
+
+        .card.eink .compact-status {
+          border-color: #000;
+        }
       </style>
     `;
 
@@ -2710,6 +2724,11 @@ class HassFlatmateCleaningCardEditor extends HTMLElement {
         ${this._config.layout === "compact" ? `
           <label for="hf-editor-edit-link">Edit link (optional)</label>
           <input id="hf-editor-edit-link" type="text" placeholder="/flatmate/cleaning" value="${this._config.edit_link || ""}" />
+
+          <label>
+            <input id="hf-editor-eink" type="checkbox" ${this._config.eink ? "checked" : ""} />
+            E-ink display mode (high contrast)
+          </label>
         ` : ""}
       </div>
 
@@ -2804,6 +2823,14 @@ class HassFlatmateCleaningCardEditor extends HTMLElement {
       });
     });
 
+    const einkCheckbox = this._root.querySelector("#hf-editor-eink");
+    einkCheckbox?.addEventListener("change", (event) => {
+      this._emitConfig({
+        ...this._config,
+        eink: event.target.checked,
+      });
+    });
+
     this._editorReady = true;
   }
 
@@ -2847,6 +2874,11 @@ class HassFlatmateCleaningCardEditor extends HTMLElement {
     const editLinkInput = this._root.querySelector("#hf-editor-edit-link");
     if (editLinkInput && active !== editLinkInput) {
       editLinkInput.value = this._config.edit_link || "";
+    }
+
+    const einkCheckbox = this._root.querySelector("#hf-editor-eink");
+    if (einkCheckbox) {
+      einkCheckbox.checked = !!this._config.eink;
     }
   }
 }

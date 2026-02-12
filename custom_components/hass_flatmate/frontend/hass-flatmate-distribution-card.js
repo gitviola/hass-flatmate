@@ -228,7 +228,7 @@ class HassFlatmateDistributionCard extends HTMLElement {
 
     this._root.innerHTML = `
       <ha-card>
-        <div class="card ${layout === "compact" ? "compact-layout" : "bars-layout"} ${showHeader ? "with-header" : "without-header"}">
+        <div class="card ${layout === "compact" ? "compact-layout" : "bars-layout"} ${showHeader ? "with-header" : "without-header"} ${this._config.eink ? "eink" : ""}">
           ${headerHtml}
 
           ${metaRowHtml}
@@ -415,6 +415,12 @@ class HassFlatmateDistributionCard extends HTMLElement {
           padding-top: var(--ha-space-3, 12px);
           padding-bottom: var(--ha-space-2, 8px);
         }
+
+        .card.eink {
+          --divider-color: #000;
+          --secondary-text-color: #000;
+          --secondary-background-color: #fff;
+        }
       </style>
     `;
   }
@@ -476,6 +482,11 @@ class HassFlatmateDistributionCardEditor extends HTMLElement {
           <option value="bars" ${this._config.layout === "compact" ? "" : "selected"}>Bars</option>
           <option value="compact" ${this._config.layout === "compact" ? "selected" : ""}>Compact boxes</option>
         </select>
+
+        <label>
+          <input id="hf-editor-eink" type="checkbox" ${this._config.eink ? "checked" : ""} />
+          E-ink display mode (high contrast)
+        </label>
       </div>
 
       <style>
@@ -547,6 +558,15 @@ class HassFlatmateDistributionCardEditor extends HTMLElement {
         layout: event.target.value || "bars",
       });
     });
+
+    const einkCheckbox = this._root.querySelector("#hf-editor-eink");
+    einkCheckbox?.addEventListener("change", (event) => {
+      this._emitConfig({
+        ...this._config,
+        eink: event.target.checked,
+      });
+    });
+
     this._editorReady = true;
   }
 
@@ -577,6 +597,11 @@ class HassFlatmateDistributionCardEditor extends HTMLElement {
       if (layoutPicker.value !== nextLayout) {
         layoutPicker.value = nextLayout;
       }
+    }
+
+    const einkCheckbox = this._root.querySelector("#hf-editor-eink");
+    if (einkCheckbox) {
+      einkCheckbox.checked = !!this._config.eink;
     }
   }
 }
