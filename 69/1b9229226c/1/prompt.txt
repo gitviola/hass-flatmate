@@ -1,0 +1,101 @@
+Implement the following plan:
+
+# Plan: Docker-Compose Live Development Environment
+
+## Context
+
+Currently, every change requires: release → push → update HA → restart → test. This plan creates a local docker-compose dev environment where:
+- **Backend** (FastAPI) hot-reloads on Python file changes (uvicorn `--reload`)
+- **Frontend** JS cards are served live via volume mount — just hard-refresh the browser
+- **Integration** Python code is live-mounted — reload via HA UI (Settings → Integrations → 3-dot menu → Reload)
+
+## Files to Create/Modify
+
+### 1. `compose.yml` (NEW)
+
+Two services on a shared bridge network:
+
+- **`homeassistant`**: official `homeassistant/home-assistant:latest` image
+  - `dev/ha-config:/config` — HA config/state directory
+  - `./custom_components/hass_flatmate:/config/custom_components/hass_flatmate` — overlay mount for live integration code + frontend JS
+  - Port `8123:8123`
+
+- **`backend`**: lightweight Python 3.12 dev image (built from `dev/Dockerfile.backend`)
+  - `./addon/hass_flatmate_service:/app` — volume-mounted source with uvicorn `--reload`
+  - `./dev/backend-data:/data` — persistent SQLite DB
+  - Port `8099:8099`
+  - Env: `HASS_FLATMATE_API_TOKEN=dev-token`, `HASS_FLATMATE_DB_PATH=/data/hass_flatmate.db`
+
+Both services on `hass-flatmate-dev` bridge network. HA reaches backend at `http://backend:8099` via Docker DNS.
+
+### 2. `dev/Dockerfile.backend` (NEW)
+
+Minimal Python 3.12-slim image. Installs only the pip dependencies (fastapi, uvicorn, sqlalchemy, pydantic) at build time. Source code volume-mounted at runtime. Runs `uvicorn app.main:app --host 0.0.0.0 --port 8099 --reload --reload-dir /app/app`.
+
+### 3. `dev/ha-config/configuration.yaml` (NEW)
+
+Minimal HA config with:
+- `default_config:` for standard components
+- Debug logging for `custom_components.hass_flatmate`
+- Person component enabled (needed for member sync)
+
+### 4. `dev/ha-config/.gitignore` (NEW)
+
+Track only `configuration.yaml` and `.gitignore`. Ignore all HA-generated state (`.storage/`, `*.db`, `.HA_VERSION`, etc.).
+
+### 5. `.gitignore` (MODIFY)
+
+Add `dev/backend-data/` entry.
+
+### 6. `Makefile` (MODIFY)
+
+Add targets:
+- `dev` — creates data dirs, runs `docker compose up -d`, prints setup instructions
+- `dev-down` — stops containers
+- `dev-logs` — tails logs
+- `dev-clean` — stops containers and wipes all dev data
+
+## First-Time Setup (printed by `make dev`)
+
+1. `make dev`
+2. Open `http://localhost:8123`, create first user (HA onboarding)
+3. Settings → Integrations → Add → "Hass Flatmate"
+4. Base URL: `http://backend:8099`
+5. API Token: `dev-token`
+6. Add the example dashboard from `examples/lovelace-flatmate-dashboard.yaml`
+
+## Hot-Reload Behavior
+
+| Component | Edit location | Reload mechanism | Delay |
+|-----------|--------------|-----------------|-------|
+| Backend Python | `addon/hass_flatmate_service/app/` | Automatic (uvicorn `--reload`) | ~2s |
+| Integration Python | `custom_components/hass_flatmate/` | HA UI: Integration → Reload | ~5s |
+| Frontend JS | `custom_components/hass_flatmate/frontend/` | Hard-refresh browser (Cmd+Shift+R) | Instant |
+
+## Verification
+
+1. `make dev` starts both containers without errors
+2. `curl http://localhost:8099/health` returns `200`
+3. HA accessible at `http://localhost:8123`
+4. Integration configurable with `http://backend:8099` + `dev-token`
+5. Edit a backend file → uvicorn auto-restarts (visible in `make dev-logs`)
+6. Edit a JS frontend file → hard-refresh browser → change visible
+7. Edit integration Python → reload integration in HA UI → change active
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/ms/.REDACTED.jsonl
+
+---
+
+The webpage at http://localhost:8123/?auth_callback=1&code=438d2515fab643ed986e8eea9b606667&storeToken=true&REDACTED%3D might be temporarily down or it may have moved permanently to a new web address.
+ERR_FAILED
+
+after setting up home assistant
+
+---
+
+what do i put for the service base url and api token?
+
+---
+
+excellent, works! let's commit
