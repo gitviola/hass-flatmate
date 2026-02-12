@@ -1,0 +1,137 @@
+Implement the following plan:
+
+# Plan: Card styling overhaul + shopping item history
+
+## Context
+
+Several UX improvements across the shopping, cleaning, and distribution cards:
+- Interactive cards have card-in-card look (bordered item rows inside bordered `<ha-card>`) that's visually cluttered — remove outer card chrome
+- Shopping checkmark icon looks "already done" (green filled) — should look like an unchecked action
+- No way to see purchase history per shopping item — want a click-to-see-history modal
+- Compact distribution chart truncates names when someone has 0 purchases
+- Cleaning card already has row clickability working correctly
+
+## Files to modify
+
+- `custom_components/hass_flatmate/frontend/hass-flatmate-shopping-card.js` — Remove outer card border, restyle check icon, add item history modal
+- `custom_components/hass_flatmate/frontend/hass-flatmate-cleaning-card.js` — Remove outer card border (interactive mode only)
+- `custom_components/hass_flatmate/frontend/hass-flatmate-distribution-card.js` — Fix compact name truncation
+- `custom_components/hass_flatmate/sensor.py` — Add `item_history` to ShoppingDataSensor (purchase history per item name)
+
+## Changes
+
+### 1. Remove outer ha-card chrome — shopping card + cleaning card
+
+Keep `<ha-card>` element (HA expects it) but flatten its visual styling. Add to both cards' CSS:
+
+```css
+ha-card {
+  box-shadow: none;
+  border: none;
+  background: transparent;
+}
+```
+
+For the cleaning card, only apply this in interactive mode (not compact, which doesn't nest cards).
+
+### 2. Shopping checkmark — unchecked appearance
+
+**Icon**: Change `mdi:check-circle-outline` → `mdi:circle-outline` (empty circle, invites clicking)
+
+**CSS**: Remove green tint from resting state. Go neutral, turn green on hover:
+
+```css
+.todo-check {
+  color: var(--secondary-text-color);
+  border-color: var(--divider-color);
+  background: var(--card-background-color);
+}
+.todo-check:hover {
+  color: var(--success-color, #4caf50);
+  border-color: color-mix(in srgb, var(--success-color, #4caf50) 45%, var(--divider-color));
+  background: color-mix(in srgb, var(--success-color, #4caf50) 10%, var(--card-background-color));
+}
+```
+
+### 3. Shopping item click → purchase history modal
+
+#### 3a. Add item_history to sensor.py (ShoppingDataSensor)
+
+The coordinator already fetches ALL shopping items (open + completed) via `get_shopping_items()`. Build purchase history from completed items, limited to items currently on the open list:
+
+```python
+# In ShoppingDataSensor.extra_state_attributes:
+all_items = self.coordinator.data.get("shopping_items", [])
+open_name_keys = {str(item.get("name", "")).strip().lower() for item in all_items if item.get("status") == "open"}
+# Group completed items by normalized name, only for names in open list
+# Each entry: { "completed_by_name": str, "completed_by_member_id": int, "completed_at": ISO str }
+# Sort by completed_at descending, limit 10 per item
+# Result: { "milk": [...], "bread": [...] }
+```
+
+Add `item_history` to the returned attributes dict.
+
+#### 3b. Item row click handler + modal state (shopping card JS)
+
+Add state variables: `_historyModalOpen`, `_historyModalItemName`.
+
+Make `.item-main` clickable (with cursor pointer). On click, look up `item_history[normalizedName]` from sensor attributes and open modal.
+
+Event binding: add click listener on `.item-main` elements with `data-action="open-item-history"` and `data-item-name`.
+
+#### 3c. History modal template
+
+Reuse the modal pattern from the cleaning card (backdrop + modal div):
+
+```
+Header: "{ItemName}" + close button
+Body: timeline list of purchases, newest first
+  Each entry: icon (mdi:cart-check) + "{MemberName}" + relative time
+  If no history: "No purchase history available"
+Footer: Close button
+```
+
+#### 3d. Relative time helper
+
+Add `_relativeTime(isoDatetime)` returning: "just now", "1 min ago", "5 hours ago", "2 days ago", "1 week ago", "3 weeks ago", "1 month ago", "6 months ago" etc.
+
+### 4. Fix compact distribution chart name truncation
+
+Current issue: `white-space: nowrap` + `text-overflow: ellipsis` + `overflow: hidden` on `.compact-name` causes names to truncate when their cell is small (count = 0).
+
+Changes to `.compact-cell` and `.compact-name`:
+- Reduce padding from `10px 6px` to `8px 4px`
+- Allow name to wrap up to 2 lines: remove nowrap, use `-webkit-line-clamp: 2`
+- Keep overflow hidden for safety but allow wrapping
+
+```css
+.compact-cell { padding: 8px 4px; }
+.compact-name {
+  font-weight: 600;
+  line-height: 1.15;
+  font-size: clamp(0.56rem, 1.1vw, 0.76rem);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+```
+
+## Verification
+
+1. `node --check` on all three JS files
+2. `python3 -m compileall custom_components/hass_flatmate`
+3. `make test` — backend tests pass (no backend changes)
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/ms/.REDACTED.jsonl
+
+---
+
+bumb version and push
+
+---
+
+Uhmm but the cards itself of the schedule weeks and the open items should be looking like proper home assistant cards with background color. I mean using the proper home assistant design elements the best practice for the tiles of the sections so it looks like it fits in..
