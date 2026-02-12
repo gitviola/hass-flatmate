@@ -247,11 +247,11 @@ def _build_swap_notifications(
     else:
         msg_a = (
             f"{actor_prefix}canceled the shift swap between week {selected_week_label} and week {return_week_label}. "
-            "Original assignments were restored."
+            "Everyone is back on their regular schedule."
         )
         msg_b = (
             f"{actor_prefix}canceled the shift swap between week {selected_week_label} and week {return_week_label}. "
-            "Original assignments were restored."
+            "Everyone is back on their regular schedule."
         )
 
     if original_name:
@@ -375,6 +375,7 @@ def upsert_manual_swap(
         session.flush()
         action = "created"
     else:
+        old_member_to_id = existing.member_to_id
         existing.member_from_id = member_a_id
         existing.member_to_id = member_b_id
         action = "updated"
@@ -437,6 +438,26 @@ def upsert_manual_swap(
         action=action,
         actor_name=actor_member.display_name if actor_member else None,
     )
+
+    # Notify old partner if they were replaced in a swap edit
+    if action == "updated" and old_member_to_id != member_b_id:
+        old_partner = get_member_by_id(session, old_member_to_id)
+        if old_partner is not None:
+            actor_prefix = f"{actor_member.display_name} " if actor_member else "A flatmate "
+            new_partner = get_member_by_id(session, member_b_id)
+            new_partner_name = new_partner.display_name if new_partner else "another flatmate"
+            notifications.append(
+                _member_notification(
+                    old_partner,
+                    "Weekly Cleaning Shift",
+                    f"{actor_prefix}changed the swap for week {week_start.isoformat()}. "
+                    f"{new_partner_name} is now swapped in instead of you. Your original schedule is restored.",
+                    week_start=week_start,
+                    notification_kind="swap_notice",
+                    source_action="cleaning_swap_updated",
+                )
+            )
+
     ensure_assignment(session, week_start)
     ensure_assignment(session, return_week_start)
 
@@ -563,14 +584,15 @@ def mark_cleaning_undone(
     *,
     week_start: date,
     actor_user_id: str | None,
-) -> None:
+) -> list[dict]:
     _ensure_week_start_is_monday(week_start)
     actor_member = resolve_actor_member(session, actor_user_id)
     assignment = ensure_assignment(session, week_start)
 
     if assignment.status != CleaningAssignmentStatus.DONE:
-        return
+        return []
 
+    previous_completed_by_id = assignment.completed_by_member_id
     previous_mode = assignment.completion_mode
 
     assignment.status = CleaningAssignmentStatus.PENDING
@@ -589,6 +611,7 @@ def mark_cleaning_undone(
     if override is not None and override.status == OverrideStatus.APPLIED:
         override.status = OverrideStatus.PLANNED
 
+    canceled_compensation_members: list[tuple[int, int, date]] = []
     if previous_mode == "takeover":
         takeover_event = _latest_takeover_event_for_week(session, week_start)
         if takeover_event is not None:
@@ -600,6 +623,9 @@ def mark_cleaning_undone(
                 )
             ).scalars().all()
             for compensation in linked_compensations:
+                canceled_compensation_members.append(
+                    (compensation.member_from_id, compensation.member_to_id, compensation.week_start)
+                )
                 compensation.status = OverrideStatus.CANCELED
 
     log_event(
@@ -616,6 +642,78 @@ def mark_cleaning_undone(
     )
 
     session.commit()
+
+    # Build notifications
+    notifications: list[dict] = []
+    actor_prefix = f"{actor_member.display_name} " if actor_member else "A flatmate "
+    title = "Weekly Cleaning Shift"
+    week_label = week_start.isoformat()
+
+    # Notify the effective assignee that their week was reopened
+    effective_id, _ = effective_assignee_member_id(session, week_start)
+    assignee = get_member_by_id(session, effective_id) if effective_id else None
+    if assignee is not None:
+        notifications.append(
+            _member_notification(
+                assignee,
+                title,
+                f"{actor_prefix}marked the cleaning shift for week {week_label} as not done yet.",
+                week_start=week_start,
+                notification_kind="undo_notice",
+                source_action="cleaning_undone",
+            )
+        )
+
+    # If a different person had completed it (swap/takeover), notify them too
+    if (
+        previous_completed_by_id is not None
+        and effective_id is not None
+        and previous_completed_by_id != effective_id
+    ):
+        completer = get_member_by_id(session, previous_completed_by_id)
+        if completer is not None:
+            notifications.append(
+                _member_notification(
+                    completer,
+                    title,
+                    f"{actor_prefix}undid the completion for week {week_label}. The shift still needs to be done.",
+                    week_start=week_start,
+                    notification_kind="undo_notice",
+                    source_action="cleaning_undone",
+                )
+            )
+
+    # If takeover compensation was canceled, notify both parties
+    for from_id, to_id, comp_week in canceled_compensation_members:
+        from_member = get_member_by_id(session, from_id)
+        to_member = get_member_by_id(session, to_id)
+        comp_label = comp_week.isoformat()
+        if from_member is not None:
+            notifications.append(
+                _member_notification(
+                    from_member,
+                    title,
+                    f"{actor_prefix}undid the takeover for week {week_label}. "
+                    f"Your return shift for week {comp_label} is no longer needed.",
+                    week_start=comp_week,
+                    notification_kind="undo_notice",
+                    source_action="cleaning_undone",
+                )
+            )
+        if to_member is not None:
+            notifications.append(
+                _member_notification(
+                    to_member,
+                    title,
+                    f"{actor_prefix}undid the takeover for week {week_label}. "
+                    f"The return shift for week {comp_label} is no longer needed — your regular shift is back.",
+                    week_start=comp_week,
+                    notification_kind="undo_notice",
+                    source_action="cleaning_undone",
+                )
+            )
+
+    return notifications
 
 
 def _build_compensation_notifications(
@@ -637,11 +735,11 @@ def _build_compensation_notifications(
     title = "Weekly Cleaning Shift"
     msg_from = (
         f"{actor_prefix}{member_to_name} took over your shift in week {source_label}. "
-        f"Your make-up shift is planned for week {make_up_label}."
+        f"Your return shift is planned for week {make_up_label}."
     )
     msg_to = (
         f"{actor_prefix}you took over {member_to_name}'s shift in week {source_label}. "
-        f"{member_to_name} is assigned to your regular week {make_up_label} as a make-up shift."
+        f"{member_to_name} is assigned to your regular week {make_up_label} as a return shift."
     )
     return [
         _member_notification(
@@ -711,7 +809,7 @@ def _build_inactive_member_override_notifications(
         )
     else:
         message = (
-            f"A planned cleaning make-up shift for week {override.week_start.isoformat()} was canceled because "
+            f"A planned cleaning return shift for week {override.week_start.isoformat()} was canceled because "
             f"{inactive_label} is no longer active in the flat."
         )
 

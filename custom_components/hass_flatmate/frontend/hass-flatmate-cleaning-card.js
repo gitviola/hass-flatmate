@@ -297,7 +297,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
         : `Swap return — ${swappedWith}'s regular week`;
     }
 
-    return `Make-up for ${originalLabel || "the original assignee"}`;
+    return `Return shift for ${originalLabel || "the original assignee"}`;
   }
 
   _normalizePatchValue(value) {
@@ -881,6 +881,60 @@ class HassFlatmateCleaningCard extends HTMLElement {
     }
   }
 
+  async _cancelLinkedSwap(row, weeks) {
+    if (!row || row.override_type !== "compensation") {
+      return;
+    }
+    const compensationWeekStart = String(row.week_start || "");
+    const sourceWeekStart = row.source_week_start;
+    if (!sourceWeekStart) {
+      this._errorMessage = "Cannot find the linked swap week.";
+      this._render();
+      return;
+    }
+    const sourceRow = weeks.find(
+      (w) => w.override_type === "manual_swap" && String(w.week_start || "") === String(sourceWeekStart)
+    );
+    if (!sourceRow) {
+      this._errorMessage = "The original swap week is no longer visible.";
+      this._render();
+      return;
+    }
+    const originalAssigneeId = Number(
+      sourceRow.original_assignee_member_id ?? sourceRow.baseline_assignee_member_id
+    );
+    const swappedWithId = Number(sourceRow.assignee_member_id);
+    if (
+      !Number.isInteger(originalAssigneeId) ||
+      originalAssigneeId <= 0 ||
+      !Number.isInteger(swappedWithId) ||
+      swappedWithId <= 0 ||
+      originalAssigneeId === swappedWithId
+    ) {
+      this._errorMessage = "Cannot resolve the swap participants.";
+      this._render();
+      return;
+    }
+    // Optimistic UI for the compensation week (reverts to original assignee)
+    const memberMap = this._memberMap(Array.isArray(this._stateObj?.attributes?.members) ? this._stateObj.attributes.members : []);
+    const compensationOriginalId = Number(row.original_assignee_member_id ?? row.baseline_assignee_member_id);
+    if (compensationWeekStart) {
+      this._pendingSwapWeeks.add(compensationWeekStart);
+      this._setWeekPatch(compensationWeekStart, {
+        override_type: null,
+        assignee_member_id: compensationOriginalId,
+        assignee_name: this._memberName(memberMap, compensationOriginalId),
+      });
+      this._render();
+    }
+    try {
+      await this._swapWeek(sourceRow, originalAssigneeId, swappedWithId, true);
+    } finally {
+      this._pendingSwapWeeks.delete(compensationWeekStart);
+      this._render();
+    }
+  }
+
   _bindEvents(weeks, members) {
     if (this._isCompact()) {
       return;
@@ -918,6 +972,15 @@ class HassFlatmateCleaningCard extends HTMLElement {
         const weekStart = String(el.dataset.weekStart || "");
         const row = weekMap.get(weekStart);
         this._openSwapModal(row, members);
+      });
+    });
+
+    this._root.querySelectorAll("[data-action='cancel-linked-swap']").forEach((el) => {
+      el.addEventListener("click", async (event) => {
+        event.stopPropagation();
+        const weekStart = String(el.dataset.weekStart || "");
+        const row = weekMap.get(weekStart);
+        await this._cancelLinkedSwap(row, weeks);
       });
     });
 
@@ -1058,14 +1121,6 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
     const currentWeek =
       scheduleWeeks.find((row) => row.is_current) || weeks[0] || scheduleWeeks[0] || null;
-    const currentStatus = String(currentWeek?.status || "pending");
-
-    const statusLabel =
-      currentStatus === "done" ? "Done" : currentStatus === "missed" ? "Missed" : "Pending";
-
-    const currentAssigneeName =
-      currentWeek?.assignee_name ||
-      (currentWeek?.assignee_member_id ? `Member ${currentWeek.assignee_member_id}` : "Unassigned");
 
     const weekRows = weeks
       .map((row, index) => {
@@ -1080,11 +1135,15 @@ class HassFlatmateCleaningCard extends HTMLElement {
         const weekStart = String(row.week_start || "");
         const isDoneSaving = this._pendingDoneWeeks.has(weekStart);
         const isSwapSaving = this._pendingSwapWeeks.has(weekStart);
+        const isCompensation = row.override_type === "compensation";
+        const sourceSwapDone = isCompensation && row.source_week_start
+          ? weeks.some((w) => w.override_type === "manual_swap" && String(w.week_start || "") === String(row.source_week_start) && String(w.status || "") === "done")
+          : false;
         const canSwap =
           members.length > 1 &&
           !isPast &&
           !isDone &&
-          row.override_type !== "compensation";
+          (!isCompensation || sourceSwapDone);
 
         const assigneeMemberId = Number(row.assignee_member_id);
         const assigneeLabel =
@@ -1116,57 +1175,22 @@ class HassFlatmateCleaningCard extends HTMLElement {
           ? completedByName
           : assigneeName;
 
-        let doneMeta = "";
+        let irregularNote = "";
         if (completedByDifferent) {
           const completionMode = String(row.completion_mode || "");
           if (completionMode === "takeover") {
-            doneMeta = `<span class="meta-note">Took over ${assigneeName}'s shift</span>`;
+            irregularNote = `Took over ${assigneeLabel}'s shift`;
           } else if (row.override_type === "manual_swap") {
-            doneMeta = `<span class="meta-note">Originally ${assigneeName}'s shift (swapped)</span>`;
+            irregularNote = `Swapped from ${originalLabel}`;
           } else {
-            doneMeta = `<span class="meta-note">Originally ${assigneeName}'s shift</span>`;
+            irregularNote = `Originally ${assigneeLabel}'s shift`;
           }
-        } else if (isMissed) {
-          doneMeta = '<span class="meta-note missed">Not confirmed</span>';
-        }
-
-        const notificationSlots = Array.isArray(row?.notification_slots) ? row.notification_slots : [];
-        const hasNotificationIssue = notificationSlots.some((slot) => {
-          const state = String(slot?.state || "").toLowerCase();
-          return ["failed", "skipped", "suppressed", "missing"].includes(state);
-        });
-        const hasNotificationSent = notificationSlots.some((slot) => {
-          const state = String(slot?.state || "").toLowerCase();
-          return state === "sent" || state === "test_redirected";
-        });
-        const notificationMeta = hasNotificationIssue
-          ? '<span class="meta-note notification-issue">Notification issue</span>'
-          : hasNotificationSent
-            ? '<span class="meta-note">Notifications sent</span>'
-            : "";
-
-        const overrideBadge = row.override_type
-          ? `<span class="badge">${this._escape(
-              row.override_type === "manual_swap"
-                ? "Swap"
-                : row.override_source === "manual"
-                  ? "Swap return"
-                  : "Make-up"
-            )}</span>`
-          : "";
-
-        let secondary = "";
-        if (row.override_type === "manual_swap" && originalLabel && originalLabel !== assigneeLabel) {
-          if (completedByDifferent) {
-            secondary = `<span class="meta-note">${this._escape(`Swapped from ${originalLabel}`)}</span>`;
-          } else {
-            secondary = `<span class="meta-note">${this._escape(`Originally ${originalLabel}'s shift`)}</span>`;
-          }
+        } else if (row.override_type === "manual_swap" && originalLabel && originalLabel !== assigneeLabel) {
+          irregularNote = `Originally ${originalLabel}'s shift`;
         } else if (row.override_type === "compensation") {
-          const compensationNote = this._compensationNote(row, assigneeLabel, originalLabel);
-          secondary = compensationNote
-            ? `<span class="meta-note">${this._escape(compensationNote)}</span>`
-            : "";
+          irregularNote = this._compensationNote(row, assigneeLabel, originalLabel);
+        } else if (isMissed) {
+          irregularNote = "Not confirmed";
         }
 
         const actionParts = [];
@@ -1179,11 +1203,12 @@ class HassFlatmateCleaningCard extends HTMLElement {
                ${isDoneSaving || isSwapSaving ? "disabled" : ""}
              >
                <ha-icon icon="${isDone ? "mdi:undo-variant" : "mdi:check-circle-outline"}"></ha-icon>
-               <span>${isDoneSaving ? "Saving..." : isDone ? "Undo" : "Mark done"}</span>
+               <span>${isDone ? "Undo" : "Mark done"}</span>
              </button>`);
         } else {
           const futureLabel = isFuture ? "Upcoming" : "Pending";
-          if (!canSwap || isDone || isMissed) {
+          const showChip = isDone || isMissed || (!canSwap && row.override_type !== "compensation");
+          if (showChip) {
             actionParts.push(`<span class="status-chip ${isDone ? "done" : isMissed ? "missed" : "pending"}">
                  ${isDone ? "Done" : isMissed ? "Missed" : futureLabel}
                </span>`);
@@ -1191,23 +1216,38 @@ class HassFlatmateCleaningCard extends HTMLElement {
         }
 
         if (canSwap) {
-          const swapLabel = row.override_type === "manual_swap" ? "Edit swap" : "Swap";
+          const hasExistingSwap = row.override_type === "manual_swap";
+          const swapLabel = hasExistingSwap ? "Edit swap" : "Swap";
           actionParts.push(`<button
-               class="action swap"
+               class="action ${hasExistingSwap ? "swap" : "swap-neutral"}"
                type="button"
                data-action="open-swap-modal"
                data-week-start="${this._escape(row.week_start)}"
                ${isDoneSaving || isSwapSaving ? "disabled" : ""}
              >
                <ha-icon icon="mdi:swap-horizontal"></ha-icon>
-               <span>${isSwapSaving ? "Saving..." : swapLabel}</span>
+               <span>${swapLabel}</span>
+             </button>`);
+        }
+
+        const canCancelSwap = !isPast && !isDone && isCompensation && !sourceSwapDone;
+        if (canCancelSwap) {
+          actionParts.push(`<button
+               class="action cancel-swap"
+               type="button"
+               data-action="cancel-linked-swap"
+               data-week-start="${this._escape(row.week_start)}"
+               ${isDoneSaving || isSwapSaving ? "disabled" : ""}
+             >
+               <ha-icon icon="mdi:close-circle-outline"></ha-icon>
+               <span>Cancel swap</span>
              </button>`);
         }
 
         const actionControl = actionParts.join("");
 
         return `
-          <li class="week-row ${isCurrent ? "current" : ""} ${isPast ? "past" : ""} ${isDone ? "done" : ""} ${isMissed ? "missed" : ""}"
+          <li class="week-row ${isCurrent ? "current" : ""} ${isPrevious ? "previous" : ""} ${isPast ? "past" : ""} ${isDone ? "done" : ""} ${isMissed ? "missed" : ""}"
               data-action="open-history-modal"
               data-week-start="${this._escape(row.week_start)}"
               role="button"
@@ -1222,13 +1262,8 @@ class HassFlatmateCleaningCard extends HTMLElement {
               <div class="assignee ${isDone ? "striked" : ""}">
                 ${isDone ? '<ha-icon icon="mdi:check"></ha-icon>' : ""}
                 <span>${displayName}</span>
-                ${overrideBadge}
               </div>
-              <div class="week-meta">
-                ${secondary}
-                ${doneMeta}
-                ${notificationMeta}
-              </div>
+              ${irregularNote ? `<span class="irregular-note">${this._escape(irregularNote)}</span>` : ""}
             </div>
             <div class="week-actions">
               ${actionControl}
@@ -1289,11 +1324,11 @@ class HassFlatmateCleaningCard extends HTMLElement {
           <ul class="effect-list">
             <li>Record that <strong>${modalCleanerNameEscaped}</strong> took over <strong>${modalAssigneeNameEscaped}</strong>'s shift in <strong>${this._escape(modalWeekLabel)}</strong>.</li>
             <li>Mark this week as done and credit <strong>${modalCleanerNameEscaped}</strong> as the cleaner.</li>
-            <li>Create a one-time make-up shift: <strong>${modalAssigneeNameEscaped}</strong> is reassigned to <strong>${modalCleanerNameEscaped}</strong>'s next regular week: <strong>${modalCompensationWeekLabelEscaped}</strong>.</li>
+            <li>Create a one-time return shift: <strong>${modalAssigneeNameEscaped}</strong> is reassigned to <strong>${modalCleanerNameEscaped}</strong>'s next regular week: <strong>${modalCompensationWeekLabelEscaped}</strong>.</li>
           </ul>
           <p class="effect-subtitle">Who will be notified</p>
           <ul class="effect-list notification-list">
-            <li><strong>${modalAssigneeNameEscaped}</strong>: "${actorNameEscaped} recorded that ${modalCleanerNameEscaped} took over your shift. Your make-up shift is ${modalCompensationWeekLabelEscaped}."</li>
+            <li><strong>${modalAssigneeNameEscaped}</strong>: "${actorNameEscaped} recorded that ${modalCleanerNameEscaped} took over your shift. Your return shift is ${modalCompensationWeekLabelEscaped}."</li>
             <li><strong>${modalCleanerNameEscaped}</strong>: "${actorNameEscaped} recorded you as the cleaner. ${modalAssigneeNameEscaped} is reassigned to your next regular week ${modalCompensationWeekLabelEscaped}."</li>
           </ul>
         `
@@ -1467,7 +1502,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
           : "";
         const sourceLabel = sourceRange ? ` (${sourceRange})` : "";
         ctxParts.push(
-          `Make-up shift. ${this._escape(historyAssigneeName)} is covering for ${this._escape(historyOriginalName || "the original assignee")} after a takeover${sourceLabel}.`
+          `Return shift shift. ${this._escape(historyAssigneeName)} is covering for ${this._escape(historyOriginalName || "the original assignee")} after a takeover${sourceLabel}.`
         );
       }
 
@@ -1538,14 +1573,17 @@ class HassFlatmateCleaningCard extends HTMLElement {
         const status = String(row?.status || "pending");
         const isDone = status === "done";
         const isMissed = status === "missed";
+        const isPreviousNotDone = row.is_previous && !isDone;
         const compactStatusLabel = isDone
           ? "Done"
-          : isMissed
-            ? "Missed"
-            : row.is_current
-              ? "Pending"
-              : "";
-        const compactStatusClass = isDone ? "done" : isMissed ? "missed" : "pending";
+          : isPreviousNotDone
+            ? "Late"
+            : isMissed
+              ? "Missed"
+              : row.is_current
+                ? "Pending"
+                : "";
+        const compactStatusClass = isDone ? "done" : (isMissed || isPreviousNotDone) ? "missed" : "pending";
         const compactContext = row.is_current
           ? "this week"
           : row.is_previous
@@ -1630,26 +1668,11 @@ class HassFlatmateCleaningCard extends HTMLElement {
     this._root.innerHTML = `
       <ha-card>
         <div class="card ${compactMode ? "compact" : ""}">
-          ${
-            compactMode
-              ? `
-                <div class="header compact-header">
-                  <h2>${this._escape(this._config.title)}</h2>
-                </div>
-              `
-              : `
-                <div class="header">
-                  <div>
-                    <h2>${this._escape(this._config.title)}</h2>
-                    <p>${this._escape(currentAssigneeName)} • ${statusLabel}</p>
-                  </div>
-                  <span class="header-status ${currentStatus}">${statusLabel}</span>
-                </div>
-              `
-          }
+          <div class="header ${compactMode ? "compact-header" : ""}">
+            <h2>${this._escape(this._config.title)}</h2>
+          </div>
 
           <section>
-            ${compactMode ? "" : "<h3>Schedule</h3>"}
             ${
               compactMode
                 ? `
@@ -1695,7 +1718,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
                   <span>Someone else cleaned and took over this shift.</span>
                 </label>
                 <p class="choice-help">
-                  Use takeover when another flatmate actually cleaned so a make-up shift is planned automatically.
+                  Use takeover when another flatmate actually cleaned so a return shift is planned automatically.
                 </p>
               </div>
 
@@ -1830,9 +1853,9 @@ class HassFlatmateCleaningCard extends HTMLElement {
         }
 
         .card {
-          padding: var(--ha-space-4, 16px);
+          padding: 0;
           display: grid;
-          gap: var(--ha-space-3, 12px);
+          gap: var(--ha-space-2, 8px);
         }
 
         .card.compact {
@@ -1842,9 +1865,8 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
         .header {
           display: flex;
-          justify-content: space-between;
           align-items: center;
-          gap: var(--ha-space-2, 8px);
+          padding: var(--ha-space-1, 4px) var(--ha-space-2, 8px) 0;
         }
 
         .header h2 {
@@ -1862,56 +1884,6 @@ class HassFlatmateCleaningCard extends HTMLElement {
           font-size: var(--ha-font-size-l, 1rem);
         }
 
-        .header p {
-          margin: var(--ha-space-1, 4px) 0 0;
-          color: var(--secondary-text-color);
-          font-size: var(--ha-font-size-s, 0.85rem);
-        }
-
-        .card.compact .header p {
-          font-size: var(--ha-font-size-xs, 0.75rem);
-        }
-
-        .header-status {
-          border-radius: var(--ha-border-radius-pill, 9999px);
-          padding: var(--ha-space-1, 4px) var(--ha-space-2, 8px);
-          font-size: var(--ha-font-size-xs, 0.75rem);
-          font-weight: var(--ha-font-weight-medium, 500);
-          border: var(--ha-border-width-sm, 1px) solid var(--outline-color, var(--divider-color));
-          text-transform: uppercase;
-          letter-spacing: 0.03em;
-        }
-
-        .card.compact .header-status {
-          font-size: var(--ha-font-size-xs, 0.75rem);
-          padding: 3px var(--ha-space-2, 8px);
-        }
-
-        .header-status.done {
-          color: var(--success-color, #43a047);
-          background: rgba(var(--rgb-success-color, 67, 160, 71), 0.14);
-          border-color: rgba(var(--rgb-success-color, 67, 160, 71), 0.4);
-        }
-
-        .header-status.missed {
-          color: var(--warning-color, #ffa600);
-          background: rgba(var(--rgb-warning-color, 255, 166, 0), 0.14);
-          border-color: rgba(var(--rgb-warning-color, 255, 166, 0), 0.4);
-        }
-
-        .header-status.pending {
-          color: var(--primary-text-color);
-        }
-
-        section h3 {
-          margin: 0 0 var(--ha-space-2, 8px);
-          font-size: var(--ha-font-size-s, 0.85rem);
-          font-weight: var(--ha-font-weight-medium, 500);
-          color: var(--secondary-text-color);
-          text-transform: uppercase;
-          letter-spacing: 0.04em;
-        }
-
         .week-list {
           list-style: none;
           margin: 0;
@@ -1925,11 +1897,12 @@ class HassFlatmateCleaningCard extends HTMLElement {
           grid-template-columns: 1fr auto;
           gap: var(--ha-space-2, 8px);
           align-items: center;
+          min-height: 56px;
           background: var(--ha-card-background, var(--card-background-color, #fff));
           border: var(--ha-card-border-width, 1px) solid var(--ha-card-border-color, var(--divider-color, #e0e0e0));
           border-radius: var(--ha-card-border-radius, var(--ha-border-radius-lg, 12px));
           box-shadow: var(--ha-card-box-shadow, none);
-          padding: var(--ha-space-3, 12px);
+          padding: var(--ha-space-2, 8px) var(--ha-space-3, 12px);
           cursor: pointer;
           transition: box-shadow var(--ha-animation-duration-fast, 150ms) ease-in-out,
                       border-color var(--ha-animation-duration-fast, 150ms) ease-in-out,
@@ -1941,7 +1914,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
         }
 
         .week-row.current:hover {
-          background: rgba(var(--rgb-primary-color, 0, 154, 199), 0.12);
+          background: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.04);
         }
 
         .compact-week-list {
@@ -2012,7 +1985,6 @@ class HassFlatmateCleaningCard extends HTMLElement {
         .compact-assignee.striked {
           text-decoration: line-through;
           text-decoration-thickness: 1.5px;
-          text-decoration-color: color-mix(in srgb, var(--success-color, #4caf50) 65%, currentColor);
         }
 
         .compact-status {
@@ -2040,12 +2012,20 @@ class HassFlatmateCleaningCard extends HTMLElement {
         }
 
         .week-row.current {
-          border-color: rgba(var(--rgb-primary-color, 0, 154, 199), 0.45);
-          background: rgba(var(--rgb-primary-color, 0, 154, 199), 0.08);
+          border-left: 4px solid var(--primary-color);
         }
 
-        .week-row.past {
-          background: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.03);
+        .week-row.current.done {
+          border-left-color: var(--success-color, #43a047);
+        }
+
+        .week-row.previous:not(.done) {
+          border-left: 4px solid var(--error-color, #d32f2f);
+        }
+
+        .week-row.past.done .week-main,
+        .week-row.past.done .week-actions .status-chip {
+          opacity: 0.35;
         }
 
         .week-main {
@@ -2077,7 +2057,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
         }
 
         .assignee {
-          margin-top: var(--ha-space-1, 4px);
+          margin-top: 2px;
           display: flex;
           align-items: center;
           gap: var(--ha-space-1, 4px);
@@ -2088,39 +2068,13 @@ class HassFlatmateCleaningCard extends HTMLElement {
         .assignee.striked span {
           text-decoration: line-through;
           text-decoration-thickness: 1.5px;
-          text-decoration-color: color-mix(in srgb, var(--success-color, #4caf50) 65%, currentColor);
         }
 
-        .week-meta {
-          margin-top: 4px;
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-        }
-
-        .meta-note {
-          color: var(--secondary-text-color);
-          font-size: 0.78rem;
-        }
-
-        .meta-note.missed {
+        .irregular-note {
+          display: block;
+          margin-top: 2px;
           color: var(--warning-color, #f57c00);
-        }
-
-        .meta-note.notification-issue {
-          color: var(--warning-color, #f57c00);
-          font-weight: 600;
-        }
-
-        .badge {
-          border: var(--ha-border-width-sm, 1px) solid var(--outline-color, var(--divider-color));
-          border-radius: var(--ha-border-radius-pill, 9999px);
-          padding: 2px var(--ha-space-2, 8px);
           font-size: var(--ha-font-size-xs, 0.75rem);
-          font-weight: var(--ha-font-weight-medium, 500);
-          color: var(--secondary-text-color);
-          text-transform: uppercase;
-          letter-spacing: 0.03em;
         }
 
         .week-actions {
@@ -2151,17 +2105,15 @@ class HassFlatmateCleaningCard extends HTMLElement {
           align-items: center;
           gap: var(--ha-space-1, 4px);
           justify-content: center;
-          padding: var(--ha-space-2, 8px) var(--ha-space-3, 12px);
+          padding: var(--ha-space-1, 4px) var(--ha-space-2, 8px);
           cursor: pointer;
-          min-height: var(--ha-space-9, 36px);
+          min-height: var(--ha-space-7, 28px);
           white-space: nowrap;
           font-weight: var(--ha-font-weight-medium, 500);
         }
 
         .action.done {
           color: var(--success-color, #43a047);
-          border-color: rgba(var(--rgb-success-color, 67, 160, 71), 0.4);
-          background: rgba(var(--rgb-success-color, 67, 160, 71), 0.1);
         }
 
         .action.undo {
@@ -2170,16 +2122,22 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
         .action.swap {
           color: var(--primary-color);
-          border-color: rgba(var(--rgb-primary-color, 0, 154, 199), 0.35);
-          background: rgba(var(--rgb-primary-color, 0, 154, 199), 0.08);
+        }
+
+        .action.swap-neutral {
+          color: var(--secondary-text-color);
+        }
+
+        .action.cancel-swap {
+          color: var(--primary-color);
         }
 
         .status-chip {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          min-height: var(--ha-space-9, 36px);
-          padding: 0 var(--ha-space-3, 12px);
+          min-height: var(--ha-space-7, 28px);
+          padding: 0 var(--ha-space-2, 8px);
           font-size: var(--ha-font-size-xs, 0.75rem);
           font-weight: var(--ha-font-weight-medium, 500);
           text-transform: uppercase;

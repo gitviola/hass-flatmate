@@ -355,14 +355,14 @@ def post_mark_undone(
     session: Session = Depends(get_session),
 ) -> OperationResponse:
     try:
-        cleaning.mark_cleaning_undone(
+        notifications = cleaning.mark_cleaning_undone(
             session,
             week_start=payload.week_start,
             actor_user_id=payload.actor_user_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return OperationResponse(ok=True)
+    return OperationResponse(ok=True, notifications=notifications)
 
 
 @app.post(
