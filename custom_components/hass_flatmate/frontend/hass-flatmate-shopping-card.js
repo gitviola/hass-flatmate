@@ -398,7 +398,10 @@ class HassFlatmateShoppingCard extends HTMLElement {
       <div class="history-backdrop" data-action="close-history-modal"></div>
       <div class="history-modal">
         <div class="history-modal-header">
-          <h3>${displayName}</h3>
+          <div class="history-modal-titles">
+            <h3>${displayName}</h3>
+            <span class="history-modal-subtitle">Purchase history</span>
+          </div>
           <button class="history-modal-close" type="button" data-action="close-history-modal" aria-label="Close">
             <ha-icon icon="mdi:close"></ha-icon>
           </button>
@@ -947,14 +950,22 @@ class HassFlatmateShoppingCard extends HTMLElement {
           border-bottom: var(--ha-border-width-sm, 1px) solid var(--divider-color);
         }
 
+        .history-modal-titles {
+          min-width: 0;
+        }
+
         .history-modal-header h3 {
           margin: 0;
           font-size: var(--ha-font-size-l, 1rem);
           font-weight: var(--ha-font-weight-bold, 700);
-          min-width: 0;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
+        }
+
+        .history-modal-subtitle {
+          color: var(--secondary-text-color);
+          font-size: var(--ha-font-size-s, 0.75rem);
         }
 
         .history-modal-close {
