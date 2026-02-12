@@ -292,10 +292,12 @@ class HassFlatmateCleaningCard extends HTMLElement {
     if (row?.override_source === "manual") {
       const swappedWith = originalLabel || "another flatmate";
       const elapsed = this._weekDistanceLabel(row?.source_week_start, row?.week_start);
-      return elapsed ? `Swapped with ${swappedWith} ${elapsed}` : `Swapped with ${swappedWith}`;
+      return elapsed
+        ? `Swap return — ${swappedWith}'s regular week (${elapsed})`
+        : `Swap return — ${swappedWith}'s regular week`;
     }
 
-    return `Make-up shift: ${assigneeLabel} covers ${originalLabel || "the original turn"}`;
+    return `Make-up for ${originalLabel || "the original assignee"}`;
   }
 
   _normalizePatchValue(value) {
@@ -1100,8 +1102,11 @@ class HassFlatmateCleaningCard extends HTMLElement {
             : row.completed_by_name || "";
         const completedByName = completedByLabel ? this._escape(completedByLabel) : "";
 
+        const completionMode = String(row.completion_mode || "");
         let doneMeta = "";
-        if (isDone && completedByName) {
+        if (isDone && completionMode === "takeover" && completedByName) {
+          doneMeta = `<span class="meta-note">Taken over by ${completedByName}</span>`;
+        } else if (isDone && completedByMemberId && assigneeMemberId && completedByMemberId !== assigneeMemberId && completedByName) {
           doneMeta = `<span class="meta-note">Done by ${completedByName}</span>`;
         } else if (isMissed) {
           doneMeta = '<span class="meta-note missed">Not confirmed</span>';
@@ -1134,7 +1139,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
         const secondary =
           row.override_type === "manual_swap" && originalLabel && originalLabel !== assigneeLabel
-            ? `<span class="meta-note">${this._escape(`Swapped with ${originalLabel}`)}</span>`
+            ? `<span class="meta-note">${this._escape(`Originally ${originalLabel}'s shift`)}</span>`
             : row.override_type === "compensation"
               ? (() => {
                   const compensationNote = this._compensationNote(row, assigneeLabel, originalLabel);
@@ -1394,62 +1399,120 @@ class HassFlatmateCleaningCard extends HTMLElement {
       historyWeekIndex >= 0 ? historyWeekIndex : 0,
       currentWeekStartForDistance
     );
-    const historyAssigneeName = this._memberName(
-      memberMap,
-      Number(historyModalWeek?.assignee_member_id)
-    );
-    const historySlots = Array.isArray(historyModalWeek?.notification_slots)
-      ? historyModalWeek.notification_slots
+    const historyAssigneeId = Number(historyModalWeek?.assignee_member_id);
+    const historyAssigneeName = this._memberName(memberMap, historyAssigneeId);
+    const historyOriginalId = Number(historyModalWeek?.original_assignee_member_id);
+    const historyOriginalName =
+      Number.isInteger(historyOriginalId) && historyOriginalId > 0
+        ? this._memberName(memberMap, historyOriginalId)
+        : "";
+    const historyStatus = String(historyModalWeek?.status || "pending");
+    const historyCompletionMode = String(historyModalWeek?.completion_mode || "");
+    const historyCompletedById = Number(historyModalWeek?.completed_by_member_id);
+    const historyCompletedByName =
+      Number.isInteger(historyCompletedById) && historyCompletedById > 0
+        ? this._memberName(memberMap, historyCompletedById)
+        : "";
+    const historyOverrideType = historyModalWeek?.override_type || "";
+    const historyOverrideSource = historyModalWeek?.override_source || "";
+    const historyCompletedAt = historyModalWeek?.completed_at || "";
+
+    const historyStatusLabel =
+      historyStatus === "done" ? "Done" : historyStatus === "missed" ? "Missed" : "Pending";
+    const historyStatusClass =
+      historyStatus === "done" ? "done" : historyStatus === "missed" ? "missed" : "pending";
+
+    let historyContextHtml = "";
+    if (historyModalWeek) {
+      const ctxParts = [];
+      if (historyOverrideType === "manual_swap" && historyOriginalName && historyOriginalName !== historyAssigneeName) {
+        const sourceElapsed = this._weekDistanceLabel(
+          historyModalWeek?.source_week_start,
+          currentWeekStartForDistance
+        );
+        ctxParts.push(
+          `This shift was swapped. Originally ${this._escape(historyOriginalName)}'s turn.`
+        );
+      } else if (historyOverrideType === "compensation" && historyOverrideSource === "manual") {
+        const sourceElapsed = this._weekDistanceLabel(
+          historyModalWeek?.source_week_start,
+          currentWeekStartForDistance
+        );
+        const sourceLabel = sourceElapsed ? ` (${sourceElapsed})` : "";
+        ctxParts.push(
+          `Swap return week. Originally ${this._escape(historyOriginalName || "another flatmate")}'s turn, swapped with ${this._escape(historyAssigneeName)}${sourceLabel}.`
+        );
+      } else if (historyOverrideType === "compensation") {
+        const sourceRange = historyModalWeek?.source_week_start
+          ? this._weekDistanceLabel(historyModalWeek.source_week_start, currentWeekStartForDistance)
+          : "";
+        const sourceLabel = sourceRange ? ` (${sourceRange})` : "";
+        ctxParts.push(
+          `Make-up shift. ${this._escape(historyAssigneeName)} is covering for ${this._escape(historyOriginalName || "the original assignee")} after a takeover${sourceLabel}.`
+        );
+      }
+
+      if (historyStatus === "done") {
+        if (historyCompletionMode === "takeover" && historyCompletedByName) {
+          ctxParts.push(
+            `${this._escape(historyCompletedByName)} took over this shift from ${this._escape(historyAssigneeName)}.`
+          );
+        } else if (historyCompletedById && historyCompletedById !== historyAssigneeId && historyCompletedByName) {
+          const atLabel = historyCompletedAt ? ` on ${this._escape(this._formatEventDateTime(historyCompletedAt))}` : "";
+          ctxParts.push(`Completed by ${this._escape(historyCompletedByName)}${atLabel}.`);
+        } else {
+          const atLabel = historyCompletedAt ? ` on ${this._escape(this._formatEventDateTime(historyCompletedAt))}` : "";
+          ctxParts.push(`Completed${atLabel}.`);
+        }
+      } else if (historyStatus === "missed") {
+        ctxParts.push("This shift was not confirmed as done.");
+      }
+
+      if (ctxParts.length) {
+        historyContextHtml = `<div class="shift-context">${ctxParts.map((p) => `<p class="shift-context-line">${p}</p>`).join("")}</div>`;
+      }
+    }
+
+    const historyTimeline = Array.isArray(historyModalWeek?.timeline)
+      ? historyModalWeek.timeline
       : [];
-    const historyEvents = Array.isArray(historyModalWeek?.history)
-      ? historyModalWeek.history
-      : [];
-    const historySlotRows = historySlots.length
-      ? historySlots
-          .map((slot) => {
-            const state = String(slot?.state || "pending").toLowerCase();
-            const stateClass = state.replace(/[^a-z0-9_-]/g, "");
-            const detail = slot?.detail ? this._escape(slot.detail) : "";
-            const timeLabel = slot?.last_event_at
-              ? this._escape(this._formatEventDateTime(slot.last_event_at))
+    const timelineRowsHtml = historyTimeline.length
+      ? historyTimeline
+          .map((entry) => {
+            const isFuture = !!entry.is_future;
+            const entryType = String(entry.type || "event");
+            const icon = this._escape(entry.icon || "mdi:information");
+            const summary = this._escape(entry.summary || "Activity");
+            const detail = entry.detail ? this._escape(entry.detail) : "";
+            const timestamp = entry.timestamp
+              ? this._escape(this._formatEventDateTime(entry.timestamp))
               : "";
+            const state = String(entry.state || "").toLowerCase();
+            const stateClass = state.replace(/[^a-z0-9_-]/g, "");
+            const stateLabel = entry.state_label ? this._escape(entry.state_label) : "";
+            const stateBadge =
+              entryType === "notification" && stateLabel
+                ? `<span class="slot-state ${stateClass}">${stateLabel}</span>`
+                : "";
+
             return `
-              <li class="history-slot-row">
-                <div class="history-slot-top">
-                  <span class="history-slot-label">${this._escape(slot?.label || "Notification check")}</span>
-                  <span class="slot-state ${stateClass}">${this._escape(slot?.state_label || state)}</span>
+              <li class="timeline-entry ${isFuture ? "future" : ""} ${entryType}">
+                <div class="timeline-icon">
+                  <ha-icon icon="${icon}"></ha-icon>
                 </div>
-                ${detail ? `<span class="history-slot-detail">${detail}</span>` : ""}
-                ${timeLabel ? `<span class="history-slot-time">${timeLabel}</span>` : ""}
+                <div class="timeline-content">
+                  <div class="timeline-top">
+                    <span class="timeline-summary">${summary}</span>
+                    ${stateBadge}
+                  </div>
+                  ${detail ? `<span class="timeline-detail">${detail}</span>` : ""}
+                  ${timestamp ? `<span class="timeline-time">${timestamp}</span>` : ""}
+                </div>
               </li>
             `;
           })
           .join("")
-      : '<li class="empty-list">No notification checks available for this week.</li>';
-    const historyEventRows = historyEvents.length
-      ? historyEvents
-          .map((event) => {
-            const summary = this._escape(event?.summary || "Activity");
-            const action = this._escape(
-              String(event?.action || "")
-                .replaceAll("_", " ")
-                .trim() || "activity"
-            );
-            const when = this._escape(this._formatEventDateTime(event?.created_at));
-            const reason = event?.reason ? this._escape(event.reason) : "";
-            return `
-              <li class="history-event-row">
-                <div class="history-event-top">
-                  <span class="history-event-summary">${summary}</span>
-                  <span class="history-event-time">${when}</span>
-                </div>
-                <span class="history-event-action">${action}</span>
-                ${reason ? `<span class="history-event-reason">${reason}</span>` : ""}
-              </li>
-            `;
-          })
-          .join("")
-      : '<li class="empty-list">No shift activity in the last 7 days.</li>';
+      : '<li class="empty-list">No activity recorded for this shift.</li>';
 
     const compactRows = weeks
       .map((row) => {
@@ -1685,26 +1748,25 @@ class HassFlatmateCleaningCard extends HTMLElement {
           <div class="modal-backdrop history-modal-backdrop">
             <div class="modal history-modal" role="dialog" aria-modal="true">
               <div class="modal-header">
-                <h3>Shift history</h3>
-                <button class="icon-btn" type="button" data-action="close-history-modal" aria-label="Close shift history dialog">
+                <h3>Shift details</h3>
+                <button class="icon-btn" type="button" data-action="close-history-modal" aria-label="Close shift details dialog">
                   <ha-icon icon="mdi:close"></ha-icon>
                 </button>
               </div>
 
               <p class="modal-week">${this._escape(historyWeekLabel)}</p>
-              <p class="modal-preview">Assigned flatmate: <strong>${this._escape(historyAssigneeName)}</strong></p>
-
-              <div class="effect-panel history-panel">
-                <p class="effect-title">Notification delivery</p>
-                <ul class="history-slot-list">
-                  ${historySlotRows}
-                </ul>
+              <div class="shift-status-row">
+                <span class="shift-assignee-label">Assigned to</span>
+                <strong>${this._escape(historyAssigneeName)}</strong>
+                <span class="header-status ${historyStatusClass}">${historyStatusLabel}</span>
               </div>
 
-              <div class="effect-panel history-panel">
-                <p class="effect-title">Recent events (last 7 days)</p>
-                <ul class="history-event-list">
-                  ${historyEventRows}
+              ${historyContextHtml}
+
+              <div class="timeline-panel">
+                <p class="effect-title">Timeline</p>
+                <ul class="timeline-list">
+                  ${timelineRowsHtml}
                 </ul>
               </div>
 
@@ -2316,6 +2378,143 @@ class HassFlatmateCleaningCard extends HTMLElement {
           text-transform: uppercase;
           letter-spacing: 0.03em;
           font-size: 0.72rem;
+        }
+
+        .history-modal {
+          max-height: min(85vh, 680px);
+          overflow-y: auto;
+        }
+
+        .shift-status-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+
+        .shift-assignee-label {
+          color: var(--secondary-text-color);
+          font-size: 0.88rem;
+        }
+
+        .shift-status-row strong {
+          font-size: 0.95rem;
+        }
+
+        .shift-context {
+          border: 1px solid var(--divider-color);
+          border-radius: 10px;
+          padding: 10px;
+          background: color-mix(in srgb, var(--divider-color) 8%, var(--card-background-color));
+          display: grid;
+          gap: 4px;
+        }
+
+        .shift-context-line {
+          margin: 0;
+          font-size: 0.88rem;
+          color: var(--primary-text-color);
+          line-height: 1.35;
+        }
+
+        .timeline-panel {
+          border: 1px solid var(--divider-color);
+          border-radius: 10px;
+          padding: 10px;
+          background: color-mix(in srgb, var(--divider-color) 8%, var(--card-background-color));
+          display: grid;
+          gap: 8px;
+        }
+
+        .timeline-list {
+          list-style: none;
+          margin: 0;
+          padding: 0;
+          display: grid;
+          gap: 0;
+          position: relative;
+        }
+
+        .timeline-entry {
+          display: grid;
+          grid-template-columns: 28px 1fr;
+          gap: 8px;
+          padding: 6px 0;
+          position: relative;
+        }
+
+        .timeline-entry:not(:last-child)::before {
+          content: "";
+          position: absolute;
+          left: 13px;
+          top: 30px;
+          bottom: -6px;
+          width: 2px;
+          background: var(--divider-color);
+        }
+
+        .timeline-entry.future:not(:last-child)::before {
+          background: repeating-linear-gradient(
+            to bottom,
+            var(--divider-color) 0px,
+            var(--divider-color) 3px,
+            transparent 3px,
+            transparent 6px
+          );
+        }
+
+        .timeline-icon {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          background: var(--card-background-color);
+          border: 1px solid var(--divider-color);
+          position: relative;
+          z-index: 1;
+          --mdc-icon-size: 16px;
+          color: var(--secondary-text-color);
+        }
+
+        .timeline-entry.future .timeline-icon {
+          border-style: dashed;
+          opacity: 0.7;
+        }
+
+        .timeline-entry.future .timeline-content {
+          opacity: 0.7;
+        }
+
+        .timeline-content {
+          display: grid;
+          gap: 2px;
+          min-width: 0;
+          padding-top: 3px;
+        }
+
+        .timeline-top {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+
+        .timeline-summary {
+          font-weight: 600;
+          font-size: 0.88rem;
+          min-width: 0;
+        }
+
+        .timeline-detail {
+          color: var(--secondary-text-color);
+          font-size: 0.8rem;
+        }
+
+        .timeline-time {
+          color: var(--secondary-text-color);
+          font-size: 0.76rem;
         }
 
         .modal-actions {

@@ -288,6 +288,106 @@ def _notification_slots_for_week(
     return slots
 
 
+_TIMELINE_EVENT_ICONS: dict[str, str] = {
+    "cleaning_done": "mdi:check-circle",
+    "cleaning_undone": "mdi:undo-variant",
+    "cleaning_takeover_done": "mdi:account-switch",
+    "cleaning_swap_created": "mdi:swap-horizontal",
+    "cleaning_swap_updated": "mdi:swap-horizontal",
+    "cleaning_swap_canceled": "mdi:close-circle",
+    "cleaning_compensation_planned": "mdi:calendar-plus",
+    "cleaning_override_auto_canceled_member_inactive": "mdi:account-remove",
+}
+
+_TIMELINE_NOTIFICATION_ICONS: dict[str, str] = {
+    "sent": "mdi:bell-check",
+    "test_redirected": "mdi:bell-check",
+    "failed": "mdi:bell-off",
+    "skipped": "mdi:bell-off",
+    "suppressed": "mdi:bell-off",
+    "scheduled": "mdi:bell-clock",
+    "not_required": "mdi:bell-minus",
+    "no_data": "mdi:bell-outline",
+    "missing": "mdi:bell-outline",
+}
+
+
+def _build_week_timeline(
+    *,
+    notification_slots: list[dict[str, Any]],
+    history: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    now_local = dt_util.now()
+    timeline: list[dict[str, Any]] = []
+
+    for slot in notification_slots:
+        state = str(slot.get("state", "")).strip().lower()
+        is_future = state == "scheduled"
+        icon = _TIMELINE_NOTIFICATION_ICONS.get(state, "mdi:bell-outline")
+        timestamp = slot.get("last_event_at")
+        summary = str(slot.get("label", "Notification"))
+        detail = slot.get("detail")
+        state_label = slot.get("state_label")
+
+        ts_val = _parse_datetime_local(timestamp) if timestamp else None
+        if is_future and detail and not timestamp:
+            ts_val = None
+
+        timeline.append({
+            "type": "notification",
+            "timestamp": ts_val.isoformat() if ts_val else None,
+            "is_future": is_future,
+            "icon": icon,
+            "summary": summary,
+            "detail": str(detail) if detail else None,
+            "state": state or None,
+            "state_label": str(state_label) if state_label else None,
+            "_sort_ts": ts_val.timestamp() if ts_val else 0.0,
+        })
+
+    dispatch_slots_seen = {
+        str(slot.get("slot", "")).strip().lower()
+        for slot in notification_slots
+        if slot.get("last_event_at")
+    }
+
+    for event in history:
+        action = str(event.get("action", "")).strip().lower()
+        if action == "cleaning_notification_dispatch":
+            notif_slot = str(event.get("notification_slot", "")).strip().lower()
+            if notif_slot in dispatch_slots_seen:
+                continue
+
+        icon = _TIMELINE_EVENT_ICONS.get(action, "mdi:information")
+        timestamp = event.get("created_at")
+        ts_val = _parse_datetime_local(timestamp) if timestamp else None
+        is_future = ts_val > now_local if ts_val else False
+        summary = str(event.get("summary", action.replace("_", " ")))
+        reason = event.get("reason")
+
+        timeline.append({
+            "type": "event",
+            "timestamp": ts_val.isoformat() if ts_val else None,
+            "is_future": is_future,
+            "icon": icon,
+            "summary": summary,
+            "detail": str(reason) if reason else None,
+            "state": None,
+            "state_label": None,
+            "_sort_ts": ts_val.timestamp() if ts_val else 0.0,
+        })
+
+    future_items = [e for e in timeline if e["is_future"]]
+    past_items = [e for e in timeline if not e["is_future"]]
+    future_items.sort(key=lambda e: e["_sort_ts"])
+    past_items.sort(key=lambda e: e["_sort_ts"], reverse=True)
+
+    result = future_items + past_items
+    for entry in result:
+        entry.pop("_sort_ts", None)
+    return result
+
+
 def _activity_summary(row: Mapping[str, Any], members: Mapping[int, str]) -> str:
     action = str(row.get("action", ""))
     payload = row.get("payload_json", {})
@@ -643,6 +743,10 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
                 slot.get("state") in {"failed", "skipped", "suppressed", "missing"}
                 for slot in notification_slots
             )
+            timeline = _build_week_timeline(
+                notification_slots=notification_slots,
+                history=week_history,
+            )
             weeks.append(
                 {
                     "week_start": week_start_iso,
@@ -672,6 +776,7 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
                     "history": week_history,
                     "notification_slots": notification_slots,
                     "notification_has_issue": notification_has_issue,
+                    "timeline": timeline,
                 }
             )
 
