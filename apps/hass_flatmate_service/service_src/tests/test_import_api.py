@@ -158,3 +158,72 @@ def test_import_cleaning_override_rows_plans_compensation_override(client, auth_
     assert rows[1]["baseline_assignee_member_id"] == 2  # Sam
     assert rows[1]["effective_assignee_member_id"] == 1  # Alex
     assert rows[1]["override_type"] == "compensation"
+
+
+def test_import_swap_pair_links_rows_and_cancel_reverts_both_weeks(client, auth_headers) -> None:
+    _sync_members(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    week_start = date.fromisoformat(current.json()["week_start"])
+    week_after = week_start + timedelta(days=7)
+
+    rotation_rows = ";".join(
+        [
+            f"{(week_start + timedelta(days=2)).isoformat()},Alex",
+            f"{(week_after + timedelta(days=2)).isoformat()},Sam",
+            f"{(week_after + timedelta(days=9)).isoformat()},Pat",
+        ]
+    )
+    cleaning_history_rows = f"{(week_start + timedelta(days=2)).isoformat()},Alex,done,Sam"
+    cleaning_override_rows = ";".join(
+        [
+            f"{(week_start + timedelta(days=2)).isoformat()},Alex,Sam,manual_swap",
+            f"{(week_after + timedelta(days=2)).isoformat()},Sam,Alex,compensation",
+        ]
+    )
+
+    imported = client.post(
+        "/v1/import/manual",
+        headers=auth_headers,
+        json={
+            "rotation_rows": rotation_rows,
+            "cleaning_history_rows": cleaning_history_rows,
+            "cleaning_override_rows": cleaning_override_rows,
+            "actor_user_id": "u1",
+        },
+    )
+    assert imported.status_code == 200
+    summary = imported.json()["summary"]
+    assert summary["cleaning_override_rows_imported"] == 2
+    assert summary["cleaning_override_swap_pairs_linked"] == 1
+
+    schedule = client.get("/v1/cleaning/schedule?weeks_ahead=4", headers=auth_headers)
+    assert schedule.status_code == 200
+    row_map = {date.fromisoformat(row["week_start"]): row for row in schedule.json()["schedule"]}
+    assert row_map[week_start]["override_type"] == "manual_swap"
+    assert row_map[week_after]["override_type"] == "compensation"
+    assert row_map[week_after]["override_source"] == "manual"
+    assert row_map[week_after]["source_week_start"] == week_start.isoformat()
+
+    canceled = client.post(
+        "/v1/cleaning/overrides/swap",
+        headers=auth_headers,
+        json={
+            "week_start": week_start.isoformat(),
+            "member_a_id": 1,
+            "member_b_id": 2,
+            "actor_user_id": "u1",
+            "cancel": True,
+        },
+    )
+    assert canceled.status_code == 200
+
+    after_cancel = client.get("/v1/cleaning/schedule?weeks_ahead=4", headers=auth_headers)
+    assert after_cancel.status_code == 200
+    row_map_after_cancel = {
+        date.fromisoformat(row["week_start"]): row
+        for row in after_cancel.json()["schedule"]
+    }
+    assert row_map_after_cancel[week_start]["override_type"] is None
+    assert row_map_after_cancel[week_after]["override_type"] is None

@@ -319,12 +319,14 @@ def _apply_cleaning_override_rows(
     *,
     rows_text: str | None,
     name_index: dict[str, int],
-) -> int:
+    actor_user_id: str | None,
+) -> tuple[int, int]:
     rows = _rows_from_text(rows_text)
     if not rows:
-        return 0
+        return 0, 0
 
     imported_rows = 0
+    imported_overrides: list[CleaningOverride] = []
     for line_no, row in rows:
         columns = [part.strip() for part in row.split(",")]
         if len(columns) < 3:
@@ -367,10 +369,97 @@ def _apply_cleaning_override_rows(
             created_by_member_id=None,
         )
         session.add(override)
+        imported_overrides.append(override)
         ensure_assignment(session, week_start)
         imported_rows += 1
 
-    return imported_rows
+    linked_pairs = _link_imported_manual_swap_pairs(
+        session,
+        imported_overrides=imported_overrides,
+        actor_user_id=actor_user_id,
+    )
+
+    return imported_rows, linked_pairs
+
+
+def _link_imported_manual_swap_pairs(
+    session: Session,
+    *,
+    imported_overrides: list[CleaningOverride],
+    actor_user_id: str | None,
+) -> int:
+    if not imported_overrides:
+        return 0
+
+    manual_swaps = sorted(
+        [
+            override
+            for override in imported_overrides
+            if override.type == OverrideType.MANUAL_SWAP
+            and override.source == OverrideSource.MANUAL
+            and override.source_event_id is None
+        ],
+        key=lambda override: override.week_start,
+    )
+    if not manual_swaps:
+        return 0
+
+    compensation_by_pair: dict[tuple[int, int], list[CleaningOverride]] = {}
+    for override in imported_overrides:
+        if override.type != OverrideType.COMPENSATION:
+            continue
+        if override.source != OverrideSource.MANUAL:
+            continue
+        if override.source_event_id is not None:
+            continue
+        pair_key = (override.member_from_id, override.member_to_id)
+        compensation_by_pair.setdefault(pair_key, []).append(override)
+
+    for rows in compensation_by_pair.values():
+        rows.sort(key=lambda override: override.week_start)
+
+    linked_pairs = 0
+    for swap_override in manual_swaps:
+        compensation_key = (swap_override.member_to_id, swap_override.member_from_id)
+        candidates = compensation_by_pair.get(compensation_key, [])
+        if not candidates:
+            continue
+
+        match_index = -1
+        match_override = None
+        for index, candidate in enumerate(candidates):
+            if candidate.week_start <= swap_override.week_start:
+                continue
+            match_index = index
+            match_override = candidate
+            break
+
+        if match_override is None:
+            continue
+
+        imported_event_at = datetime.combine(swap_override.week_start, time(hour=12, tzinfo=timezone.utc))
+        swap_event = log_event(
+            session,
+            domain="cleaning",
+            action="cleaning_swap_created",
+            actor_member_id=None,
+            actor_user_id_raw=actor_user_id,
+            payload={
+                "week_start": swap_override.week_start.isoformat(),
+                "member_a_id": swap_override.member_from_id,
+                "member_b_id": swap_override.member_to_id,
+                "return_week_start": match_override.week_start.isoformat(),
+                "imported": True,
+            },
+            created_at=imported_event_at,
+        )
+
+        swap_override.source_event_id = swap_event.id
+        match_override.source_event_id = swap_event.id
+        candidates.pop(match_index)
+        linked_pairs += 1
+
+    return linked_pairs
 
 
 def import_manual_data(
@@ -408,10 +497,11 @@ def import_manual_data(
         name_index=name_index,
         actor_user_id=actor_user_id,
     )
-    cleaning_override_rows_imported = _apply_cleaning_override_rows(
+    cleaning_override_rows_imported, cleaning_override_swap_pairs_linked = _apply_cleaning_override_rows(
         session,
         rows_text=cleaning_override_rows,
         name_index=name_index,
+        actor_user_id=actor_user_id,
     )
 
     summary = {
@@ -423,6 +513,7 @@ def import_manual_data(
         "cleaning_done_events_imported": cleaning_done_events_imported,
         "shopping_history_rows_imported": shopping_rows_imported,
         "cleaning_override_rows_imported": cleaning_override_rows_imported,
+        "cleaning_override_swap_pairs_linked": cleaning_override_swap_pairs_linked,
     }
 
     log_event(
