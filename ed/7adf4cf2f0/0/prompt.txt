@@ -1,0 +1,99 @@
+Implement the following plan:
+
+# Plan: Fix rotation race condition + Add reset endpoint
+
+## Context
+
+Two issues to address:
+1. **Race condition bug**: When HA polls multiple endpoints concurrently at startup, two requests can both find no `rotation_config` row via `session.get()` and both try to INSERT `id=1`, causing `UNIQUE constraint failed`. This blocks `GET /v1/cleaning/current`.
+2. **Reset endpoint**: User needs a way to wipe all data (except members) before re-importing history, to ensure a clean slate.
+
+## Changes
+
+### 1. Fix race condition in `get_or_create_rotation_config`
+
+**File**: `addon/hass_flatmate_service/app/services/cleaning.py` (line 77-83)
+
+Catch `IntegrityError` on the flush and re-fetch the existing row:
+
+```python
+def get_or_create_rotation_config(session: Session) -> RotationConfig:
+    config = session.get(RotationConfig, 1)
+    if config is None:
+        config = RotationConfig(id=1, ordered_member_ids_json=[], anchor_week_start=None)
+        session.add(config)
+        try:
+            session.flush()
+        except IntegrityError:
+            session.rollback()
+            config = session.get(RotationConfig, 1)
+    return config
+```
+
+Add `from sqlalchemy.exc import IntegrityError` to imports.
+
+### 2. Add `POST /v1/admin/reset` endpoint
+
+**Delete order** (respecting FK constraints):
+1. `cleaning_overrides` (references members, activity_events)
+2. `cleaning_assignments` (references members)
+3. `activity_events` (references members)
+4. `shopping_items` (references members)
+5. `shopping_favorites` (references members)
+6. `rotation_config` (standalone singleton)
+
+Members are **preserved** — they come from HA person sync, not from imports.
+
+**Files to modify**:
+- `addon/hass_flatmate_service/app/main.py` — add the route
+- `addon/hass_flatmate_service/app/schemas.py` — no new schema needed, reuse `OperationResponse`
+
+Implementation directly in `main.py` (simple enough, no service module needed):
+
+```python
+@app.post("/v1/admin/reset", response_model=OperationResponse, dependencies=[Depends(require_token)])
+def post_admin_reset(session: Session = Depends(get_session)) -> OperationResponse:
+    session.execute(delete(CleaningOverride))
+    session.execute(delete(CleaningAssignment))
+    session.execute(delete(ActivityEvent))
+    session.execute(delete(ShoppingItem))
+    session.execute(delete(ShoppingFavorite))
+    session.execute(delete(RotationConfig))
+    session.commit()
+    return OperationResponse(ok=True)
+```
+
+### 3. Sync mirror + run tests
+
+- Run `pytest` to verify
+- Run `./scripts/sync_app_service_src.sh`
+- Regenerate `import_payload.json` with a curl to reset first
+
+## Verification
+
+1. `cd addon/hass_flatmate_service && pytest` — all tests pass
+2. `node --check` on frontend JS (no changes expected)
+3. Manual test: curl reset → curl import → curl cleaning/current returns 200
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/ms/.REDACTED.jsonl
+
+---
+
+imported history references members that no longer exist in the members table? -> YES of course!!! that's the whole point of importing the history
+
+---
+
+And yes of course write a test for this.. to make sure all this properly works the import as expected etc
+
+---
+
+Just that those don't have an home assistant id those members that we import I guess.. and we cannot just pick a random one as perhaps the next user created in home assistant once someone moves in perhaps gets that id assigned by hass
+
+---
+
+Hmm why the reset doesnt delete the members I'm wondering? I mean if we want to reset everything perhaps we want to reset everything..
+
+---
+
+yes commit and create release etc
