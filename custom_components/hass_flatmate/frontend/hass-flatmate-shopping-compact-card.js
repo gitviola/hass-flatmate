@@ -310,6 +310,10 @@ class HassFlatmateShoppingCompactCard extends HTMLElement {
         .card.eink .count-chip {
           border-color: #000;
         }
+
+        .card.eink .list {
+          border: none;
+        }
       </style>
     `;
   }
