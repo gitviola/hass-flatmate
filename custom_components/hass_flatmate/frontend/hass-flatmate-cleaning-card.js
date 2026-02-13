@@ -964,10 +964,13 @@ class HassFlatmateCleaningCard extends HTMLElement {
         const row = weekMap.get(weekStart);
         if (!row) return;
         const status = String(row.status || "pending");
-        const prompt = status === "done"
-          ? "Undo completion for this week?"
-          : "Mark this week as done?";
-        if (!window.confirm(prompt)) return;
+        const isNonAssignee = status !== "done" && this._isNonAssignee(row, members);
+        if (!isNonAssignee) {
+          const prompt = status === "done"
+            ? "Undo completion for this week?"
+            : "Mark this week as done?";
+          if (!window.confirm(prompt)) return;
+        }
         await this._toggleDone(row, members);
       });
     });
