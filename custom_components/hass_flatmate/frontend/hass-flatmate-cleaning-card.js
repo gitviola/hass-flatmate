@@ -1671,8 +1671,10 @@ class HassFlatmateCleaningCard extends HTMLElement {
       })
       .join("");
 
+    const skipCard = compactMode && this._config.eink;
+
     this._root.innerHTML = `
-      <ha-card>
+      ${skipCard ? "" : "<ha-card>"}
         <div class="card ${compactMode ? "compact" : ""} ${this._config.eink ? "eink" : ""}">
           <div class="header ${compactMode ? "compact-header" : ""}">
             <h2>${this._escape(this._config.title)}</h2>
@@ -1843,7 +1845,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
             </div>
           </div>
         ` : ""}
-      </ha-card>
+      ${skipCard ? "" : "</ha-card>"}
 
       <style>
         ha-card {
