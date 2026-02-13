@@ -1659,16 +1659,20 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
         return `
           <li class="compact-week-row ${row.is_current ? "current" : ""} ${leftMarked ? "left-marked" : ""} ${isDone ? "done" : ""} ${isMissed ? "missed" : ""}">
-            <div class="compact-top">
+            <div class="compact-left">
               <span class="compact-assignee ${isDone ? "striked" : ""}">${compactDisplayName}</span>
+              <span class="compact-week"><span class="compact-date">${compactDateLabel}</span></span>
+              ${compactNote ? `<span class="compact-note">${this._escape(compactNote)}</span>` : ""}
+            </div>
+            <div class="compact-right">
               ${
                 compactStatusLabel
                   ? `<span class="compact-status ${compactStatusClass}">${compactStatusLabel}</span>`
                   : ""
               }
+              ${compactContext ? `<span class="compact-context">${this._escape(compactContext)}</span>` : ""
+              }
             </div>
-            <span class="compact-week"><span class="compact-date">${compactDateLabel}</span>${compactContextHtml}</span>
-            ${compactNote ? `<span class="compact-note">${this._escape(compactNote)}</span>` : ""}
           </li>
         `;
       })
@@ -1959,7 +1963,8 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
         .compact-week-row {
           display: grid;
-          gap: 4px;
+          grid-template-columns: 1fr auto;
+          gap: 4px 8px;
           align-items: start;
           padding: 8px 10px;
           border-bottom: 1px solid var(--divider-color);
@@ -1980,11 +1985,18 @@ class HassFlatmateCleaningCard extends HTMLElement {
           font-weight: 700;
         }
 
-        .compact-top {
+        .compact-left {
           display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          gap: 8px;
+          flex-direction: column;
+          gap: 2px;
+          min-width: 0;
+        }
+
+        .compact-right {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          gap: 2px;
         }
 
         .compact-week {
@@ -1998,7 +2010,10 @@ class HassFlatmateCleaningCard extends HTMLElement {
         }
 
         .compact-context {
+          color: var(--secondary-text-color);
           font-style: italic;
+          font-size: 0.72rem;
+          text-align: right;
         }
 
         .compact-week-row.current .compact-week {
@@ -2630,9 +2645,8 @@ class HassFlatmateCleaningCard extends HTMLElement {
             gap: 2px;
           }
 
-          .compact-top {
-            flex-direction: column;
-            align-items: flex-start;
+          .compact-left {
+            gap: 1px;
           }
         }
 
