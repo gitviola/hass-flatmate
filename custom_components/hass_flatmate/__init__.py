@@ -14,7 +14,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import voluptuous as vol
 
 from homeassistant.components.http import StaticPathConfig
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryNotReady
 from homeassistant.const import CONF_API_TOKEN, CONF_TYPE, CONF_URL, EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import Event, HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import HomeAssistantError
@@ -1386,8 +1386,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         or ""
     )
 
-    await _sync_members_from_ha(runtime, hass)
-    await coordinator.async_request_refresh()
+    try:
+        await _sync_members_from_ha(runtime, hass)
+        await coordinator.async_request_refresh()
+    except (HassFlatmateApiError, Exception) as exc:
+        raise ConfigEntryNotReady(
+            f"Backend not ready during setup: {exc}"
+        ) from exc
     _set_calendar_cursors_from_events(runtime)
     _set_activity_cursor_from_events(runtime)
 
