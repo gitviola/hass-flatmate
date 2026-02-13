@@ -2654,6 +2654,10 @@ class HassFlatmateCleaningCard extends HTMLElement {
           --divider-color: #000;
           --secondary-text-color: #000;
           --secondary-background-color: #fff;
+          --primary-text-color: #000;
+          --success-color: #000;
+          --warning-color: #000;
+          color: #000;
         }
 
         .card.eink .edit-badge {
@@ -2662,6 +2666,17 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
         .card.eink .compact-status {
           border-color: #000;
+          color: #000;
+        }
+
+        .card.eink .compact-week,
+        .card.eink .compact-context,
+        .card.eink .compact-note {
+          font-weight: 400;
+        }
+
+        .card.eink .compact-assignee {
+          font-weight: 700;
         }
       </style>
     `;
