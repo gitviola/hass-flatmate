@@ -136,7 +136,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
       const id = Number(member?.member_id);
       const name = String(member?.name || "").trim();
       if (Number.isInteger(id) && id > 0 && name) {
-        map.set(id, name);
+        map.set(id, { name, notify_service: member?.notify_service || null });
       }
     }
     return map;
@@ -146,7 +146,14 @@ class HassFlatmateCleaningCard extends HTMLElement {
     if (!Number.isInteger(memberId) || memberId <= 0) {
       return "Unknown";
     }
-    return memberMap.get(memberId) || `Member ${memberId}`;
+    const entry = memberMap.get(memberId);
+    return entry?.name || `Member ${memberId}`;
+  }
+
+  _notifyWarning(memberMap, memberId) {
+    const m = memberMap.get(memberId);
+    if (m && !m.notify_service) return ' <span class="notify-warning">(no notification device)</span>';
+    return '';
   }
 
   _currentMemberId(members) {
@@ -1337,8 +1344,8 @@ class HassFlatmateCleaningCard extends HTMLElement {
           </ul>
           <p class="effect-subtitle">Who will be notified</p>
           <ul class="effect-list notification-list">
-            <li><strong>${modalAssigneeNameEscaped}</strong>: "${actorNameEscaped} recorded that ${modalCleanerNameEscaped} took over your shift. Your return shift is ${modalCompensationWeekLabelEscaped}."</li>
-            <li><strong>${modalCleanerNameEscaped}</strong>: "${actorNameEscaped} recorded you as the cleaner. ${modalAssigneeNameEscaped} is reassigned to your next regular week ${modalCompensationWeekLabelEscaped}."</li>
+            <li><strong>${modalAssigneeNameEscaped}</strong>${this._notifyWarning(memberMap, modalAssigneeId)}: "${actorNameEscaped} recorded that ${modalCleanerNameEscaped} took over your shift. Your return shift is ${modalCompensationWeekLabelEscaped}."</li>
+            <li><strong>${modalCleanerNameEscaped}</strong>${this._notifyWarning(memberMap, modalCleanerId)}: "${actorNameEscaped} recorded you as the cleaner. ${modalAssigneeNameEscaped} is reassigned to your next regular week ${modalCompensationWeekLabelEscaped}."</li>
           </ul>
         `
         : `
@@ -1348,7 +1355,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
           </ul>
           <p class="effect-subtitle">Who will be notified</p>
           <ul class="effect-list notification-list">
-            <li><strong>${modalAssigneeNameEscaped}</strong>: "${actorNameEscaped} confirmed your cleaning shift as done."</li>
+            <li><strong>${modalAssigneeNameEscaped}</strong>${this._notifyWarning(memberMap, modalAssigneeId)}: "${actorNameEscaped} confirmed your cleaning shift as done."</li>
           </ul>
         `;
 
@@ -1425,8 +1432,8 @@ class HassFlatmateCleaningCard extends HTMLElement {
           </ul>
           <p class="effect-subtitle">Who will be notified</p>
           <ul class="effect-list notification-list">
-            <li><strong>${this._escape(swapOriginalAssigneeName)}</strong>: "${actorNameEscaped} canceled the shift swap. You are assigned again for ${this._escape(swapWeekLabel)}."</li>
-            <li><strong>${this._escape(swapCancelPartnerName)}</strong>: "${actorNameEscaped} canceled the shift swap. Your regular assignment on ${this._escape(swapReturnWeekLabel)} is restored."</li>
+            <li><strong>${this._escape(swapOriginalAssigneeName)}</strong>${this._notifyWarning(memberMap, swapOriginalAssigneeId)}: "${actorNameEscaped} canceled the shift swap. You are assigned again for ${this._escape(swapWeekLabel)}."</li>
+            <li><strong>${this._escape(swapCancelPartnerName)}</strong>${this._notifyWarning(memberMap, swapExistingPartnerId)}: "${actorNameEscaped} canceled the shift swap. Your regular assignment on ${this._escape(swapReturnWeekLabel)} is restored."</li>
           </ul>
         `
         : `
@@ -1438,8 +1445,8 @@ class HassFlatmateCleaningCard extends HTMLElement {
           </ul>
           <p class="effect-subtitle">Who will be notified</p>
           <ul class="effect-list notification-list">
-            <li><strong>${this._escape(swapOriginalAssigneeName)}</strong>: "${actorNameEscaped} ${this._escape(swapActionWord)} the shift swap with ${this._escape(swapTargetName)}. You clean ${this._escape(swapReturnWeekLabel)}."</li>
-            <li><strong>${this._escape(swapTargetName)}</strong>: "${actorNameEscaped} ${this._escape(swapActionWord)} the shift swap with ${this._escape(swapOriginalAssigneeName)}. You clean ${this._escape(swapWeekLabel)}."</li>
+            <li><strong>${this._escape(swapOriginalAssigneeName)}</strong>${this._notifyWarning(memberMap, swapOriginalAssigneeId)}: "${actorNameEscaped} ${this._escape(swapActionWord)} the shift swap with ${this._escape(swapTargetName)}. You clean ${this._escape(swapReturnWeekLabel)}."</li>
+            <li><strong>${this._escape(swapTargetName)}</strong>${this._notifyWarning(memberMap, swapTargetId)}: "${actorNameEscaped} ${this._escape(swapActionWord)} the shift swap with ${this._escape(swapOriginalAssigneeName)}. You clean ${this._escape(swapWeekLabel)}."</li>
           </ul>
         `;
     const swapTargetOptions = [
@@ -2376,6 +2383,12 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
         .notification-list {
           margin-top: -2px;
+        }
+
+        .notify-warning {
+          color: var(--warning-color, #ff9800);
+          font-size: 0.85em;
+          font-style: italic;
         }
 
         .history-panel {

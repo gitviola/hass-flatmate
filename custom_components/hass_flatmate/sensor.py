@@ -669,6 +669,7 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
                 "member_id": int(member.get("id")),
                 "name": member.get("display_name"),
                 "ha_user_id": member.get("ha_user_id"),
+                "notify_service": member.get("notify_service"),
             }
             for member in self.coordinator.data.get("members", [])
             if member.get("id") is not None and member.get("display_name") and member.get("active", True)
