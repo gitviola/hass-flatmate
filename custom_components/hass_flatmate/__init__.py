@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -104,6 +105,13 @@ def _integration_version() -> str:
 
     version = str(manifest_data.get("version", "")).strip()
     return version or "dev"
+
+
+def _file_content_hash(file_path: Path) -> str:
+    try:
+        return hashlib.sha256(file_path.read_bytes()).hexdigest()[:8]
+    except OSError:
+        return "0"
 
 
 def _resource_url_path(url: str) -> str:
@@ -1106,7 +1114,7 @@ async def _register_frontend_static_assets(hass: HomeAssistant) -> None:
                 static_file,
             )
             continue
-        static_paths.append(StaticPathConfig(resource_url, str(static_file), False))
+        static_paths.append(StaticPathConfig(resource_url, str(static_file), True))
 
     if not static_paths:
         return
@@ -1153,15 +1161,17 @@ async def _register_lovelace_card_resource(hass: HomeAssistant) -> None:
         },
     ]
     integration_version = _integration_version()
-    resource_targets = [
-        {
-            CONF_URL: _resource_url_with_version(target[CONF_URL], integration_version),
+    resource_targets = []
+    for target in resource_targets_base:
+        file_path = Path(__file__).parent / "frontend" / _resource_url_path(target[CONF_URL]).rsplit("/", 1)[-1]
+        file_hash = _file_content_hash(file_path)
+        version_tag = f"{integration_version}-{file_hash}"
+        resource_targets.append({
+            CONF_URL: _resource_url_with_version(target[CONF_URL], version_tag),
             CONF_TYPE: target[CONF_TYPE],
             CONF_RESOURCE_TYPE_WS: target[CONF_RESOURCE_TYPE_WS],
             "resource_path": _resource_url_path(target[CONF_URL]),
-        }
-        for target in resource_targets_base
-    ]
+        })
 
     if lovelace_data.resource_mode != MODE_STORAGE:
         resource_urls = ", ".join(target[CONF_URL] for target in resource_targets)
