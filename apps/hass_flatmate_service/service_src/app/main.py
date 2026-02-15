@@ -56,6 +56,16 @@ async def lifespan(_app: FastAPI):
     db.ensure_db_dir()
     assert db.engine is not None
     Base.metadata.create_all(bind=db.engine)
+
+    from sqlalchemy import inspect as sa_inspect, text
+    inspector = sa_inspect(db.engine)
+    columns = {c["name"] for c in inspector.get_columns("cleaning_assignments")}
+    if "notified_slots" not in columns:
+        with db.engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE cleaning_assignments ADD COLUMN notified_slots JSON DEFAULT NULL"
+            ))
+
     yield
 
 

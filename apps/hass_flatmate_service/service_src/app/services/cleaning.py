@@ -1074,59 +1074,63 @@ def due_notifications(session: Session, at: datetime) -> list[dict]:
     mark_past_pending_as_missed(session, week_start)
 
     notifications: list[dict] = []
-    minute = local_at.minute
 
     def assignee_member_for_week(target_week: date) -> tuple[Member | None, CleaningAssignment]:
         assignment = ensure_assignment(session, target_week)
         member = get_member_by_id(session, assignment.assignee_member_id) if assignment.assignee_member_id else None
         return member, assignment
 
-    if local_at.weekday() == 0 and local_at.hour == 11 and minute == 0:
-        member, assignment = assignee_member_for_week(week_start)
-        warning = ""
+    # --- Previous week missed notice ---
+    prev_week = add_weeks(week_start, -1)
+    prev_member, prev_assignment = assignee_member_for_week(prev_week)
+    prev_sent = prev_assignment.notified_slots or {}
+    if (prev_assignment.status == CleaningAssignmentStatus.MISSED
+            and prev_sent
+            and "missed_notice" not in prev_sent
+            and prev_member):
+        notifications.append(
+            _member_notification(prev_member, "Cleaning Shift Missed",
+                "Your cleaning shift last week was not confirmed and has been marked as missed.",
+                week_start=prev_week, notification_kind="missed_notice",
+                notification_slot="missed_notice", source_action="cleaning_notifications_due"))
 
-        prev_week = add_weeks(week_start, -1)
-        _prev_member, prev_assignment = assignee_member_for_week(prev_week)
+    # --- Current week notifications ---
+    member, assignment = assignee_member_for_week(week_start)
+    sent = assignment.notified_slots or {}
+
+    # Monday 11:00 — weekly assignment (catches up anytime Monday)
+    if local_at.weekday() == 0 and local_at.hour >= 11 and "monday_11" not in sent:
+        warning = ""
         if prev_assignment.status != CleaningAssignmentStatus.DONE:
             warning = " Warning: last week is still unconfirmed."
-
         message = f"It is your turn to clean the common areas this week.{warning}".strip()
         notifications.append(
-            _member_notification(
-                member,
-                "Weekly Cleaning Shift",
-                message,
-                week_start=week_start,
-                notification_kind="weekly_assignment",
-                notification_slot="monday_11",
-                source_action="cleaning_notifications_due",
-            )
-        )
+            _member_notification(member, "Weekly Cleaning Shift", message,
+                week_start=week_start, notification_kind="weekly_assignment",
+                notification_slot="monday_11", source_action="cleaning_notifications_due"))
 
-    if local_at.weekday() == 6 and minute == 0 and local_at.hour in {18, 21}:
-        member, assignment = assignee_member_for_week(week_start)
-        if assignment.status == CleaningAssignmentStatus.PENDING:
-            if local_at.hour == 18:
-                message = (
-                    "Please mark this week's cleaning as done in Home Assistant after you finish. "
-                    "If it is not confirmed, the next person may miss a reminder."
-                )
-            else:
-                message = (
-                    "Final reminder: mark this week's cleaning as done in Home Assistant now "
-                    "so next week's reminder can be sent correctly."
-                )
+    # Sunday reminders — only the latest applicable fires (elif chain)
+    if local_at.weekday() == 6 and assignment.status == CleaningAssignmentStatus.PENDING:
+        if local_at.hour >= 21 and "sunday_21" not in sent:
             notifications.append(
-                _member_notification(
-                    member,
-                    "Weekly Cleaning Shift",
-                    message,
-                    week_start=week_start,
-                    notification_kind="weekly_reminder",
-                    notification_slot=f"sunday_{local_at.hour}",
-                    source_action="cleaning_notifications_due",
-                )
-            )
+                _member_notification(member, "Weekly Cleaning Shift",
+                    "Final reminder: mark this week's cleaning as done in Home Assistant now "
+                    "so next week's reminder can be sent correctly.",
+                    week_start=week_start, notification_kind="weekly_reminder",
+                    notification_slot="sunday_21", source_action="cleaning_notifications_due"))
+        elif local_at.hour >= 18 and "sunday_18" not in sent:
+            notifications.append(
+                _member_notification(member, "Weekly Cleaning Shift",
+                    "Please mark this week's cleaning as done in Home Assistant after you finish. "
+                    "If it is not confirmed, the next person may miss a reminder.",
+                    week_start=week_start, notification_kind="weekly_reminder",
+                    notification_slot="sunday_18", source_action="cleaning_notifications_due"))
+        elif local_at.hour >= 11 and "sunday_11" not in sent:
+            notifications.append(
+                _member_notification(member, "Weekly Cleaning Shift",
+                    "Don't forget to mark your cleaning shift as done in Home Assistant today.",
+                    week_start=week_start, notification_kind="weekly_reminder",
+                    notification_slot="sunday_11", source_action="cleaning_notifications_due"))
 
     session.commit()
     return notifications
@@ -1191,6 +1195,17 @@ def record_notification_dispatches(session: Session, *, records: list[dict]) -> 
             },
             created_at=created_at,
         )
+
+        if status_raw in ("sent", "test_redirected"):
+            slot = str(record.get("notification_slot") or "")
+            if slot:
+                assignment = session.get(CleaningAssignment, week_start_raw)
+                if assignment is not None:
+                    slots = dict(assignment.notified_slots or {})
+                    if slot not in slots:
+                        slots[slot] = (dispatched_at or now_utc()).isoformat()
+                        assignment.notified_slots = slots
+
         inserted += 1
 
     session.commit()

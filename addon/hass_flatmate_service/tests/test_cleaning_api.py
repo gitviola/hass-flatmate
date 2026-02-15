@@ -119,6 +119,18 @@ def test_due_notifications_schedule(client, auth_headers) -> None:
 
     # Sunday reminders fire if still pending.
     sunday = week_start + timedelta(days=6)
+
+    sunday_11 = client.get(
+        "/v1/cleaning/notifications/due",
+        headers=auth_headers,
+        params={"at": _iso_at(sunday, 11, 0)},
+    )
+    assert sunday_11.status_code == 200
+    sunday_11_notifications = sunday_11.json()["notifications"]
+    assert len(sunday_11_notifications) == 1
+    assert sunday_11_notifications[0]["notification_slot"] == "sunday_11"
+    assert "Don't forget" in sunday_11_notifications[0]["message"]
+
     sunday_18 = client.get(
         "/v1/cleaning/notifications/due",
         headers=auth_headers,
@@ -643,3 +655,216 @@ def test_swap_rejects_inactive_members(client, auth_headers) -> None:
     )
     assert response.status_code == 400
     assert "inactive" in response.json()["detail"]
+
+
+def test_due_notifications_catch_up_after_missed_slot(client, auth_headers) -> None:
+    """Monday 14:00 with no prior dispatch → monday_11 fires (catch-up)."""
+    _sync_members(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    week_start = date.fromisoformat(current.json()["week_start"])
+
+    monday_14 = client.get(
+        "/v1/cleaning/notifications/due",
+        headers=auth_headers,
+        params={"at": _iso_at(week_start, 14, 30)},
+    )
+    assert monday_14.status_code == 200
+    notifications = monday_14.json()["notifications"]
+    assert any(n["notification_slot"] == "monday_11" for n in notifications)
+
+
+def test_due_notifications_dedup_after_dispatch(client, auth_headers) -> None:
+    """Record 'sent' dispatch → next poll returns empty for that slot."""
+    _sync_members(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    week_start = date.fromisoformat(current.json()["week_start"])
+
+    # First poll fires the notification
+    first = client.get(
+        "/v1/cleaning/notifications/due",
+        headers=auth_headers,
+        params={"at": _iso_at(week_start, 11, 0)},
+    )
+    assert first.status_code == 200
+    assert len(first.json()["notifications"]) >= 1
+
+    # Record dispatch as sent
+    client.post(
+        "/v1/cleaning/notifications/dispatch",
+        headers=auth_headers,
+        json={
+            "records": [
+                {
+                    "week_start": week_start.isoformat(),
+                    "member_id": 1,
+                    "notify_service": "notify.mobile_app_alex",
+                    "title": "Weekly Cleaning Shift",
+                    "message": "It is your turn.",
+                    "notification_kind": "weekly_assignment",
+                    "notification_slot": "monday_11",
+                    "source_action": "cleaning_notifications_due",
+                    "status": "sent",
+                }
+            ]
+        },
+    )
+
+    # Second poll should not fire monday_11 again
+    second = client.get(
+        "/v1/cleaning/notifications/due",
+        headers=auth_headers,
+        params={"at": _iso_at(week_start, 11, 5)},
+    )
+    assert second.status_code == 200
+    monday_slots = [n for n in second.json()["notifications"] if n["notification_slot"] == "monday_11"]
+    assert monday_slots == []
+
+
+def test_sunday_11_suppressed_after_completion(client, auth_headers) -> None:
+    """Mark done → Sunday 11:00 returns empty."""
+    _sync_members(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    week_start = date.fromisoformat(current.json()["week_start"])
+
+    done = client.post(
+        "/v1/cleaning/mark_done",
+        headers=auth_headers,
+        json={"week_start": week_start.isoformat(), "actor_user_id": "u1"},
+    )
+    assert done.status_code == 200
+
+    sunday = week_start + timedelta(days=6)
+    sunday_11 = client.get(
+        "/v1/cleaning/notifications/due",
+        headers=auth_headers,
+        params={"at": _iso_at(sunday, 11, 0)},
+    )
+    assert sunday_11.status_code == 200
+    assert sunday_11.json()["notifications"] == []
+
+
+def test_sunday_catch_up_sends_latest_only(client, auth_headers) -> None:
+    """Sunday 21:30 with no dispatches → only sunday_21 (not all 3)."""
+    _sync_members(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    week_start = date.fromisoformat(current.json()["week_start"])
+
+    sunday = week_start + timedelta(days=6)
+    result = client.get(
+        "/v1/cleaning/notifications/due",
+        headers=auth_headers,
+        params={"at": _iso_at(sunday, 21, 30)},
+    )
+    assert result.status_code == 200
+    notifications = result.json()["notifications"]
+    sunday_slots = [n["notification_slot"] for n in notifications if n["notification_slot"].startswith("sunday_")]
+    assert sunday_slots == ["sunday_21"]
+
+
+def test_failed_dispatch_allows_retry(client, auth_headers) -> None:
+    """Record 'failed' dispatch → notification still fires on retry."""
+    _sync_members(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    week_start = date.fromisoformat(current.json()["week_start"])
+
+    # Record a failed dispatch
+    client.post(
+        "/v1/cleaning/notifications/dispatch",
+        headers=auth_headers,
+        json={
+            "records": [
+                {
+                    "week_start": week_start.isoformat(),
+                    "member_id": 1,
+                    "notification_slot": "monday_11",
+                    "status": "failed",
+                }
+            ]
+        },
+    )
+
+    # Notification should still fire since it was not successfully sent
+    retry = client.get(
+        "/v1/cleaning/notifications/due",
+        headers=auth_headers,
+        params={"at": _iso_at(week_start, 11, 5)},
+    )
+    assert retry.status_code == 200
+    slots = [n["notification_slot"] for n in retry.json()["notifications"]]
+    assert "monday_11" in slots
+
+
+def test_missed_shift_notifies_old_assignee(client, auth_headers) -> None:
+    """Previous week MISSED with tracked slots → missed_notice generated."""
+    _sync_members(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    week_start = date.fromisoformat(current.json()["week_start"])
+
+    # Dispatch a notification for the current week to create tracked slots
+    client.get(
+        "/v1/cleaning/notifications/due",
+        headers=auth_headers,
+        params={"at": _iso_at(week_start, 11, 0)},
+    )
+    client.post(
+        "/v1/cleaning/notifications/dispatch",
+        headers=auth_headers,
+        json={
+            "records": [
+                {
+                    "week_start": week_start.isoformat(),
+                    "member_id": 1,
+                    "notification_slot": "monday_11",
+                    "status": "sent",
+                }
+            ]
+        },
+    )
+
+    # Now check the following week — current week should be MISSED with tracked slots
+    next_week = week_start + timedelta(days=7)
+    result = client.get(
+        "/v1/cleaning/notifications/due",
+        headers=auth_headers,
+        params={"at": _iso_at(next_week, 11, 0)},
+    )
+    assert result.status_code == 200
+    notifications = result.json()["notifications"]
+    missed_notices = [n for n in notifications if n["notification_slot"] == "missed_notice"]
+    assert len(missed_notices) == 1
+    assert "marked as missed" in missed_notices[0]["message"]
+    assert missed_notices[0]["week_start"] == week_start.isoformat()
+
+
+def test_missed_notice_not_sent_for_predeployment_assignments(client, auth_headers) -> None:
+    """Previous week MISSED with no tracked slots (NULL) → no missed_notice."""
+    _sync_members(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    week_start = date.fromisoformat(current.json()["week_start"])
+
+    # Don't dispatch anything — leave notified_slots as NULL/empty
+    # Move to next week — current week will be MISSED but has no tracked slots
+    next_week = week_start + timedelta(days=7)
+    result = client.get(
+        "/v1/cleaning/notifications/due",
+        headers=auth_headers,
+        params={"at": _iso_at(next_week, 11, 0)},
+    )
+    assert result.status_code == 200
+    notifications = result.json()["notifications"]
+    missed_notices = [n for n in notifications if n["notification_slot"] == "missed_notice"]
+    assert missed_notices == []

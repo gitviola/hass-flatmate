@@ -132,6 +132,7 @@ class CleaningAssignment(Base):
     completed_by_member_id: Mapped[int | None] = mapped_column(ForeignKey("members.id"), nullable=True)
     completion_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    notified_slots: Mapped[dict | None] = mapped_column(JSON, default=dict, nullable=True)
 
 
 class CleaningOverride(Base):
