@@ -1,0 +1,192 @@
+Implement the following plan:
+
+# Resilient Cleaning Notifications
+
+## Context
+
+Cleaning notifications currently fire only at exact minute matches (e.g., Monday 11:00:00). If HA restarts at that minute, the notification is silently lost with no retry. There's also no Sunday morning reminder — only evening ones at 18:00 and 21:00. Additionally, when a previous week's shift is missed, the old assignee never gets told.
+
+## Approach
+
+Track sent notification slots directly on `CleaningAssignment` via a new `notified_slots` JSON column. Replace exact-minute matching with "time has passed today + not yet dispatched" checks. For Sunday catch-up, only send the **latest relevant** reminder (not all missed ones). Notify old assignees when their shift is marked as missed.
+
+## Changes
+
+### 1. Add `notified_slots` column to CleaningAssignment
+
+**File:** `addon/hass_flatmate_service/app/models.py` (after line 134, after `completed_at`)
+
+```python
+notified_slots: Mapped[dict] = mapped_column(JSON, default=dict, nullable=True)
+```
+
+Stores `{"monday_11": "2026-02-09T11:00:00", "missed_notice": "2026-02-16T11:00:00", ...}` — slot name → ISO timestamp when dispatched. `nullable=True` so existing rows with `NULL` work (treated as `{}` in code).
+
+### 2. DB migration for existing databases
+
+**File:** `addon/hass_flatmate_service/app/main.py` (lifespan, after `create_all` on line 58)
+
+```python
+from sqlalchemy import inspect as sa_inspect, text
+
+inspector = sa_inspect(db.engine)
+columns = {c["name"] for c in inspector.get_columns("cleaning_assignments")}
+if "notified_slots" not in columns:
+    with db.engine.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE cleaning_assignments ADD COLUMN notified_slots JSON DEFAULT NULL"
+        ))
+```
+
+### 3. Rewrite `due_notifications()` — catch-up with dedup
+
+**File:** `addon/hass_flatmate_service/app/services/cleaning.py` (lines 1071-1132)
+
+Key design decisions:
+- **Same-day catch-up only**: Monday notifications only fire on Monday, Sunday notifications only on Sunday
+- **Latest-only Sunday catch-up**: Use `elif` chain (21 → 18 → 11) so only the most relevant reminder fires. Guards prevent earlier slots from firing if later ones already sent.
+- **Missed shift notice**: Check previous week's assignment — if MISSED and had notifications tracked (not a pre-deployment assignment), notify the old assignee once.
+
+```python
+def due_notifications(session: Session, at: datetime) -> list[dict]:
+    local_at = at
+    week_start = monday_for(local_at.date())
+    mark_past_pending_as_missed(session, week_start)
+
+    notifications: list[dict] = []
+
+    def assignee_member_for_week(target_week):
+        assignment = ensure_assignment(session, target_week)
+        member = get_member_by_id(session, assignment.assignee_member_id) if assignment.assignee_member_id else None
+        return member, assignment
+
+    # --- Previous week missed notice ---
+    prev_week = add_weeks(week_start, -1)
+    prev_member, prev_assignment = assignee_member_for_week(prev_week)
+    prev_sent = prev_assignment.notified_slots or {}
+    if (prev_assignment.status == CleaningAssignmentStatus.MISSED
+            and prev_sent  # had tracked notifications (not pre-deployment)
+            and "missed_notice" not in prev_sent
+            and prev_member):
+        notifications.append(
+            _member_notification(prev_member, "Cleaning Shift Missed",
+                "Your cleaning shift last week was not confirmed and has been marked as missed.",
+                week_start=prev_week, notification_kind="missed_notice",
+                notification_slot="missed_notice", source_action="cleaning_notifications_due"))
+
+    # --- Current week notifications ---
+    member, assignment = assignee_member_for_week(week_start)
+    sent = assignment.notified_slots or {}
+
+    # Monday 11:00 — weekly assignment (catches up anytime Monday)
+    if local_at.weekday() == 0 and local_at.hour >= 11 and "monday_11" not in sent:
+        warning = ""
+        if prev_assignment.status != CleaningAssignmentStatus.DONE:
+            warning = " Warning: last week is still unconfirmed."
+        message = f"It is your turn to clean the common areas this week.{warning}".strip()
+        notifications.append(
+            _member_notification(member, "Weekly Cleaning Shift", message,
+                week_start=week_start, notification_kind="weekly_assignment",
+                notification_slot="monday_11", source_action="cleaning_notifications_due"))
+
+    # Sunday reminders — only the latest applicable fires (elif chain)
+    if local_at.weekday() == 6 and assignment.status == CleaningAssignmentStatus.PENDING:
+        if local_at.hour >= 21 and "sunday_21" not in sent:
+            notifications.append(
+                _member_notification(member, "Weekly Cleaning Shift",
+                    "Final reminder: mark this week's cleaning as done in Home Assistant now "
+                    "so next week's reminder can be sent correctly.",
+                    week_start=week_start, notification_kind="weekly_reminder",
+                    notification_slot="sunday_21", source_action="cleaning_notifications_due"))
+        elif local_at.hour >= 18 and "sunday_18" not in sent:
+            notifications.append(
+                _member_notification(member, "Weekly Cleaning Shift",
+                    "Please mark this week's cleaning as done in Home Assistant after you finish. "
+                    "If it is not confirmed, the next person may miss a reminder.",
+                    week_start=week_start, notification_kind="weekly_reminder",
+                    notification_slot="sunday_18", source_action="cleaning_notifications_due"))
+        elif local_at.hour >= 11 and "sunday_11" not in sent:
+            notifications.append(
+                _member_notification(member, "Weekly Cleaning Shift",
+                    "Don't forget to mark your cleaning shift as done in Home Assistant today.",
+                    week_start=week_start, notification_kind="weekly_reminder",
+                    notification_slot="sunday_11", source_action="cleaning_notifications_due"))
+
+    session.commit()
+    return notifications
+```
+
+**Catch-up behavior examples:**
+- Normal day: each slot fires at its scheduled time, one at a time
+- HA down 11am-9pm Sunday → only `sunday_21` fires at 9pm (latest relevant)
+- HA down 11am-6:30pm Sunday → only `sunday_18` fires (latest relevant)
+- HA down all Monday, back Tuesday → Monday notification NOT sent (too late, but person will know from Sunday reminders)
+- Previous week MISSED → old assignee gets one "shift was missed" notification
+
+### 4. Mark slots as sent in `record_notification_dispatches()`
+
+**File:** `addon/hass_flatmate_service/app/services/cleaning.py` (in `record_notification_dispatches()`, after `log_event` call)
+
+When status is `"sent"` or `"test_redirected"`, update the assignment's `notified_slots`:
+
+```python
+if status_raw in ("sent", "test_redirected"):
+    slot = str(record.get("notification_slot") or "")
+    if slot:
+        assignment = session.get(CleaningAssignment, week_start_raw)
+        if assignment is not None:
+            slots = dict(assignment.notified_slots or {})
+            if slot not in slots:
+                slots[slot] = (dispatched_at or now_utc()).isoformat()
+                assignment.notified_slots = slots
+```
+
+### 5. Update tests
+
+**File:** `addon/hass_flatmate_service/tests/test_cleaning_api.py`
+
+| Test | What it validates |
+|------|------------------|
+| Extend `test_due_notifications_schedule` | Add Sunday 11:00 check (slot `sunday_11`, "Don't forget") |
+| `test_due_notifications_catch_up_after_missed_slot` | Monday 14:00 with no dispatch → `monday_11` fires |
+| `test_due_notifications_dedup_after_dispatch` | Record "sent" dispatch → next poll returns empty |
+| `test_sunday_11_suppressed_after_completion` | Mark done → Sunday 11:00 returns empty |
+| `test_sunday_catch_up_sends_latest_only` | Sunday 21:30 with no dispatches → only `sunday_21` (not all 3) |
+| `test_failed_dispatch_allows_retry` | Record "failed" dispatch → notification still fires |
+| `test_missed_shift_notifies_old_assignee` | Previous week MISSED with tracked slots → missed_notice generated |
+| `test_missed_notice_not_sent_for_predeployment_assignments` | Previous week MISSED with no tracked slots (NULL) → no missed_notice |
+
+### 6. Sync app mirror
+
+Run `./scripts/sync_app_service_src.sh` after backend changes.
+
+## Files to modify
+
+1. `addon/hass_flatmate_service/app/models.py` — add `notified_slots` column
+2. `addon/hass_flatmate_service/app/main.py` — add migration in lifespan
+3. `addon/hass_flatmate_service/app/services/cleaning.py` — rewrite `due_notifications()`, update `record_notification_dispatches()`
+4. `addon/hass_flatmate_service/tests/test_cleaning_api.py` — extend/add tests
+
+## Verification
+
+```bash
+cd addon/hass_flatmate_service && pytest tests/test_cleaning_api.py -v
+./scripts/sync_app_service_src.sh
+```
+
+No integration-side changes needed — the existing polling + dispatch recording flow works unchanged.
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/ms/.REDACTED.jsonl
+
+---
+
+yes and create a new release of course pls
+
+---
+
+Pls do so
+
+---
+
+pls remove those not needed steps inside the publish gh action.. I mean this attempt to set package visibility public and this weird verify anonymous pull works for both ach.. We found the issue long time ago so it was a pefix issue
