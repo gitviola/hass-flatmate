@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "76309e395e1e",
+  "session_id": "b708bd20-477a-45a0-86b2-3de0af8ac7da",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-15T18:14:49.639609Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "custom_components/hass_flatmate/__init__.py",
+    "tests/test_notify_resolution.py"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 29,
+    "cache_creation_tokens": 63712,
+    "cache_read_tokens": 1624518,
+    "output_tokens": 14250,
+    "api_call_count": 25
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-15T18:14:49.577416Z",
+    "agent_lines": 725,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 725,
+    "agent_percentage": 100
+  }
+}

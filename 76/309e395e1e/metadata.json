@@ -3,7 +3,7 @@
   "checkpoint_id": "76309e395e1e",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 0,
+  "checkpoints_count": 1,
   "files_touched": [
     ".github/workflows/publish-app.yml",
     "addon/hass_flatmate_service/app/main.py",
@@ -11,7 +11,9 @@
     "addon/hass_flatmate_service/app/services/cleaning.py",
     "addon/hass_flatmate_service/tests/test_cleaning_api.py",
     "apps/hass_flatmate_service/config.yaml",
-    "custom_components/hass_flatmate/manifest.json"
+    "custom_components/hass_flatmate/__init__.py",
+    "custom_components/hass_flatmate/manifest.json",
+    "tests/test_notify_resolution.py"
   ],
   "sessions": [
     {
@@ -20,13 +22,20 @@
       "context": "/76/309e395e1e/0/context.md",
       "content_hash": "/76/309e395e1e/0/content_hash.txt",
       "prompt": "/76/309e395e1e/0/prompt.txt"
+    },
+    {
+      "metadata": "/76/309e395e1e/1/metadata.json",
+      "transcript": "/76/309e395e1e/1/full.jsonl",
+      "context": "/76/309e395e1e/1/context.md",
+      "content_hash": "/76/309e395e1e/1/content_hash.txt",
+      "prompt": "/76/309e395e1e/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 17,
-    "cache_creation_tokens": 113459,
-    "cache_read_tokens": 1289925,
-    "output_tokens": 2372,
-    "api_call_count": 13
+    "input_tokens": 46,
+    "cache_creation_tokens": 177171,
+    "cache_read_tokens": 2914443,
+    "output_tokens": 16622,
+    "api_call_count": 38
   }
 }
