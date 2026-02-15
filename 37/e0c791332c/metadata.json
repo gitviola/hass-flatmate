@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "37e0c791332c",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "apps/hass_flatmate_service/config.yaml",
+    "custom_components/hass_flatmate/frontend/hass-flatmate-cleaning-card.js",
+    "custom_components/hass_flatmate/manifest.json",
+    "custom_components/hass_flatmate/sensor.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/37/e0c791332c/0/metadata.json",
+      "transcript": "/37/e0c791332c/0/full.jsonl",
+      "context": "/37/e0c791332c/0/context.md",
+      "content_hash": "/37/e0c791332c/0/content_hash.txt",
+      "prompt": "/37/e0c791332c/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 193,
+    "cache_creation_tokens": 113007,
+    "cache_read_tokens": 13727653,
+    "output_tokens": 16840,
+    "api_call_count": 163
+  }
+}

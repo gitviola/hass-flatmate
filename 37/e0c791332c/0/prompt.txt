@@ -1,0 +1,82 @@
+Implement the following plan:
+
+# Show "no notification device" warning in cleaning card shift modals
+
+## Context
+
+After fixing notify service resolution (v0.1.40), users can't tell from the UI whether a flatmate has a notification device configured. When a notification is skipped (no device found), there's no visible indicator — only HA logs. Adding a warning in the shift details modal makes this immediately visible for debugging.
+
+## Data flow gap
+
+Backend already returns `notify_service` per member (`MemberResponse`). Coordinator fetches it. But `sensor.py:667-675` strips it from `members_payload`. Frontend never sees it.
+
+## Changes
+
+### 1. Pass `notify_service` to frontend — `sensor.py:667-675`
+
+Add `"notify_service": member.get("notify_service")` to the `members_payload` dict.
+
+### 2. Add warning in "Who will be notified" sections — `cleaning-card.js`
+
+Add a helper method that checks memberMap for a member_id and returns a warning span if `notify_service` is falsy:
+
+```js
+_notifyWarning(memberMap, memberId) {
+  const m = memberMap.get(memberId);
+  if (m && !m.notify_service) return ' <span class="notify-warning">(no notification device)</span>';
+  return '';
+}
+```
+
+Append this after each `<strong>name</strong>` in "Who will be notified" `<li>` entries:
+- **Done/takeover modal** (~lines 1338-1342): assignee + cleaner
+- **Confirm-assignee modal** (~lines 1350-1352): assignee
+- **Swap modal** (~lines 1427-1442): both partners
+
+Add CSS: `.notify-warning { color: var(--warning-color, #ff9800); font-size: 0.85em; font-style: italic; }`
+
+## Files to modify
+
+- `custom_components/hass_flatmate/sensor.py` — 1 line in members_payload
+- `custom_components/hass_flatmate/frontend/hass-flatmate-cleaning-card.js` — helper + 6 warning insertions + CSS
+
+## Verification
+
+- `node --check custom_components/hass_flatmate/frontend/hass-flatmate-cleaning-card.js`
+- `python3 -m compileall custom_components/hass_flatmate`
+- Release as v0.1.41, tag + push
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/ms/.REDACTED.jsonl
+
+---
+
+How can we test this locally properly? I have the server running
+
+---
+
+yes go for i
+
+---
+
+Okay and we also show this in the shift details modal right?
+
+---
+
+I mean the whole point was to put it into the shifts details modal when it says skipped or something for the notifications that are shown in the timeline
+
+---
+
+[Request interrupted by user for tool use]
+
+---
+
+But it doesn't work, I don't see where i can extend
+
+---
+
+I don't even see the option to expand anything inside the "Shift details" modal on each timeline item..
+
+---
+
+http://localhost:8123/dashboard-testing/0

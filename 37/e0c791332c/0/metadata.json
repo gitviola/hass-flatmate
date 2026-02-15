@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "37e0c791332c",
+  "session_id": "19b6ce2c-b501-45e9-8b3a-9022132016cc",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-15T19:06:12.78427Z",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "apps/hass_flatmate_service/config.yaml",
+    "custom_components/hass_flatmate/frontend/hass-flatmate-cleaning-card.js",
+    "custom_components/hass_flatmate/manifest.json",
+    "custom_components/hass_flatmate/sensor.py"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 193,
+    "cache_creation_tokens": 113007,
+    "cache_read_tokens": 13727653,
+    "output_tokens": 16840,
+    "api_call_count": 163
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-15T19:06:11.768129Z",
+    "agent_lines": 0,
+    "human_added": 164,
+    "human_modified": 5,
+    "human_removed": 0,
+    "total_committed": 164,
+    "agent_percentage": 0
+  }
+}
