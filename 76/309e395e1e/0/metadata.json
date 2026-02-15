@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.4.2",
+  "checkpoint_id": "76309e395e1e",
+  "session_id": "fbd90447-8d00-4254-aebf-baa742290e8a",
+  "strategy": "manual-commit",
+  "created_at": "2026-02-15T18:14:46.439462Z",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    ".github/workflows/publish-app.yml",
+    "addon/hass_flatmate_service/app/main.py",
+    "addon/hass_flatmate_service/app/models.py",
+    "addon/hass_flatmate_service/app/services/cleaning.py",
+    "addon/hass_flatmate_service/tests/test_cleaning_api.py",
+    "apps/hass_flatmate_service/config.yaml",
+    "custom_components/hass_flatmate/manifest.json"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "16175d25-aa57-4d53-a80f-764dd5fa45e2",
+  "checkpoint_transcript_start": 192,
+  "transcript_lines_at_start": 192,
+  "token_usage": {
+    "input_tokens": 17,
+    "cache_creation_tokens": 113459,
+    "cache_read_tokens": 1289925,
+    "output_tokens": 2372,
+    "api_call_count": 13
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-02-15T18:14:46.343126Z",
+    "agent_lines": 0,
+    "human_added": 725,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 725,
+    "agent_percentage": 0
+  }
+}
