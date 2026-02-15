@@ -1,0 +1,107 @@
+Implement the following plan:
+
+# Fix: Resolve notify services via person → device_trackers, send to all devices
+
+## Context
+
+`_build_member_sync_payload` uses substring matching (`norm_name in service`) to associate `notify.*` services with HA users. This causes cross-wiring when one name is a substring of another's service name. The user received a cleaning notification meant for another person.
+
+Fix: resolve notify services through person entity → `device_trackers` → derive `notify.mobile_app_*` names, and send to **all** devices during dispatch.
+
+## Changes
+
+### 1. Add `_resolve_member_notify_services()` helper
+
+**File:** `custom_components/hass_flatmate/__init__.py` (new function near `_runtime_notification_test_target` ~line 192)
+
+```python
+def _resolve_member_notify_services(
+    hass: HomeAssistant,
+    runtime: HassFlatmateRuntime,
+    member_id: int | None,
+) -> list[str]:
+    """Resolve all mobile_app notify services for a member via person → device_trackers."""
+    if member_id is None:
+        return []
+    members_by_id = _runtime_members_by_id(runtime)
+    member = members_by_id.get(member_id)
+    if member is None:
+        return []
+    ha_user_id = member.get("ha_user_id")
+    if not ha_user_id:
+        return []
+    # Find person entity for this user
+    person_state = None
+    for state in hass.states.async_all("person"):
+        if state.attributes.get("user_id") == ha_user_id:
+            person_state = state
+            break
+    if person_state is None:
+        return []
+    device_trackers = person_state.attributes.get("device_trackers", [])
+    available = hass.services.async_services().get("notify", {})
+    services = []
+    for tracker_id in device_trackers:
+        if not isinstance(tracker_id, str) or not tracker_id.startswith("device_tracker."):
+            continue
+        service_name = tracker_id.replace("device_tracker.", "mobile_app_", 1)
+        if service_name in available:
+            services.append(f"notify.{service_name}")
+    return services
+```
+
+### 2. Fix `_build_member_sync_payload()` — replace substring matching
+
+**File:** `custom_components/hass_flatmate/__init__.py` (lines 622–634)
+
+Replace the `norm_name in service` matching with person → device_trackers lookup. Store the first valid one as `notify_service` (backend stores one per member for display/logging).
+
+```python
+notify_services = hass.services.async_services().get("notify", {})
+
+# ... in the per-user loop:
+person_entity_id = person_by_user_id.get(user.id)
+notify_service = None
+if person_entity_id:
+    person_state = hass.states.get(person_entity_id)
+    if person_state:
+        for tracker_id in (person_state.attributes.get("device_trackers") or []):
+            if isinstance(tracker_id, str) and tracker_id.startswith("device_tracker."):
+                svc = tracker_id.replace("device_tracker.", "mobile_app_", 1)
+                if svc in notify_services:
+                    notify_service = f"notify.{svc}"
+                    break
+```
+
+### 3. Update `_dispatch_notifications()` — send to all devices
+
+**File:** `custom_components/hass_flatmate/__init__.py` (lines 687–780)
+
+For each notification:
+1. Resolve all notify services via `_resolve_member_notify_services()`
+2. If none found, fall back to `item.get("notify_service")` (backend-stored value)
+3. In test mode: still redirect all to single test target (unchanged behavior, just use test_target's service)
+4. Loop over all resolved services → send + record dispatch per send
+
+The existing validation (domain/format checks), payload building, and dispatch recording stays — just moves inside the per-service inner loop. One dispatch record per actual send attempt.
+
+## File to modify
+
+`custom_components/hass_flatmate/__init__.py` — all three changes above (no backend changes needed)
+
+## Verification
+
+- `node --check` not needed (no JS changes)
+- Restart HA integration, check logs
+- Verify notifications go to correct person's devices only
+
+
+If you need specific details from before exiting plan mode (like exact code snippets, error messages, or content you generated), read the full transcript at: /Users/ms/.REDACTED.jsonl
+
+---
+
+yes commit
+
+---
+
+uhm did you create a pproper release and everything and pushed the tag?
