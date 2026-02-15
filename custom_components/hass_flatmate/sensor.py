@@ -177,6 +177,8 @@ def _build_cleaning_history_by_week(
             "notification_slot": payload.get("notification_slot"),
             "dispatch_status": payload.get("status"),
             "reason": payload.get("reason"),
+            "notification_title": payload.get("title"),
+            "notification_message": payload.get("message"),
             "_sort_key": created_local.timestamp(),
         }
 
@@ -195,6 +197,17 @@ def _build_cleaning_history_by_week(
 
 def _format_slot_moment(slot_moment: datetime) -> str:
     return slot_moment.strftime("%a, %b %-d at %H:%M")
+
+
+_DISPATCH_REASON_LABELS: dict[str, str] = {
+    "missing_notify_service": "No notification device found for this flatmate",
+    "invalid_notify_service_format": "Notification service has an invalid format",
+    "unsupported_notify_domain": "Notification service uses an unsupported domain",
+}
+
+
+def _dispatch_reason_label(reason: str) -> str:
+    return _DISPATCH_REASON_LABELS.get(reason, reason.replace("_", " ").capitalize())
 
 
 def _notification_slots_for_week(
@@ -245,7 +258,8 @@ def _notification_slots_for_week(
         dispatch_event = latest_dispatch_by_slot.get(slot_id)
         if dispatch_event is not None:
             state = str(dispatch_event.get("dispatch_status", "")).strip().lower() or "sent"
-            detail = dispatch_event.get("summary")
+            reason = str(dispatch_event.get("reason") or "").strip().lower()
+            detail = _dispatch_reason_label(reason) if reason else dispatch_event.get("summary")
             slots.append(
                 {
                     "slot": slot_id,
@@ -253,6 +267,9 @@ def _notification_slots_for_week(
                     "state": state,
                     "state_label": status_labels.get(state, state.title()),
                     "detail": detail,
+                    "reason": _dispatch_reason_label(reason) if reason else None,
+                    "notification_title": dispatch_event.get("notification_title"),
+                    "notification_message": dispatch_event.get("notification_message"),
                     "last_event_at": dispatch_event.get("created_at"),
                 }
             )
@@ -333,6 +350,10 @@ def _build_week_timeline(
         if is_future and detail and not timestamp:
             ts_val = None
 
+        notif_title = slot.get("notification_title")
+        notif_message = slot.get("notification_message")
+        reason = slot.get("reason")
+
         timeline.append({
             "type": "notification",
             "timestamp": ts_val.isoformat() if ts_val else None,
@@ -342,6 +363,9 @@ def _build_week_timeline(
             "detail": str(detail) if detail else None,
             "state": state or None,
             "state_label": str(state_label) if state_label else None,
+            "notification_title": str(notif_title) if notif_title else None,
+            "notification_message": str(notif_message) if notif_message else None,
+            "reason": str(reason) if reason else None,
             "_sort_ts": ts_val.timestamp() if ts_val else 0.0,
         })
 
@@ -364,18 +388,31 @@ def _build_week_timeline(
         is_future = ts_val > now_local if ts_val else False
         summary = str(event.get("summary", action.replace("_", " ")))
         reason = event.get("reason")
+        is_dispatch = action == "cleaning_notification_dispatch"
 
-        timeline.append({
-            "type": "event",
+        entry: dict[str, Any] = {
+            "type": "notification" if is_dispatch else "event",
             "timestamp": ts_val.isoformat() if ts_val else None,
             "is_future": is_future,
-            "icon": icon,
+            "icon": _TIMELINE_NOTIFICATION_ICONS.get(
+                str(event.get("dispatch_status", "")).strip().lower(), icon
+            ) if is_dispatch else icon,
             "summary": summary,
-            "detail": str(reason) if reason else None,
-            "state": None,
+            "detail": _dispatch_reason_label(reason) if (is_dispatch and reason) else (str(reason) if reason else None),
+            "state": str(event.get("dispatch_status", "")).strip().lower() or None if is_dispatch else None,
             "state_label": None,
             "_sort_ts": ts_val.timestamp() if ts_val else 0.0,
-        })
+        }
+        if is_dispatch:
+            dispatch_status = str(event.get("dispatch_status", "")).strip().lower()
+            entry["state_label"] = {"sent": "Sent", "failed": "Failed", "skipped": "Skipped", "suppressed": "Suppressed", "test_redirected": "Sent (test mode)"}.get(dispatch_status, dispatch_status.title() if dispatch_status else None)
+            notif_title = event.get("notification_title")
+            notif_message = event.get("notification_message")
+            entry["notification_title"] = str(notif_title) if notif_title else None
+            entry["notification_message"] = str(notif_message) if notif_message else None
+            entry["reason"] = _dispatch_reason_label(reason) if reason else None
+
+        timeline.append(entry)
 
     future_items = [e for e in timeline if e["is_future"]]
     past_items = [e for e in timeline if not e["is_future"]]

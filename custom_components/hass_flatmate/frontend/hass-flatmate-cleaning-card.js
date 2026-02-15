@@ -1067,6 +1067,12 @@ class HassFlatmateCleaningCard extends HTMLElement {
         this._closeHistoryModal();
       }
     });
+
+    this._root.querySelectorAll("[data-timeline-toggle]").forEach((el) => {
+      el.addEventListener("click", () => {
+        el.classList.toggle("expanded");
+      });
+    });
   }
 
   _render() {
@@ -1548,7 +1554,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
       : [];
     const timelineRowsHtml = historyTimeline.length
       ? historyTimeline
-          .map((entry) => {
+          .map((entry, idx) => {
             const isFuture = !!entry.is_future;
             const entryType = String(entry.type || "event");
             const icon = this._escape(entry.icon || "mdi:information");
@@ -1565,8 +1571,28 @@ class HassFlatmateCleaningCard extends HTMLElement {
                 ? `<span class="slot-state ${stateClass}">${stateLabel}</span>`
                 : "";
 
+            const notifTitle = entry.notification_title ? this._escape(entry.notification_title) : "";
+            const notifMessage = entry.notification_message ? this._escape(entry.notification_message) : "";
+            const reason = entry.reason ? this._escape(entry.reason) : "";
+            const hasExpandable = entryType === "notification" && (notifMessage || reason);
+
+            let expandableHtml = "";
+            if (hasExpandable) {
+              const parts = [];
+              if (notifTitle && notifMessage) {
+                parts.push(`<div class="notif-preview-title">${notifTitle}</div>`);
+                parts.push(`<div class="notif-preview-message">${notifMessage}</div>`);
+              } else if (notifMessage) {
+                parts.push(`<div class="notif-preview-message">${notifMessage}</div>`);
+              }
+              if (reason) {
+                parts.push(`<div class="notif-preview-reason">${reason}</div>`);
+              }
+              expandableHtml = `<div class="notif-expandable" data-timeline-expand="${idx}">${parts.join("")}</div>`;
+            }
+
             return `
-              <li class="timeline-entry ${isFuture ? "future" : ""} ${entryType}">
+              <li class="timeline-entry ${isFuture ? "future" : ""} ${entryType} ${hasExpandable ? "expandable" : ""}" ${hasExpandable ? `data-timeline-toggle="${idx}"` : ""}>
                 <div class="timeline-icon">
                   <ha-icon icon="${icon}"></ha-icon>
                 </div>
@@ -1574,8 +1600,10 @@ class HassFlatmateCleaningCard extends HTMLElement {
                   <div class="timeline-top">
                     <span class="timeline-summary">${summary}</span>
                     ${stateBadge}
+                    ${hasExpandable ? '<ha-icon class="expand-chevron" icon="mdi:chevron-down"></ha-icon>' : ""}
                   </div>
                   ${detail ? `<span class="timeline-detail">${detail}</span>` : ""}
+                  ${expandableHtml}
                   ${timestamp ? `<span class="timeline-time">${timestamp}</span>` : ""}
                 </div>
               </li>
@@ -2603,6 +2631,48 @@ class HassFlatmateCleaningCard extends HTMLElement {
         .timeline-detail {
           color: var(--secondary-text-color);
           font-size: 0.8rem;
+        }
+
+        .timeline-entry.expandable {
+          cursor: pointer;
+        }
+
+        .timeline-entry.expandable .expand-chevron {
+          --mdc-icon-size: 16px;
+          color: var(--secondary-text-color);
+          transition: transform 0.2s ease;
+          flex-shrink: 0;
+        }
+
+        .timeline-entry.expandable.expanded .expand-chevron {
+          transform: rotate(180deg);
+        }
+
+        .notif-expandable {
+          display: none;
+          padding: 6px 0 2px;
+          font-size: 0.82rem;
+          line-height: 1.4;
+        }
+
+        .timeline-entry.expanded .notif-expandable {
+          display: block;
+        }
+
+        .notif-preview-title {
+          font-weight: 600;
+          margin-bottom: 2px;
+        }
+
+        .notif-preview-message {
+          color: var(--primary-text-color);
+          white-space: pre-wrap;
+        }
+
+        .notif-preview-reason {
+          color: var(--warning-color, #ff9800);
+          font-style: italic;
+          margin-top: 4px;
         }
 
         .timeline-time {
