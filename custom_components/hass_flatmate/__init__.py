@@ -192,6 +192,40 @@ def _runtime_notification_test_target(runtime: HassFlatmateRuntime) -> dict[str,
     }
 
 
+def _resolve_member_notify_services(
+    hass: HomeAssistant,
+    runtime: HassFlatmateRuntime,
+    member_id: int | None,
+) -> list[str]:
+    """Resolve all mobile_app notify services for a member via person -> device_trackers."""
+    if member_id is None:
+        return []
+    members_by_id = _runtime_members_by_id(runtime)
+    member = members_by_id.get(member_id)
+    if member is None:
+        return []
+    ha_user_id = member.get("ha_user_id")
+    if not ha_user_id:
+        return []
+    person_state = None
+    for state in hass.states.async_all("person"):
+        if state.attributes.get("user_id") == ha_user_id:
+            person_state = state
+            break
+    if person_state is None:
+        return []
+    device_trackers = person_state.attributes.get("device_trackers", [])
+    available = hass.services.async_services().get("notify", {})
+    services: list[str] = []
+    for tracker_id in device_trackers:
+        if not isinstance(tracker_id, str) or not tracker_id.startswith("device_tracker."):
+            continue
+        service_name = tracker_id.replace("device_tracker.", "mobile_app_", 1)
+        if service_name in available:
+            services.append(f"notify.{service_name}")
+    return services
+
+
 def _normalize_notification_link(value: Any) -> str | None:
     if not isinstance(value, str):
         return None
@@ -620,18 +654,23 @@ async def _build_member_sync_payload(hass: HomeAssistant) -> list[dict[str, Any]
             person_by_user_id[user_id] = state.entity_id
 
     notify_services = hass.services.async_services().get("notify", {})
-    notify_service_names = list(notify_services.keys())
 
     payload: list[dict[str, Any]] = []
     for user in users:
         if not user.is_active or user.system_generated:
             continue
 
-        norm_name = _normalize_name(user.name)
-        notify_service = next(
-            (f"notify.{service}" for service in notify_service_names if norm_name and norm_name in service),
-            None,
-        )
+        person_entity_id = person_by_user_id.get(user.id)
+        notify_service = None
+        if person_entity_id:
+            person_state = hass.states.get(person_entity_id)
+            if person_state:
+                for tracker_id in (person_state.attributes.get("device_trackers") or []):
+                    if isinstance(tracker_id, str) and tracker_id.startswith("device_tracker."):
+                        svc = tracker_id.replace("device_tracker.", "mobile_app_", 1)
+                        if svc in notify_services:
+                            notify_service = f"notify.{svc}"
+                            break
 
         payload.append(
             {
@@ -685,25 +724,29 @@ async def _dispatch_notifications(
         return
 
     for item in notifications:
-        notify_service = item.get("notify_service")
         title = item.get("title", "Weekly Cleaning Shift")
         message = item.get("message", "")
         category = item.get("category") if isinstance(item.get("category"), str) else default_category
         category = str(category) if category else None
 
-        if test_mode_enabled and test_target is not None:
-            notify_service = test_target["notify_service"]
-            title = f"[TEST] {title}"
+        member_id = _coerce_member_id(item.get("member_id"))
 
-            original_member_id = _coerce_member_id(item.get("member_id"))
-            if original_member_id is not None:
-                original_name = members_by_id.get(original_member_id, {}).get("display_name")
+        if test_mode_enabled and test_target is not None:
+            target_services = [test_target["notify_service"]]
+            title = f"[TEST] {title}"
+            if member_id is not None:
+                original_name = members_by_id.get(member_id, {}).get("display_name")
                 if original_name:
                     message = f"[Intended for {original_name}] {message}"
                 else:
-                    message = f"[Intended for member {original_member_id}] {message}"
+                    message = f"[Intended for member {member_id}] {message}"
+        else:
+            target_services = _resolve_member_notify_services(hass, runtime, member_id)
+            if not target_services:
+                fallback = item.get("notify_service")
+                target_services = [fallback] if fallback else []
 
-        if not notify_service:
+        if not target_services:
             if category == "cleaning":
                 record = _build_cleaning_dispatch_record(
                     item,
@@ -715,69 +758,73 @@ async def _dispatch_notifications(
                     dispatch_records.append(record)
             continue
 
-        if "." not in notify_service:
-            _LOGGER.warning("Invalid notify service format: %s", notify_service)
+        for notify_service in target_services:
+            if not notify_service:
+                continue
+
+            if "." not in notify_service:
+                _LOGGER.warning("Invalid notify service format: %s", notify_service)
+                if category == "cleaning":
+                    record = _build_cleaning_dispatch_record(
+                        item,
+                        notify_service=notify_service,
+                        status="skipped",
+                        reason="invalid_notify_service_format",
+                    )
+                    if record is not None:
+                        dispatch_records.append(record)
+                continue
+
+            domain, service = notify_service.split(".", 1)
+            if domain != "notify":
+                _LOGGER.warning("Unsupported notify domain: %s", notify_service)
+                if category == "cleaning":
+                    record = _build_cleaning_dispatch_record(
+                        item,
+                        notify_service=notify_service,
+                        status="skipped",
+                        reason="unsupported_notify_domain",
+                    )
+                    if record is not None:
+                        dispatch_records.append(record)
+                continue
+
+            link = _runtime_notification_link(runtime, category)
+            if "deeplink" in item:
+                link = _normalize_notification_link(item.get("deeplink"))
+            svc_payload = {
+                "title": title,
+                "message": message,
+            }
+            data_payload = _notification_data_payload(category=category, link=link)
+            if data_payload:
+                svc_payload["data"] = data_payload
+
+            status_value = "sent"
+            reason: str | None = None
+            try:
+                await hass.services.async_call(
+                    domain,
+                    service,
+                    svc_payload,
+                    blocking=False,
+                )
+                if test_mode_enabled and test_target is not None:
+                    status_value = "test_redirected"
+            except Exception as err:  # pragma: no cover - depends on runtime service availability
+                status_value = "failed"
+                reason = str(err)
+                _LOGGER.warning("Failed to dispatch notification via %s: %s", notify_service, err)
+
             if category == "cleaning":
                 record = _build_cleaning_dispatch_record(
                     item,
                     notify_service=notify_service,
-                    status="skipped",
-                    reason="invalid_notify_service_format",
+                    status=status_value,
+                    reason=reason,
                 )
                 if record is not None:
                     dispatch_records.append(record)
-            continue
-
-        domain, service = notify_service.split(".", 1)
-        if domain != "notify":
-            _LOGGER.warning("Unsupported notify domain: %s", notify_service)
-            if category == "cleaning":
-                record = _build_cleaning_dispatch_record(
-                    item,
-                    notify_service=notify_service,
-                    status="skipped",
-                    reason="unsupported_notify_domain",
-                )
-                if record is not None:
-                    dispatch_records.append(record)
-            continue
-
-        link = _runtime_notification_link(runtime, category)
-        if "deeplink" in item:
-            link = _normalize_notification_link(item.get("deeplink"))
-        payload = {
-            "title": title,
-            "message": message,
-        }
-        data_payload = _notification_data_payload(category=category, link=link)
-        if data_payload:
-            payload["data"] = data_payload
-
-        status_value = "sent"
-        reason: str | None = None
-        try:
-            await hass.services.async_call(
-                domain,
-                service,
-                payload,
-                blocking=False,
-            )
-            if test_mode_enabled and test_target is not None:
-                status_value = "test_redirected"
-        except Exception as err:  # pragma: no cover - depends on runtime service availability
-            status_value = "failed"
-            reason = str(err)
-            _LOGGER.warning("Failed to dispatch notification via %s: %s", notify_service, err)
-
-        if category == "cleaning":
-            record = _build_cleaning_dispatch_record(
-                item,
-                notify_service=notify_service,
-                status=status_value,
-                reason=reason,
-            )
-            if record is not None:
-                dispatch_records.append(record)
 
     if dispatch_records:
         try:
