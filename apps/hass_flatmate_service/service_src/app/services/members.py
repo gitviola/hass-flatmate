@@ -21,6 +21,8 @@ def sync_members(session: Session, items: list[MemberSyncItem]) -> tuple[list[Me
     deactivated_member_ids: set[int] = set()
 
     for item in items:
+        notify_services = [str(value) for value in item.notify_services if str(value)]
+        device_trackers = [str(value) for value in item.device_trackers if str(value)]
         member = existing.get(item.ha_user_id) if item.ha_user_id else None
         if member is None:
             member = Member(
@@ -28,6 +30,8 @@ def sync_members(session: Session, items: list[MemberSyncItem]) -> tuple[list[Me
                 ha_user_id=item.ha_user_id,
                 ha_person_entity_id=item.ha_person_entity_id,
                 notify_service=item.notify_service,
+                notify_services=notify_services,
+                device_trackers=device_trackers,
                 active=item.active,
             )
             session.add(member)
@@ -36,6 +40,8 @@ def sync_members(session: Session, items: list[MemberSyncItem]) -> tuple[list[Me
             member.display_name = item.display_name.strip()
             member.ha_person_entity_id = item.ha_person_entity_id
             member.notify_service = item.notify_service
+            member.notify_services = notify_services
+            member.device_trackers = device_trackers
             member.active = item.active
             if was_active and not member.active:
                 deactivated_member_ids.add(member.id)

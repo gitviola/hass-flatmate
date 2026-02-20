@@ -293,12 +293,89 @@ def _require_active_member(session: Session, member_id: int, *, field_name: str)
     return member
 
 
+def _planned_override_for_week_with_ignore(
+    session: Session,
+    week_start: date,
+    *,
+    ignore_override_ids: set[int] | None = None,
+) -> CleaningOverride | None:
+    override = _planned_override_for_week(session, week_start)
+    if override is not None and ignore_override_ids and override.id in ignore_override_ids:
+        return None
+    return override
+
+
+def _resolve_swap_return_week(
+    session: Session,
+    *,
+    week_start: date,
+    member_b_id: int,
+    requested_return_week_start: date | None,
+    existing_return_override: CleaningOverride | None,
+    ignore_override_ids: set[int] | None = None,
+    max_scan_weeks: int = 156,
+) -> tuple[date, CleaningOverride | None]:
+    ignore_ids = ignore_override_ids or set()
+
+    if requested_return_week_start is not None:
+        _ensure_week_start_is_monday(requested_return_week_start)
+        if requested_return_week_start <= week_start:
+            raise ValueError("return_week_start must be after week_start")
+
+        override = _planned_override_for_week_with_ignore(
+            session,
+            requested_return_week_start,
+            ignore_override_ids=ignore_ids,
+        )
+        if override is None:
+            return requested_return_week_start, None
+
+        if existing_return_override is not None and override.id == existing_return_override.id:
+            return requested_return_week_start, existing_return_override
+
+        baseline_id = baseline_assignee_member_id(session, requested_return_week_start)
+        effective_id = _apply_override(baseline_id, override)
+        if effective_id != member_b_id:
+            raise ValueError(
+                "Selected return_week_start is not assigned to member_b_id in the planned schedule"
+            )
+        if override.type != OverrideType.COMPENSATION:
+            raise ValueError(
+                "Selected return_week_start already has a non-compensation override and cannot be used"
+            )
+
+        return requested_return_week_start, override
+
+    candidate = add_weeks(week_start, 1)
+    for _ in range(max_scan_weeks):
+        baseline_id = baseline_assignee_member_id(session, candidate)
+        override = _planned_override_for_week_with_ignore(
+            session,
+            candidate,
+            ignore_override_ids=ignore_ids,
+        )
+        effective_id = _apply_override(baseline_id, override)
+        if effective_id != member_b_id:
+            candidate = add_weeks(candidate, 1)
+            continue
+
+        if override is None:
+            return candidate, None
+        if override.type == OverrideType.COMPENSATION:
+            return candidate, override
+
+        candidate = add_weeks(candidate, 1)
+
+    raise ValueError("Could not find eligible return week for this swap")
+
+
 def upsert_manual_swap(
     session: Session,
     *,
     week_start: date,
     member_a_id: int,
     member_b_id: int,
+    return_week_start: date | None,
     actor_user_id: str | None,
     cancel: bool,
 ) -> tuple[CleaningOverride | None, list[dict]]:
@@ -385,15 +462,21 @@ def upsert_manual_swap(
         existing.member_to_id = member_b_id
         action = "updated"
 
-    ignore_override_ids = {existing.id}
-    if existing_return_override is not None:
-        ignore_override_ids.add(existing_return_override.id)
-
-    return_week_start = _next_baseline_week_for_member(
+    resolved_return_week_start, resolved_return_override = _resolve_swap_return_week(
         session,
-        member_b_id,
-        start_week=add_weeks(week_start, 1),
-        ignore_override_ids=ignore_override_ids,
+        week_start=week_start,
+        member_b_id=member_b_id,
+        requested_return_week_start=return_week_start,
+        existing_return_override=existing_return_override,
+        ignore_override_ids={existing.id},
+    )
+    preserve_existing_member_from = (
+        resolved_return_override is not None
+        and resolved_return_override.type == OverrideType.COMPENSATION
+        and (
+            existing_return_override is None
+            or resolved_return_override.id != existing_return_override.id
+        )
     )
 
     swap_event = log_event(
@@ -406,40 +489,72 @@ def upsert_manual_swap(
             "week_start": week_start.isoformat(),
             "member_a_id": member_a_id,
             "member_b_id": member_b_id,
-            "return_week_start": return_week_start.isoformat(),
+            "return_week_start": resolved_return_week_start.isoformat(),
+            "return_week_start_explicit": return_week_start.isoformat() if return_week_start else None,
         },
     )
 
     existing.source_event_id = swap_event.id
 
-    if existing_return_override is None:
-        existing_return_override = CleaningOverride(
-            week_start=return_week_start,
+    affected_weeks: set[date] = {week_start, resolved_return_week_start}
+    return_override = resolved_return_override
+
+    if (
+        existing_return_override is not None
+        and return_override is not None
+        and existing_return_override.id != return_override.id
+    ):
+        old_week = existing_return_override.week_start
+        _cancel_override_without_status_collision(
+            session,
+            override=existing_return_override,
+            actor_member_id=actor_member.id if actor_member else None,
+        )
+        affected_weeks.add(old_week)
+        existing_return_override = None
+
+    if return_override is None and existing_return_override is not None:
+        return_override = existing_return_override
+
+    if return_override is None:
+        return_override = CleaningOverride(
+            week_start=resolved_return_week_start,
             type=OverrideType.COMPENSATION,
             source=OverrideSource.MANUAL,
             source_event_id=swap_event.id,
-            member_from_id=member_b_id,
+            member_from_id=(
+                resolved_return_override.member_from_id
+                if preserve_existing_member_from and resolved_return_override is not None
+                else member_b_id
+            ),
             member_to_id=member_a_id,
             status=OverrideStatus.PLANNED,
             created_by_member_id=actor_member.id if actor_member else None,
         )
-        session.add(existing_return_override)
+        session.add(return_override)
     else:
-        existing_return_override.week_start = return_week_start
-        existing_return_override.type = OverrideType.COMPENSATION
-        existing_return_override.source = OverrideSource.MANUAL
-        existing_return_override.source_event_id = swap_event.id
-        existing_return_override.member_from_id = member_b_id
-        existing_return_override.member_to_id = member_a_id
-        existing_return_override.status = OverrideStatus.PLANNED
-        existing_return_override.created_by_member_id = actor_member.id if actor_member else None
+        old_return_week_start = return_override.week_start
+        return_override.week_start = resolved_return_week_start
+        return_override.type = OverrideType.COMPENSATION
+        return_override.source = OverrideSource.MANUAL
+        return_override.source_event_id = swap_event.id
+        return_override.member_from_id = (
+            return_override.member_from_id
+            if preserve_existing_member_from
+            else member_b_id
+        )
+        return_override.member_to_id = member_a_id
+        return_override.status = OverrideStatus.PLANNED
+        return_override.created_by_member_id = actor_member.id if actor_member else None
+        if old_return_week_start != resolved_return_week_start:
+            affected_weeks.add(old_return_week_start)
 
     notifications = _build_swap_notifications(
         session,
         member_a_id,
         member_b_id,
         week_start,
-        return_week_start=return_week_start,
+        return_week_start=resolved_return_week_start,
         action=action,
         actor_name=actor_member.display_name if actor_member else None,
     )
@@ -463,8 +578,8 @@ def upsert_manual_swap(
                 )
             )
 
-    ensure_assignment(session, week_start)
-    ensure_assignment(session, return_week_start)
+    for affected_week in sorted(affected_weeks):
+        ensure_assignment(session, affected_week)
 
     session.commit()
     return existing, notifications

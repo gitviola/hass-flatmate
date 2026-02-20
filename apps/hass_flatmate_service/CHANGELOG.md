@@ -1,5 +1,21 @@
 # Hass Flatmate Service App Changelog
 
+## [0.1.42] - 2026-02-20
+
+### Added
+- New migration snapshot endpoints:
+  - `GET /v1/admin/export`
+  - `POST /v1/admin/import`
+- New ingress-ready migration web UI at `/` for secure export/import of full JSON snapshots.
+
+### Changed
+- Swap endpoint now accepts optional `return_week_start` and supports explicit return-week placement.
+- Automatic swap return-week resolution now uses effective future assignments (planned swaps/compensations included), enabling chained-swap scenarios.
+- App panel ingress is enabled in app config for direct access to migration UI.
+
+### Fixed
+- Swap return planning now correctly handles reused future compensation slots without breaking ownership of existing planned assignments.
+
 ## [0.1.22] - 2026-02-12
 
 ### Added

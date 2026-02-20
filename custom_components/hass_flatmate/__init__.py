@@ -74,6 +74,7 @@ from .const import (
     SERVICE_ATTR_MEMBER_B_ID,
     SERVICE_ATTR_NAME,
     SERVICE_ATTR_ORIGINAL_ASSIGNEE_MEMBER_ID,
+    SERVICE_ATTR_RETURN_WEEK_START,
     SERVICE_ATTR_ROTATION_ROWS,
     SERVICE_ATTR_SHOPPING_HISTORY_ROWS,
     SERVICE_ATTR_WEEK_START,
@@ -200,6 +201,41 @@ def _runtime_notification_test_target(runtime: HassFlatmateRuntime) -> dict[str,
     }
 
 
+def _member_person_state(hass: HomeAssistant, member: dict[str, Any]) -> Any | None:
+    person_entity_id = member.get("ha_person_entity_id")
+    if isinstance(person_entity_id, str) and person_entity_id.startswith("person."):
+        person_state = hass.states.get(person_entity_id)
+        if person_state is not None:
+            return person_state
+
+    ha_user_id = member.get("ha_user_id")
+    if not ha_user_id:
+        return None
+
+    for state in hass.states.async_all("person"):
+        if state.attributes.get("user_id") == ha_user_id:
+            return state
+    return None
+
+
+def _person_device_trackers(person_state: Any) -> list[str]:
+    trackers = person_state.attributes.get("device_trackers") or []
+    return [
+        tracker_id
+        for tracker_id in trackers
+        if isinstance(tracker_id, str) and tracker_id.startswith("device_tracker.")
+    ]
+
+
+def _notify_services_for_trackers(tracker_ids: list[str], available_notify_services: dict[str, Any]) -> list[str]:
+    services: list[str] = []
+    for tracker_id in tracker_ids:
+        service_name = tracker_id.replace("device_tracker.", "mobile_app_", 1)
+        if service_name in available_notify_services:
+            services.append(f"notify.{service_name}")
+    return list(dict.fromkeys(services))
+
+
 def _resolve_member_notify_services(
     hass: HomeAssistant,
     runtime: HassFlatmateRuntime,
@@ -212,26 +248,11 @@ def _resolve_member_notify_services(
     member = members_by_id.get(member_id)
     if member is None:
         return []
-    ha_user_id = member.get("ha_user_id")
-    if not ha_user_id:
-        return []
-    person_state = None
-    for state in hass.states.async_all("person"):
-        if state.attributes.get("user_id") == ha_user_id:
-            person_state = state
-            break
+    person_state = _member_person_state(hass, member)
     if person_state is None:
         return []
-    device_trackers = person_state.attributes.get("device_trackers", [])
     available = hass.services.async_services().get("notify", {})
-    services: list[str] = []
-    for tracker_id in device_trackers:
-        if not isinstance(tracker_id, str) or not tracker_id.startswith("device_tracker."):
-            continue
-        service_name = tracker_id.replace("device_tracker.", "mobile_app_", 1)
-        if service_name in available:
-            services.append(f"notify.{service_name}")
-    return services
+    return _notify_services_for_trackers(_person_device_trackers(person_state), available)
 
 
 def _normalize_notification_link(value: Any) -> str | None:
@@ -669,23 +690,23 @@ async def _build_member_sync_payload(hass: HomeAssistant) -> list[dict[str, Any]
             continue
 
         person_entity_id = person_by_user_id.get(user.id)
-        notify_service = None
+        tracker_ids: list[str] = []
+        resolved_notify_services: list[str] = []
         if person_entity_id:
             person_state = hass.states.get(person_entity_id)
             if person_state:
-                for tracker_id in (person_state.attributes.get("device_trackers") or []):
-                    if isinstance(tracker_id, str) and tracker_id.startswith("device_tracker."):
-                        svc = tracker_id.replace("device_tracker.", "mobile_app_", 1)
-                        if svc in notify_services:
-                            notify_service = f"notify.{svc}"
-                            break
+                tracker_ids = _person_device_trackers(person_state)
+                resolved_notify_services = _notify_services_for_trackers(tracker_ids, notify_services)
+        notify_service = resolved_notify_services[0] if resolved_notify_services else None
 
         payload.append(
             {
                 "display_name": user.name,
                 "ha_user_id": user.id,
-                "ha_person_entity_id": person_by_user_id.get(user.id),
+                "ha_person_entity_id": person_entity_id,
                 "notify_service": notify_service,
+                "notify_services": resolved_notify_services,
+                "device_trackers": tracker_ids,
                 "active": True,
             }
         )
@@ -750,7 +771,7 @@ async def _dispatch_notifications(
                     message = f"[Intended for member {member_id}] {message}"
         else:
             target_services = _resolve_member_notify_services(hass, runtime, member_id)
-            if not target_services:
+            if not target_services and member_id is None:
                 fallback = item.get("notify_service")
                 target_services = [fallback] if fallback else []
 
@@ -965,11 +986,18 @@ async def _register_services(hass: HomeAssistant) -> None:
     async def swap_cleaning_week(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
         week_start = date.fromisoformat(call.data[SERVICE_ATTR_WEEK_START])
+        return_week_start_raw = call.data.get(SERVICE_ATTR_RETURN_WEEK_START)
+        return_week_start = (
+            date.fromisoformat(return_week_start_raw)
+            if isinstance(return_week_start_raw, str) and return_week_start_raw
+            else None
+        )
         response = await runtime.api.swap_cleaning_week(
             week_start=week_start,
             member_a_id=call.data[SERVICE_ATTR_MEMBER_A_ID],
             member_b_id=call.data[SERVICE_ATTR_MEMBER_B_ID],
             actor_user_id=call.context.user_id,
+            return_week_start=return_week_start,
             cancel=call.data.get(SERVICE_ATTR_CANCEL, False),
         )
         await _dispatch_notifications(
@@ -1072,6 +1100,7 @@ async def _register_services(hass: HomeAssistant) -> None:
                 vol.Required(SERVICE_ATTR_WEEK_START): cv.string,
                 vol.Required(SERVICE_ATTR_MEMBER_A_ID): cv.positive_int,
                 vol.Required(SERVICE_ATTR_MEMBER_B_ID): cv.positive_int,
+                vol.Optional(SERVICE_ATTR_RETURN_WEEK_START): cv.string,
                 vol.Optional(SERVICE_ATTR_CANCEL, default=False): cv.boolean,
             }
         ),

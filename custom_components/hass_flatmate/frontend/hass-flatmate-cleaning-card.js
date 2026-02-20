@@ -17,6 +17,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
     this._swapModalAction = "swap";
     this._swapOriginalAssigneeMemberId = "";
     this._swapTargetMemberId = "";
+    this._swapReturnWeekStart = "";
     this._historyModalOpen = false;
     this._historyModalWeekStart = "";
   }
@@ -93,6 +94,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
       swap_modal_action: this._swapModalAction,
       swap_original_assignee_member_id: this._swapOriginalAssigneeMemberId,
       swap_target_member_id: this._swapTargetMemberId,
+      swap_return_week_start: this._swapReturnWeekStart,
       history_modal_open: this._historyModalOpen,
       history_modal_week_start: this._historyModalWeekStart,
       pending_done: [...this._pendingDoneWeeks],
@@ -412,8 +414,37 @@ class HassFlatmateCleaningCard extends HTMLElement {
         originalMemberId,
         targetMemberId,
         sourceWeekStart
-      ) || this._findCompensationPreviewWeek(weeks, targetMemberId, sourceWeekStart)
+      ) || this._findSwapReturnCandidates(weeks, targetMemberId, sourceWeekStart)[0] || null
     );
+  }
+
+  _findSwapReturnCandidates(weeks, targetMemberId, sourceWeekStart) {
+    if (!Number.isInteger(targetMemberId) || targetMemberId <= 0 || !sourceWeekStart) {
+      return [];
+    }
+    const sourceDate = this._parseWeekDate(sourceWeekStart);
+    if (!sourceDate) {
+      return [];
+    }
+
+    return weeks
+      .slice()
+      .sort((a, b) => String(a?.week_start || "").localeCompare(String(b?.week_start || "")))
+      .filter((row) => {
+        const rowDate = this._parseWeekDate(row?.week_start);
+        if (!rowDate || rowDate <= sourceDate) {
+          return false;
+        }
+        const effectiveId = Number(row?.assignee_member_id);
+        if (!Number.isInteger(effectiveId) || effectiveId !== targetMemberId) {
+          return false;
+        }
+        const overrideType = String(row?.override_type || "");
+        if (overrideType && overrideType !== "compensation") {
+          return false;
+        }
+        return true;
+      });
   }
 
   _closeDoneModal() {
@@ -431,6 +462,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
     this._swapModalAction = "swap";
     this._swapOriginalAssigneeMemberId = "";
     this._swapTargetMemberId = "";
+    this._swapReturnWeekStart = "";
     this._render();
   }
 
@@ -522,6 +554,22 @@ class HassFlatmateCleaningCard extends HTMLElement {
     this._swapModalAction = "swap";
     this._swapOriginalAssigneeMemberId = String(originalAssigneeId);
     this._swapTargetMemberId = String(defaultTarget);
+    const loadedWeeks = Array.isArray(this._stateObj?.attributes?.weeks) ? this._stateObj.attributes.weeks : [];
+    const existingReturnWeek =
+      weekRow.override_type === "manual_swap"
+        ? this._findExistingManualSwapReturnWeek(
+            loadedWeeks,
+            originalAssigneeId,
+            defaultTarget,
+            weekRow.week_start
+          )
+        : null;
+    const returnCandidates = this._findSwapReturnCandidates(
+      loadedWeeks,
+      defaultTarget,
+      weekRow.week_start
+    );
+    this._swapReturnWeekStart = existingReturnWeek?.week_start || returnCandidates[0]?.week_start || "";
     this._errorMessage = "";
     this._render();
   }
@@ -736,7 +784,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
     return ok;
   }
 
-  async _swapWeek(row, memberAId, memberBId, cancel = false) {
+  async _swapWeek(row, memberAId, memberBId, cancel = false, returnWeekStart = "") {
     const weekStart = String(row?.week_start || "");
     if (!weekStart) {
       return false;
@@ -757,6 +805,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
           week_start: weekStart,
           member_a_id: memberAId,
           member_b_id: memberBId,
+          return_week_start: cancel ? null : returnWeekStart || null,
           cancel,
         });
       },
@@ -880,7 +929,30 @@ class HassFlatmateCleaningCard extends HTMLElement {
         this._render();
         return;
       }
-      ok = await this._swapWeek(row, originalAssigneeId, swapWithId, false);
+
+      const returnWeekStart = String(this._swapReturnWeekStart || "");
+      if (returnWeekStart) {
+        const allowedRows = this._findSwapReturnCandidates(weeks, swapWithId, row.week_start);
+        const linkedReturnWeek = this._findExistingManualSwapReturnWeek(
+          weeks,
+          originalAssigneeId,
+          swapWithId,
+          row.week_start
+        );
+        const candidateRows = linkedReturnWeek
+          ? [...allowedRows, linkedReturnWeek]
+          : allowedRows;
+        const selected = candidateRows.find(
+          (candidate) => String(candidate?.week_start || "") === returnWeekStart
+        );
+        if (!selected) {
+          this._errorMessage = "Selected return week is no longer valid for this swap target.";
+          this._render();
+          return;
+        }
+      }
+
+      ok = await this._swapWeek(row, originalAssigneeId, swapWithId, false, returnWeekStart);
     }
 
     if (ok) {
@@ -1043,6 +1115,24 @@ class HassFlatmateCleaningCard extends HTMLElement {
 
     this._root.querySelector("#hf-swap-target")?.addEventListener("change", (event) => {
       this._swapTargetMemberId = event.target.value;
+      const targetId = Number(this._swapTargetMemberId);
+      const modalWeek = this._resolveSwapModalWeek(weeks);
+      const candidates = this._findSwapReturnCandidates(
+        weeks,
+        targetId,
+        modalWeek?.week_start
+      );
+      const hasSelectedCandidate = candidates.some(
+        (row) => String(row?.week_start || "") === String(this._swapReturnWeekStart || "")
+      );
+      if (!hasSelectedCandidate) {
+        this._swapReturnWeekStart = candidates[0]?.week_start || "";
+      }
+      this._render();
+    });
+
+    this._root.querySelector("#hf-swap-return-week")?.addEventListener("change", (event) => {
+      this._swapReturnWeekStart = event.target.value;
       this._render();
     });
 
@@ -1400,7 +1490,15 @@ class HassFlatmateCleaningCard extends HTMLElement {
       swapWeekIndex >= 0 ? swapWeekIndex : 0,
       currentWeekStartForDistance
     );
-    const swapReturnWeek =
+    const swapReturnCandidates =
+      hasValidSwapTarget && swapModalWeek
+        ? this._findSwapReturnCandidates(
+            scheduleWeeks,
+            swapTargetId,
+            swapModalWeek.week_start
+          )
+        : [];
+    const swapAutoReturnWeek =
       hasValidSwapTarget && swapModalWeek
         ? this._findSwapReturnPreviewWeek(
             scheduleWeeks,
@@ -1414,6 +1512,27 @@ class HassFlatmateCleaningCard extends HTMLElement {
             swapExistingPartnerId,
             swapModalWeek?.week_start
           );
+    const extraSwapReturnOption =
+      swapAutoReturnWeek &&
+      String(swapAutoReturnWeek?.week_start || "") &&
+      !swapReturnCandidates.some(
+        (row) => String(row?.week_start || "") === String(swapAutoReturnWeek?.week_start || "")
+      )
+        ? swapAutoReturnWeek
+        : null;
+    const requestedSwapReturnWeekStart = String(this._swapReturnWeekStart || "");
+    const selectedSwapReturnWeek =
+      swapReturnCandidates.find(
+        (row) => String(row?.week_start || "") === requestedSwapReturnWeekStart
+      ) ||
+      (extraSwapReturnOption &&
+      String(extraSwapReturnOption?.week_start || "") === requestedSwapReturnWeekStart
+        ? extraSwapReturnOption
+        : null);
+    const effectiveSwapReturnWeekStart = selectedSwapReturnWeek
+      ? String(selectedSwapReturnWeek.week_start)
+      : "";
+    const swapReturnWeek = selectedSwapReturnWeek || swapAutoReturnWeek;
     const swapReturnWeekLabel = swapReturnWeek
       ? this._formatWeekLabelWithDistance(
           swapReturnWeek,
@@ -1421,6 +1540,40 @@ class HassFlatmateCleaningCard extends HTMLElement {
           currentWeekStartForDistance
         )
       : "the next regular week (outside loaded schedule)";
+    const swapReturnWeekOptions = [
+      `<option value="" ${effectiveSwapReturnWeekStart ? "" : "selected"}>Automatic (recommended)</option>`,
+      ...swapReturnCandidates.map((row) => {
+        const weekLabel = this._formatWeekLabelWithDistance(
+          row,
+          Math.max(0, scheduleWeeks.findIndex((candidate) => candidate.week_start === row.week_start)),
+          currentWeekStartForDistance
+        );
+        const weekValue = String(row?.week_start || "");
+        const selected = weekValue === effectiveSwapReturnWeekStart ? "selected" : "";
+        return `<option value="${this._escape(weekValue)}" ${selected}>${this._escape(weekLabel)}</option>`;
+      }),
+      ...(extraSwapReturnOption
+        ? (() => {
+            const weekValue = String(extraSwapReturnOption?.week_start || "");
+            const selected = weekValue === effectiveSwapReturnWeekStart ? "selected" : "";
+            const weekLabel = this._formatWeekLabelWithDistance(
+              extraSwapReturnOption,
+              Math.max(
+                0,
+                scheduleWeeks.findIndex((candidate) => candidate.week_start === extraSwapReturnOption.week_start)
+              ),
+              currentWeekStartForDistance
+            );
+            return [`<option value="${this._escape(weekValue)}" ${selected}>Current linked return: ${this._escape(weekLabel)}</option>`];
+          })()
+        : []),
+    ].join("");
+    const swapReturnWeekChoiceLabel = effectiveSwapReturnWeekStart
+      ? this._escape(swapReturnWeekLabel)
+      : "Automatic (recommended)";
+    const swapReturnWeekChoiceHint = swapReturnCandidates.length
+      ? "Automatic follows the real planned schedule, including existing swaps."
+      : "No explicit return candidates are currently visible; automatic may still find a later week outside loaded rows.";
     const swapCancelPartnerName =
       Number.isInteger(swapExistingPartnerId) &&
       swapExistingPartnerId > 0 &&
@@ -1823,7 +1976,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
                   <span>${swapHasExistingManualSwap ? "Update one-time swap" : "Create one-time swap"}</span>
                 </label>
                 <p class="choice-help">
-                  This swaps exactly two weeks: the selected week and the selected flatmate's next regular week.
+                  This swaps exactly two weeks: the selected week and one future week where the target flatmate is actually assigned in the current planned schedule.
                 </p>
                 ${
                   swapHasExistingManualSwap
@@ -1839,6 +1992,14 @@ class HassFlatmateCleaningCard extends HTMLElement {
                     : ""
                 }
               </div>
+
+              <label for="hf-swap-return-week">Return week (${this._escape(swapTargetName)} gives this week back)</label>
+              <select id="hf-swap-return-week" ${this._swapModalAction === "cancel" || !hasValidSwapTarget ? "disabled" : ""}>
+                ${swapReturnWeekOptions}
+              </select>
+              <p class="choice-help">
+                Selected: <strong>${swapReturnWeekChoiceLabel}</strong>. ${this._escape(swapReturnWeekChoiceHint)}
+              </p>
 
               <div class="effect-panel">
                 <p class="effect-title">What this will do</p>

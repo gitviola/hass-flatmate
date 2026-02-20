@@ -471,6 +471,121 @@ def test_swap_exchanges_two_weeks_and_cancel_restores_both(client, auth_headers)
     assert row_map_after_cancel[expected_return_week]["override_type"] is None
 
 
+def test_swap_supports_explicit_return_week_selection(client, auth_headers) -> None:
+    _sync_members(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    current_payload = current.json()
+    week_start = date.fromisoformat(current_payload["week_start"])
+    member_a_id = int(current_payload["effective_assignee_member_id"])
+    member_b_id = 2 if member_a_id != 2 else 3
+
+    baseline_schedule = client.get("/v1/cleaning/schedule?weeks_ahead=20", headers=auth_headers)
+    assert baseline_schedule.status_code == 200
+    rows = baseline_schedule.json()["schedule"]
+    explicit_return_week = next(
+        date.fromisoformat(row["week_start"])
+        for row in rows
+        if date.fromisoformat(row["week_start"]) > week_start
+        and row["effective_assignee_member_id"] == member_b_id
+        and row["override_type"] is None
+    )
+
+    response = client.post(
+        "/v1/cleaning/overrides/swap",
+        headers=auth_headers,
+        json={
+            "week_start": week_start.isoformat(),
+            "member_a_id": member_a_id,
+            "member_b_id": member_b_id,
+            "return_week_start": explicit_return_week.isoformat(),
+            "actor_user_id": "u1",
+            "cancel": False,
+        },
+    )
+    assert response.status_code == 200
+
+    schedule = client.get("/v1/cleaning/schedule?weeks_ahead=20", headers=auth_headers)
+    assert schedule.status_code == 200
+    row_map = {
+        date.fromisoformat(row["week_start"]): row
+        for row in schedule.json()["schedule"]
+    }
+    assert row_map[week_start]["override_type"] == "manual_swap"
+    assert row_map[week_start]["effective_assignee_member_id"] == member_b_id
+    assert row_map[explicit_return_week]["override_type"] == "compensation"
+    assert row_map[explicit_return_week]["effective_assignee_member_id"] == member_a_id
+
+    activity = client.get("/v1/activity?limit=10", headers=auth_headers)
+    assert activity.status_code == 200
+    swap_event = next(
+        row for row in activity.json() if row.get("action") == "cleaning_swap_created"
+    )
+    payload = swap_event.get("payload_json", {})
+    assert payload.get("return_week_start") == explicit_return_week.isoformat()
+
+
+def test_swap_auto_return_uses_effective_future_assignments(client, auth_headers) -> None:
+    _sync_members(client, auth_headers)
+
+    baseline_schedule = client.get("/v1/cleaning/schedule?weeks_ahead=8", headers=auth_headers)
+    assert baseline_schedule.status_code == 200
+    rows = baseline_schedule.json()["schedule"]
+    week_0 = date.fromisoformat(rows[0]["week_start"])
+    week_1 = date.fromisoformat(rows[1]["week_start"])
+    week_2 = date.fromisoformat(rows[2]["week_start"])
+
+    member_x = int(rows[0]["baseline_assignee_member_id"])
+    member_y = int(rows[1]["baseline_assignee_member_id"])
+    member_z = int(rows[2]["baseline_assignee_member_id"])
+
+    first_swap = client.post(
+        "/v1/cleaning/overrides/swap",
+        headers=auth_headers,
+        json={
+            "week_start": week_0.isoformat(),
+            "member_a_id": member_x,
+            "member_b_id": member_z,
+            "actor_user_id": "u1",
+            "cancel": False,
+        },
+    )
+    assert first_swap.status_code == 200
+
+    second_swap = client.post(
+        "/v1/cleaning/overrides/swap",
+        headers=auth_headers,
+        json={
+            "week_start": week_1.isoformat(),
+            "member_a_id": member_y,
+            "member_b_id": member_x,
+            "actor_user_id": "u1",
+            "cancel": False,
+        },
+    )
+    assert second_swap.status_code == 200
+
+    activity = client.get("/v1/activity?limit=20", headers=auth_headers)
+    assert activity.status_code == 200
+    created_events = [
+        row for row in activity.json() if row.get("action") == "cleaning_swap_created"
+    ]
+    assert len(created_events) >= 2
+    latest_event = created_events[0]
+    assert latest_event.get("payload_json", {}).get("week_start") == week_1.isoformat()
+    assert latest_event.get("payload_json", {}).get("return_week_start") == week_2.isoformat()
+
+    schedule = client.get("/v1/cleaning/schedule?weeks_ahead=8", headers=auth_headers)
+    assert schedule.status_code == 200
+    row_map = {
+        date.fromisoformat(row["week_start"]): row
+        for row in schedule.json()["schedule"]
+    }
+    assert row_map[week_2]["override_type"] == "compensation"
+    assert row_map[week_2]["effective_assignee_member_id"] == member_y
+
+
 def test_mark_done_then_undone(client, auth_headers) -> None:
     _sync_members(client, auth_headers)
 

@@ -233,6 +233,7 @@ class HassFlatmateApiClient:
         member_a_id: int,
         member_b_id: int,
         actor_user_id: str | None,
+        return_week_start: date | None = None,
         cancel: bool,
     ) -> dict[str, Any]:
         return await self._request(
@@ -243,6 +244,7 @@ class HassFlatmateApiClient:
                 "member_a_id": member_a_id,
                 "member_b_id": member_b_id,
                 "actor_user_id": actor_user_id,
+                "return_week_start": return_week_start.isoformat() if return_week_start else None,
                 "cancel": cancel,
             },
         )

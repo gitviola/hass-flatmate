@@ -270,6 +270,20 @@ class TestResolveNotifyServices:
         ])
         assert _resolve_member_notify_services(hass, runtime, 1) == []
 
+    def test_resolves_via_member_person_entity_id_without_user_link(self) -> None:
+        hass = MockHass(
+            states=[
+                MockState("person.jo", {
+                    "device_trackers": ["device_tracker.jo_iphone"],
+                }),
+            ],
+            notify_services={"mobile_app_jo_iphone": {}},
+        )
+        runtime = make_runtime(members=[
+            {"id": 1, "ha_person_entity_id": "person.jo", "display_name": "Jo"},
+        ])
+        assert _resolve_member_notify_services(hass, runtime, 1) == ["notify.mobile_app_jo_iphone"]
+
     def test_no_person_entity(self) -> None:
         hass = MockHass(states=[], notify_services={"mobile_app_jo_iphone": {}})
         runtime = make_runtime(members=[
@@ -334,6 +348,8 @@ class TestBuildMemberSyncPayload:
         )
         assert len(result) == 1
         assert result[0]["notify_service"] == "notify.mobile_app_jo_iphone"
+        assert result[0]["notify_services"] == ["notify.mobile_app_jo_iphone"]
+        assert result[0]["device_trackers"] == ["device_tracker.jo_iphone"]
 
     def test_no_cross_wire_substring_names(self) -> None:
         """The original bug: 'Jo' is a substring of 'Johan's service name.
@@ -396,6 +412,8 @@ class TestBuildMemberSyncPayload:
             _build_member_sync_payload(hass)
         )
         assert result[0]["notify_service"] is None
+        assert result[0]["notify_services"] == []
+        assert result[0]["device_trackers"] == []
 
     def test_skips_inactive_and_system_users(self) -> None:
         hass = MockHass(
@@ -457,8 +475,8 @@ class TestDispatchNotifications:
         assert ("notify", "mobile_app_jo_ipad") in services_called
         assert len(services_called) == 2
 
-    def test_falls_back_to_stored_service(self) -> None:
-        """When resolution finds no devices, use the backend-stored service."""
+    def test_does_not_fall_back_for_known_member(self) -> None:
+        """Known members must resolve via person/device_trackers, not stale fallback service."""
         hass = MockHass(
             states=[],  # no person entities → resolution returns []
             notify_services={"mobile_app_jo_iphone": {}},
@@ -480,8 +498,26 @@ class TestDispatchNotifications:
             _dispatch_notifications(hass, runtime, notifications)
         )
 
+        assert len(hass.service_calls) == 0
+
+    def test_falls_back_to_stored_service_without_member_id(self) -> None:
+        """Legacy notifications without member_id can still use explicit notify_service."""
+        hass = MockHass(states=[], notify_services={"mobile_app_legacy_phone": {}})
+        runtime = make_runtime(members=[])
+        notifications = [
+            {
+                "notify_service": "notify.mobile_app_legacy_phone",
+                "title": "Cleaning",
+                "message": "Go clean!",
+            }
+        ]
+
+        asyncio.get_event_loop().run_until_complete(
+            _dispatch_notifications(hass, runtime, notifications)
+        )
+
         assert len(hass.service_calls) == 1
-        assert hass.service_calls[0][:2] == ("notify", "mobile_app_jo_iphone")
+        assert hass.service_calls[0][:2] == ("notify", "mobile_app_legacy_phone")
 
     def test_test_mode_redirects_to_single_target(self) -> None:
         hass = MockHass(

@@ -24,7 +24,7 @@ views:
             entity: sensor.hass_flatmate_shopping_data
             title: Shopping List (Compact)
 
-          - type: tile
+          - type: ile
             entity: sensor.hass_flatmate_shopping_open_count
             name: Shopping Open Items
 

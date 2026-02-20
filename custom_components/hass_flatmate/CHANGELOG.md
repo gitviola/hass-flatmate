@@ -1,5 +1,19 @@
 # Hass Flatmate Integration Changelog
 
+## [0.1.42] - 2026-02-20
+
+### Added
+- Cleaning swap service now accepts optional `return_week_start` and forwards it to the backend.
+- Cleaning card swap modal now supports explicit return-week selection in addition to automatic selection.
+
+### Changed
+- Swap modal wording and previews now reflect real planned-schedule return behavior (including pre-existing future swaps).
+- Member sync payload enrichment now includes `notify_services` and `device_trackers` so backend state can track device routing context.
+
+### Fixed
+- Notification delivery resolution now prefers active person/device tracker mappings and no longer falls back to stale stored notify services for known members.
+- Notification resolution now supports person-entity-based matching even when a `ha_user_id` link is missing.
+
 ## [0.1.22] - 2026-02-12
 
 ### Added

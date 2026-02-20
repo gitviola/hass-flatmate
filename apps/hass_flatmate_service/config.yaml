@@ -1,13 +1,15 @@
 name: Hass Flatmate Service
 slug: hass_flatmate_service
 description: Shopping and cleaning rotation backend for hass_flatmate integration.
-version: "0.1.41"
+version: "0.1.42"
 image: "ghcr.io/gitviola/hass-flatmate-service-{arch}"
 url: https://github.com/gitviola/hass-flatmate
 startup: services
 boot: auto
 init: false
-ingress: false
+ingress: true
+ingress_port: 8099
+panel_title: Hass Flatmate
 panel_icon: mdi:broom
 arch:
   - aarch64

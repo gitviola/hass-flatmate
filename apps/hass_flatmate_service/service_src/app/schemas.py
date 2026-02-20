@@ -13,6 +13,8 @@ class MemberSyncItem(BaseModel):
     ha_user_id: str | None = None
     ha_person_entity_id: str | None = None
     notify_service: str | None = None
+    notify_services: list[str] = Field(default_factory=list)
+    device_trackers: list[str] = Field(default_factory=list)
     active: bool = True
 
 
@@ -26,6 +28,8 @@ class MemberResponse(BaseModel):
     ha_user_id: str | None
     ha_person_entity_id: str | None
     notify_service: str | None
+    notify_services: list[str] = Field(default_factory=list)
+    device_trackers: list[str] = Field(default_factory=list)
     active: bool
 
 
@@ -103,6 +107,7 @@ class CleaningSwapRequest(BaseModel):
     member_a_id: int
     member_b_id: int
     actor_user_id: str | None = None
+    return_week_start: date | None = None
     cancel: bool = False
 
 
@@ -201,3 +206,21 @@ class RecentsResponse(BaseModel):
 
 class FavoritesResponse(BaseModel):
     favorites: list[dict[str, Any]]
+
+
+class SnapshotExportResponse(BaseModel):
+    schema_version: int
+    generated_at: datetime
+    summary: dict[str, int] = Field(default_factory=dict)
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
+class SnapshotImportRequest(BaseModel):
+    snapshot: dict[str, Any]
+    replace_existing: bool = True
+    actor_user_id: str | None = None
+
+
+class SnapshotImportResponse(BaseModel):
+    ok: bool = True
+    summary: dict[str, Any] = Field(default_factory=dict)

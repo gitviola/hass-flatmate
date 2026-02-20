@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.42] - 2026-02-20
+
+### Added
+- New full-state snapshot migration flow to move production data into local/dev environments:
+  - Backend export endpoint: `GET /v1/admin/export`
+  - Backend import endpoint: `POST /v1/admin/import`
+  - Ingress web UI at `/` for token-authenticated export/download/upload/edit/import JSON snapshots.
+- Add-on ingress is now enabled for the service app panel.
+- Cleaning swap API now supports optional explicit `return_week_start` selection.
+
+### Changed
+- Cleaning swap return-week resolution now uses the real planned future schedule (effective assignees including existing swaps/compensations), not baseline-only rotation.
+- Cleaning card swap modal now lets users choose `Automatic` return-week resolution or explicitly pick a future return week.
+- Member sync payload now stores resolved `notify_services` and `device_trackers` per member in backend state.
+
+### Fixed
+- Notification dispatch now avoids stale fallback notify targets for known members and resolves by current person/device tracker mapping.
+- Notification resolution now supports `ha_person_entity_id`-based lookup even when a user-link mapping is unavailable.
+
 ## [0.1.22] - 2026-02-12
 
 ### Added

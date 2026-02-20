@@ -62,6 +62,8 @@ class Member(Base):
     ha_user_id: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
     ha_person_entity_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     notify_service: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    notify_services: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    device_trackers: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)

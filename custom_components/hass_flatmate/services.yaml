@@ -120,6 +120,11 @@ hass_flatmate_swap_cleaning_week:
       selector:
         number:
           min: 1
+    return_week_start:
+      required: false
+      example: "2026-03-02"
+      selector:
+        text:
     cancel:
       required: false
       default: false
