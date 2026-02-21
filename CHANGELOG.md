@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.44] - 2026-02-21
+
+### Changed
+- Cleaning shift history is now richer and week-context aware:
+  - Swap/create/update/cancel timeline entries now explain exactly who swapped with whom and what changed for the specific week being viewed.
+  - Linked return-week entries now clearly describe why that week changed and which source week caused it.
+  - Takeover and make-up-shift entries now include clearer participant wording.
+- Shift history now keeps older relevant activity from fetched backend events instead of only showing a narrow recent-window subset, improving clarity for long-running swap chains.
+
+### Fixed
+- Timeline entries now render event-level detail text in the history modal so complex swap-return chains are understandable directly from the UI.
+
 ## [0.1.43] - 2026-02-21
 
 ### Fixed

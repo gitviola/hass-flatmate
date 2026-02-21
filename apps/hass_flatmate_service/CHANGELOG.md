@@ -1,5 +1,10 @@
 # Hass Flatmate Service App Changelog
 
+## [0.1.44] - 2026-02-21
+
+### Changed
+- Version alignment release for integration-side cleaning history UX improvements in complex chained swap-return cases.
+
 ## [0.1.43] - 2026-02-21
 
 ### Fixed

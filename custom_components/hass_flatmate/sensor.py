@@ -86,37 +86,153 @@ def _cleaning_event_week_starts(payload: Mapping[str, Any]) -> set[str]:
     return week_starts
 
 
-def _cleaning_history_summary(
+def _member_name(members: Mapping[int, str], member_id_value: Any) -> str:
+    if member_id_value is None:
+        return "unknown flatmate"
+    try:
+        member_id = int(member_id_value)
+    except (TypeError, ValueError):
+        return "unknown flatmate"
+    return members.get(member_id, f"member #{member_id}")
+
+
+def _cleaning_history_text(
     action: str,
     payload: Mapping[str, Any],
     members: Mapping[int, str],
     actor_name: str,
-) -> str:
+    *,
+    target_week_start: str,
+) -> tuple[str, str | None]:
+    selected_week = _parse_week_start_iso(payload.get("week_start"))
+    source_week = _parse_week_start_iso(payload.get("source_week_start"))
+    compensation_week = _parse_week_start_iso(payload.get("compensation_week_start"))
+    return_week = _parse_week_start_iso(payload.get("return_week_start"))
+
+    member_a_name = _member_name(members, payload.get("member_a_id"))
+    member_b_name = _member_name(members, payload.get("member_b_id"))
+    member_from_name = _member_name(members, payload.get("member_from_id"))
+    member_to_name = _member_name(members, payload.get("member_to_id"))
+    cleaner_name = _member_name(members, payload.get("cleaner_member_id"))
+    original_name = _member_name(members, payload.get("original_assignee_member_id"))
+    completed_by_name = _member_name(members, payload.get("completed_by_member_id"))
+
     if action == "cleaning_done":
-        return f"{actor_name} marked this shift done"
+        summary = f"{actor_name} marked this shift done"
+        if payload.get("completed_by_member_id") is not None:
+            return summary, f"Completed by {completed_by_name}."
+        return summary, None
     if action == "cleaning_undone":
-        return f"{actor_name} reverted this shift to pending"
+        previous_mode = str(payload.get("previous_completion_mode") or "").strip()
+        if previous_mode == "takeover":
+            return (
+                f"{actor_name} reopened this shift",
+                "The previous takeover completion was reverted and this shift is pending again.",
+            )
+        return f"{actor_name} reopened this shift", "Completion was reverted and this shift is pending again."
     if action == "cleaning_takeover_done":
-        cleaner_id = payload.get("cleaner_member_id")
-        cleaner_name = None
-        if cleaner_id is not None:
-            try:
-                cleaner_name = members.get(int(cleaner_id))
-            except (TypeError, ValueError):
-                cleaner_name = None
-        if cleaner_name:
-            return f"{actor_name} recorded takeover by {cleaner_name}"
-        return f"{actor_name} recorded a takeover completion"
+        return (
+            f"{actor_name} recorded takeover by {cleaner_name}",
+            f"{cleaner_name} cleaned instead of {original_name}.",
+        )
     if action == "cleaning_swap_created":
-        return f"{actor_name} created a shift swap"
+        if target_week_start == selected_week:
+            return (
+                f"{actor_name} created a swap for this week",
+                (
+                    f"{member_b_name} now covers this week (instead of {member_a_name}). "
+                    f"Return shift for {member_a_name}: week {return_week or 'unknown'}."
+                ),
+            )
+        if target_week_start == return_week:
+            return (
+                f"{actor_name} planned a linked return shift for this week",
+                (
+                    f"Linked swap from week {selected_week or 'unknown'}: "
+                    f"{member_a_name} will cover this week instead of {member_b_name}."
+                ),
+            )
+        return (
+            f"{actor_name} created a shift swap",
+            f"Swap between {member_a_name} and {member_b_name}; return week {return_week or 'unknown'}.",
+        )
     if action == "cleaning_swap_updated":
-        return f"{actor_name} updated a shift swap"
+        if target_week_start == selected_week:
+            return (
+                f"{actor_name} updated swap participants for this week",
+                (
+                    f"{member_b_name} now covers this week (instead of {member_a_name}). "
+                    f"Linked return week: {return_week or 'unknown'}."
+                ),
+            )
+        if target_week_start == return_week:
+            return (
+                f"{actor_name} updated linked return shift for this week",
+                (
+                    f"Linked swap from week {selected_week or 'unknown'} now returns this week to {member_a_name}."
+                ),
+            )
+        return (
+            f"{actor_name} updated a shift swap",
+            f"Swap between {member_a_name} and {member_b_name}; return week {return_week or 'unknown'}.",
+        )
     if action == "cleaning_swap_canceled":
-        return f"{actor_name} canceled a shift swap"
+        if target_week_start == selected_week:
+            return (
+                f"{actor_name} canceled the swap for this week",
+                (
+                    f"{member_a_name}'s original assignment for this week was restored. "
+                    f"Linked return week {return_week or 'unknown'} was also restored."
+                ),
+            )
+        if target_week_start == return_week:
+            return (
+                f"{actor_name} canceled the linked return shift for this week",
+                (
+                    f"Week {selected_week or 'unknown'} swap was canceled, so this week returned to {member_b_name}'s regular assignment."
+                ),
+            )
+        return (
+            f"{actor_name} canceled a shift swap",
+            f"Swap between {member_a_name} and {member_b_name} was removed.",
+        )
     if action == "cleaning_compensation_planned":
-        return f"{actor_name} planned a make-up shift"
+        if target_week_start == compensation_week:
+            return (
+                f"{actor_name} planned a make-up shift for this week",
+                (
+                    f"Because {member_from_name} took over week {source_week or 'unknown'}, "
+                    f"{member_to_name} is assigned for this week."
+                ),
+            )
+        if target_week_start == source_week:
+            return (
+                f"{actor_name} planned a linked make-up shift",
+                (
+                    f"Takeover by {member_from_name} created a return shift for {member_to_name} "
+                    f"in week {compensation_week or 'unknown'}."
+                ),
+            )
+        return (
+            f"{actor_name} planned a make-up shift",
+            (
+                f"{member_to_name} is assigned in week {compensation_week or 'unknown'} "
+                f"after takeover in week {source_week or 'unknown'}."
+            ),
+        )
     if action == "cleaning_override_auto_canceled_member_inactive":
-        return "A planned override was canceled because a flatmate left"
+        inactive_names = [
+            _member_name(members, member_id)
+            for member_id in list(payload.get("inactive_member_ids") or [])
+        ]
+        inactive_label = ", ".join(inactive_names) if inactive_names else "a former flatmate"
+        return (
+            "Planned override canceled after member deactivation",
+            (
+                f"Week {selected_week or target_week_start}: planned override between "
+                f"{member_from_name} and {member_to_name} was canceled because {inactive_label} is inactive."
+            ),
+        )
     if action == "cleaning_notification_dispatch":
         status = str(payload.get("status", "")).strip().lower()
         slot = str(payload.get("notification_slot", "")).strip().lower()
@@ -134,8 +250,9 @@ def _cleaning_history_summary(
         }
         slot_label = slot_label_map.get(slot, "notification")
         status_label = status_label_map.get(status, status.title() or "Unknown")
-        return f"{slot_label}: {status_label}"
-    return action.replace("_", " ")
+        detail = str(payload.get("reason") or "").strip()
+        return f"{slot_label}: {status_label}", (_dispatch_reason_label(detail) if detail else None)
+    return action.replace("_", " "), None
 
 
 def _build_cleaning_history_by_week(
@@ -143,8 +260,6 @@ def _build_cleaning_history_by_week(
     *,
     members: Mapping[int, str],
 ) -> dict[str, list[dict[str, Any]]]:
-    now_local = dt_util.now()
-    cutoff = now_local - timedelta(days=7)
     history_by_week: dict[str, list[dict[str, Any]]] = {}
 
     for row in activity_rows:
@@ -163,31 +278,38 @@ def _build_cleaning_history_by_week(
             continue
 
         created_local = _parse_datetime_local(row.get("created_at"))
-        if created_local is None or created_local < cutoff:
+        if created_local is None:
             continue
 
         action = str(row.get("action", "")).strip().lower()
         actor_name = _activity_actor_name(row, members)
-        history_item = {
-            "id": row.get("id"),
-            "created_at": created_local.isoformat(),
-            "summary": _cleaning_history_summary(action, payload, members, actor_name),
-            "action": action,
-            "actor_name": actor_name,
-            "notification_slot": payload.get("notification_slot"),
-            "dispatch_status": payload.get("status"),
-            "reason": payload.get("reason"),
-            "notification_title": payload.get("title"),
-            "notification_message": payload.get("message"),
-            "_sort_key": created_local.timestamp(),
-        }
-
         for week_start in week_starts:
-            history_by_week.setdefault(week_start, []).append(dict(history_item))
+            summary, detail = _cleaning_history_text(
+                action,
+                payload,
+                members,
+                actor_name,
+                target_week_start=week_start,
+            )
+            history_item = {
+                "id": row.get("id"),
+                "created_at": created_local.isoformat(),
+                "summary": summary,
+                "detail": detail,
+                "action": action,
+                "actor_name": actor_name,
+                "notification_slot": payload.get("notification_slot"),
+                "dispatch_status": payload.get("status"),
+                "reason": payload.get("reason"),
+                "notification_title": payload.get("title"),
+                "notification_message": payload.get("message"),
+                "_sort_key": created_local.timestamp(),
+            }
+            history_by_week.setdefault(week_start, []).append(history_item)
 
     for week_start, events in history_by_week.items():
         events.sort(key=lambda item: float(item.get("_sort_key", 0.0)), reverse=True)
-        trimmed = events[:30]
+        trimmed = events[:60]
         for item in trimmed:
             item.pop("_sort_key", None)
         history_by_week[week_start] = trimmed
@@ -389,6 +511,8 @@ def _build_week_timeline(
         summary = str(event.get("summary", action.replace("_", " ")))
         reason = event.get("reason")
         is_dispatch = action == "cleaning_notification_dispatch"
+        detail_value = event.get("detail")
+        detail_text = str(detail_value) if detail_value else None
 
         entry: dict[str, Any] = {
             "type": "notification" if is_dispatch else "event",
@@ -398,7 +522,11 @@ def _build_week_timeline(
                 str(event.get("dispatch_status", "")).strip().lower(), icon
             ) if is_dispatch else icon,
             "summary": summary,
-            "detail": _dispatch_reason_label(reason) if (is_dispatch and reason) else (str(reason) if reason else None),
+            "detail": (
+                _dispatch_reason_label(reason)
+                if (is_dispatch and reason)
+                else detail_text
+            ),
             "state": str(event.get("dispatch_status", "")).strip().lower() or None if is_dispatch else None,
             "state_label": None,
             "_sort_ts": ts_val.timestamp() if ts_val else 0.0,

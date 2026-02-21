@@ -1,5 +1,17 @@
 # Hass Flatmate Integration Changelog
 
+## [0.1.44] - 2026-02-21
+
+### Changed
+- Cleaning week history/timeline entries are now week-aware and much more explicit for swap workflows:
+  - per-week wording for swap creation/update/cancel events
+  - clearer linked return-week explanations
+  - clearer takeover/make-up participant wording
+- History assembly now keeps older relevant events from fetched activity rows instead of a strict 7-day-only filter.
+
+### Fixed
+- History modal timeline now displays event detail text (not only headline summaries), improving readability for complex chained swap-return scenarios.
+
 ## [0.1.43] - 2026-02-21
 
 ### Changed
