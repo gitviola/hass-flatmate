@@ -1,5 +1,10 @@
 # Hass Flatmate Integration Changelog
 
+## [0.1.45] - 2026-02-21
+
+### Changed
+- Version alignment release for backend ingress-path hotfix in migration UI.
+
 ## [0.1.44] - 2026-02-21
 
 ### Changed

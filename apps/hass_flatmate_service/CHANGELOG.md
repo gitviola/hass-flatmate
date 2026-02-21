@@ -1,5 +1,10 @@
 # Hass Flatmate Service App Changelog
 
+## [0.1.45] - 2026-02-21
+
+### Fixed
+- Migration panel UI now uses ingress-safe relative API paths, fixing `Failed to load members: 404: Not Found` when accessed via Home Assistant Ingress.
+
 ## [0.1.44] - 2026-02-21
 
 ### Changed

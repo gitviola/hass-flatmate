@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.45] - 2026-02-21
+
+### Fixed
+- Migration ingress UI API calls now use ingress-safe relative paths (`v1/...`) instead of absolute root paths (`/v1/...`), fixing `404 Not Found` errors when opened from the Home Assistant add-on panel.
+
 ## [0.1.44] - 2026-02-21
 
 ### Changed

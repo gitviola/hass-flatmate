@@ -80,7 +80,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="hass-flatmate-service", version="0.1.44", lifespan=lifespan)
+app = FastAPI(title="hass-flatmate-service", version="0.1.45", lifespan=lifespan)
 
 
 def require_token(x_flatmate_token: str | None = Header(default=None)) -> None:
@@ -365,7 +365,7 @@ def ingress_migration_ui() -> str:
       const loadMembers = async () => {
         setStatus(membersStatus, "Loading members...", null);
         try {
-          const response = await fetch("/v1/members", {
+          const response = await fetch("v1/members", {
             method: "GET",
             headers: authHeaders(false),
           });
@@ -401,7 +401,7 @@ def ingress_migration_ui() -> str:
       document.getElementById("export").addEventListener("click", async () => {
         setStatus(exportStatus, "Exporting snapshot...", null);
         try {
-          const response = await fetch("/v1/admin/export", {
+          const response = await fetch("v1/admin/export", {
             method: "GET",
             headers: authHeaders(false),
           });
@@ -466,7 +466,7 @@ def ingress_migration_ui() -> str:
 
         setStatus(importStatus, "Importing snapshot...", null);
         try {
-          const response = await fetch("/v1/admin/import", {
+          const response = await fetch("v1/admin/import", {
             method: "POST",
             headers: authHeaders(true),
             body: JSON.stringify({

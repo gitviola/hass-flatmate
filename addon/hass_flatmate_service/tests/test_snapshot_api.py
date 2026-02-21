@@ -25,6 +25,9 @@ def test_snapshot_migration_ui_is_available(client) -> None:
     assert "Uses your configured add-on token automatically." in response.text
     assert "id=\"token\"" not in response.text
     assert "id=\"save-token\"" not in response.text
+    assert 'fetch("v1/members"' in response.text
+    assert 'fetch("v1/admin/export"' in response.text
+    assert 'fetch("v1/admin/import"' in response.text
 
 
 def test_snapshot_export_import_roundtrip(client, auth_headers) -> None:
