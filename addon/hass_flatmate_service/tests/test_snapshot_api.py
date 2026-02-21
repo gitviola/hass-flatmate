@@ -22,6 +22,9 @@ def test_snapshot_migration_ui_is_available(client) -> None:
     assert response.status_code == 200
     assert "Snapshot Migration" in response.text
     assert "Export snapshot" in response.text
+    assert "Uses your configured add-on token automatically." in response.text
+    assert "id=\"token\"" not in response.text
+    assert "id=\"save-token\"" not in response.text
 
 
 def test_snapshot_export_import_roundtrip(client, auth_headers) -> None:

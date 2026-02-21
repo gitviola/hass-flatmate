@@ -1,5 +1,11 @@
 # Hass Flatmate Service App Changelog
 
+## [0.1.43] - 2026-02-21
+
+### Fixed
+- Migration ingress UI now uses the configured backend token automatically (no manual token paste required).
+- Robust API error parsing in UI to avoid browser `body stream already read` failures when requests fail.
+
 ## [0.1.42] - 2026-02-20
 
 ### Added

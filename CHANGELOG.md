@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.43] - 2026-02-21
+
+### Fixed
+- Ingress migration UI no longer requires manual API token entry; it now uses the add-on configured token automatically.
+- Fixed UI error parsing for failed requests where browser could raise `Failed to execute 'text' on 'Response': body stream already read`.
+- Added regression tests for migration UI tokenless behavior.
+
 ## [0.1.42] - 2026-02-20
 
 ### Added

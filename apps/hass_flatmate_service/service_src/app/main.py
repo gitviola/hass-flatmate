@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from datetime import datetime
+import json
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
 from fastapi.responses import HTMLResponse, PlainTextResponse
@@ -79,7 +80,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="hass-flatmate-service", version="0.1.42", lifespan=lifespan)
+app = FastAPI(title="hass-flatmate-service", version="0.1.43", lifespan=lifespan)
 
 
 def require_token(x_flatmate_token: str | None = Header(default=None)) -> None:
@@ -94,7 +95,7 @@ def health() -> dict:
 
 @app.get("/", response_class=HTMLResponse)
 def ingress_migration_ui() -> str:
-    return """<!doctype html>
+    ui_html = """<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -267,15 +268,7 @@ def ingress_migration_ui() -> str:
       <div class="card">
         <h1>Hass Flatmate Snapshot Migration</h1>
         <p class="muted">Export your real Home Assistant data and import it locally for testing edge cases.</p>
-        <p class="muted">All actions require your add-on API token.</p>
-      </div>
-
-      <div class="card">
-        <div class="label">API token</div>
-        <div class="row">
-          <input id="token" class="token" type="password" placeholder="HASS_FLATMATE_API_TOKEN" />
-          <button id="save-token">Save token</button>
-        </div>
+        <p class="muted">Uses your configured add-on token automatically.</p>
       </div>
 
       <div class="card">
@@ -319,8 +312,7 @@ def ingress_migration_ui() -> str:
     </div>
 
     <script>
-      const tokenKey = "hass_flatmate_snapshot_token";
-      const tokenInput = document.getElementById("token");
+      const API_TOKEN = __API_TOKEN__;
       const editor = document.getElementById("editor");
       const replaceInput = document.getElementById("replace");
       const exportStatus = document.getElementById("export-status");
@@ -329,26 +321,30 @@ def ingress_migration_ui() -> str:
       const membersStatus = document.getElementById("members-status");
       const membersTable = document.getElementById("members-table");
 
-      tokenInput.value = window.localStorage.getItem(tokenKey) || "";
-
       const setStatus = (target, message, ok) => {
         target.textContent = message || "";
         target.className = ok == null ? "status" : ok ? "status ok" : "status err";
       };
 
       const authHeaders = (includeJson) => {
-        const token = tokenInput.value.trim();
-        const headers = {"x-flatmate-token": token};
+        const headers = {"x-flatmate-token": API_TOKEN};
         if (includeJson) headers["content-type"] = "application/json";
         return headers;
       };
 
       const parseError = async (response) => {
+        const text = await response.text();
+        if (!text) {
+          return response.status + " " + response.statusText;
+        }
         try {
-          const payload = await response.json();
-          return payload?.detail || JSON.stringify(payload);
+          const payload = JSON.parse(text);
+          if (payload && typeof payload === "object") {
+            return payload.detail || payload.message || text;
+          }
+          return text;
         } catch (_err) {
-          return await response.text();
+          return text;
         }
       };
 
@@ -399,17 +395,6 @@ def ingress_migration_ui() -> str:
           setStatus(membersStatus, "Failed to load members: " + (err?.message || String(err)), false);
         }
       };
-
-      document.getElementById("save-token").addEventListener("click", () => {
-        const token = tokenInput.value.trim();
-        if (!token) {
-          window.localStorage.removeItem(tokenKey);
-          setStatus(exportStatus, "Token cleared from browser storage.", true);
-          return;
-        }
-        window.localStorage.setItem(tokenKey, token);
-        setStatus(exportStatus, "Token saved in this browser.", true);
-      });
 
       document.getElementById("load-members").addEventListener("click", loadMembers);
 
@@ -504,13 +489,12 @@ def ingress_migration_ui() -> str:
         setStatus(importStatus, "Editor cleared.", true);
       });
 
-      if (tokenInput.value.trim()) {
-        loadMembers();
-      }
+      loadMembers();
     </script>
   </body>
 </html>
 """
+    return ui_html.replace("__API_TOKEN__", json.dumps(settings.api_token))
 
 
 @app.get("/v1/members", response_model=list[MemberResponse], dependencies=[Depends(require_token)])

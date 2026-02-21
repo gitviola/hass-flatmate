@@ -1,5 +1,10 @@
 # Hass Flatmate Integration Changelog
 
+## [0.1.43] - 2026-02-21
+
+### Changed
+- Version alignment release for backend migration UI tokenless-auth fix.
+
 ## [0.1.42] - 2026-02-20
 
 ### Added
