@@ -1,5 +1,10 @@
 # Hass Flatmate Service App Changelog
 
+## [0.1.46] - 2026-02-26
+
+### Changed
+- Version alignment release for integration-side shopping bought notification toggle and dispatch behavior.
+
 ## [0.1.45] - 2026-02-21
 
 ### Fixed

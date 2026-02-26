@@ -13,7 +13,7 @@ It replaces the flat-sharing features you use with:
 - Takeover completion with automatic compensation override
 - Home Assistant calendar activity events
 - Built-in notification scheduling (Monday + Sunday reminders)
-- Optional shopping-added push notifications
+- Optional shopping-added and shopping-bought push notifications
 - Notification deep links (iOS + Android)
 - Automation-friendly activity events on HA event bus
 - Safe notification test mode (redirect all notifications to one selected user)
@@ -161,6 +161,7 @@ Use these entities to test all flows without notifying everyone:
 - `switch.hass_flatmate_notification_test_mode`
 - `select.hass_flatmate_notification_test_target`
 - `switch.hass_flatmate_notify_shopping_item_added`
+- `switch.hass_flatmate_notify_shopping_item_bought`
 - `text.hass_flatmate_shopping_notification_link`
 - `text.hass_flatmate_cleaning_notification_link`
 - `select.hass_flatmate_shopping_calendar_target`

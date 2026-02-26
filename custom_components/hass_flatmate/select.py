@@ -13,12 +13,14 @@ from .const import (
     CONF_CLEANING_NOTIFICATION_LINK,
     CONF_CLEANING_TARGET_CALENDAR_ENTITY_ID,
     CONF_NOTIFY_SHOPPING_ITEM_ADDED,
+    CONF_NOTIFY_SHOPPING_ITEM_BOUGHT,
     CONF_NOTIFICATION_TEST_MODE,
     CONF_NOTIFICATION_TEST_TARGET_MEMBER_ID,
     CONF_SHOPPING_NOTIFICATION_LINK,
     CONF_SHOPPING_TARGET_CALENDAR_ENTITY_ID,
     DEFAULT_NOTIFICATION_TEST_MODE,
     DEFAULT_NOTIFY_SHOPPING_ITEM_ADDED,
+    DEFAULT_NOTIFY_SHOPPING_ITEM_BOUGHT,
 )
 from .entity import HassFlatmateCoordinatorEntity, get_runtime
 
@@ -72,6 +74,12 @@ async def _persist_options(entity: HassFlatmateCoordinatorEntity) -> None:
         CONF_NOTIFY_SHOPPING_ITEM_ADDED: bool(
             entity.runtime.runtime_state.get(
                 CONF_NOTIFY_SHOPPING_ITEM_ADDED, DEFAULT_NOTIFY_SHOPPING_ITEM_ADDED
+            )
+        ),
+        CONF_NOTIFY_SHOPPING_ITEM_BOUGHT: bool(
+            entity.runtime.runtime_state.get(
+                CONF_NOTIFY_SHOPPING_ITEM_BOUGHT,
+                DEFAULT_NOTIFY_SHOPPING_ITEM_BOUGHT,
             )
         ),
         CONF_SHOPPING_NOTIFICATION_LINK: entity.runtime.runtime_state.get(

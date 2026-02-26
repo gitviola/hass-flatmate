@@ -1,5 +1,16 @@
 # Hass Flatmate Integration Changelog
 
+## [0.1.46] - 2026-02-26
+
+### Added
+- New optional shopping-bought push notification switch:
+  - `switch.hass_flatmate_notify_shopping_item_bought`
+
+### Changed
+- Shopping activity push notifications now have independent toggles for item added and item bought events.
+- Shopping completion activity (`shopping_item_completed`) now triggers notifications to other active flatmates when the bought toggle is enabled.
+- Shopping deletion activity remains non-notifying.
+
 ## [0.1.45] - 2026-02-21
 
 ### Changed

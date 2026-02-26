@@ -35,6 +35,7 @@ from .const import (
     CONF_CLEANING_NOTIFICATION_LINK,
     CONF_CLEANING_TARGET_CALENDAR_ENTITY_ID,
     CONF_NOTIFY_SHOPPING_ITEM_ADDED,
+    CONF_NOTIFY_SHOPPING_ITEM_BOUGHT,
     CONF_NOTIFICATION_TEST_MODE,
     CONF_NOTIFICATION_TEST_TARGET_MEMBER_ID,
     CONF_SCAN_INTERVAL,
@@ -43,6 +44,7 @@ from .const import (
     DEFAULT_CLEANING_NOTIFICATION_LINK,
     DEFAULT_NOTIFICATION_TEST_MODE,
     DEFAULT_NOTIFY_SHOPPING_ITEM_ADDED,
+    DEFAULT_NOTIFY_SHOPPING_ITEM_BOUGHT,
     DEFAULT_SHOPPING_NOTIFICATION_LINK,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
@@ -516,6 +518,55 @@ def _build_shopping_added_notifications(
     return notifications
 
 
+def _build_shopping_bought_notifications(
+    runtime: HassFlatmateRuntime,
+    row: dict[str, Any],
+    *,
+    members_by_id: dict[int, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not bool(
+        runtime.runtime_state.get(
+            CONF_NOTIFY_SHOPPING_ITEM_BOUGHT,
+            DEFAULT_NOTIFY_SHOPPING_ITEM_BOUGHT,
+        )
+    ):
+        return []
+
+    payload = row.get("payload_json", {})
+    if not isinstance(payload, dict):
+        payload = {}
+    item_name = str(payload.get("name", "")).strip()
+    if not item_name:
+        item_name = "an item"
+
+    actor_member_id = _coerce_member_id(row.get("actor_member_id"))
+    actor_name = None
+    if actor_member_id is not None:
+        actor_name = members_by_id.get(actor_member_id, {}).get("display_name")
+    if not isinstance(actor_name, str) or not actor_name.strip():
+        actor_name = "Someone"
+
+    notifications: list[dict[str, Any]] = []
+    for member_id, member in members_by_id.items():
+        if actor_member_id is not None and member_id == actor_member_id:
+            continue
+        if not bool(member.get("active", True)):
+            continue
+        notify_service = member.get("notify_service")
+        if not isinstance(notify_service, str) or not notify_service:
+            continue
+        notifications.append(
+            {
+                "member_id": member_id,
+                "notify_service": notify_service,
+                "title": "Shopping Item Bought",
+                "message": f"{actor_name} bought {item_name} from the shopping list.",
+                "category": "shopping",
+            }
+        )
+    return notifications
+
+
 async def _emit_new_activity_events(hass: HomeAssistant, runtime: HassFlatmateRuntime) -> None:
     rows = runtime.coordinator.data.get("activity", [])
     if not isinstance(rows, list):
@@ -564,6 +615,22 @@ async def _emit_new_activity_events(hass: HomeAssistant, runtime: HassFlatmateRu
                     )
                 except Exception as err:  # pragma: no cover - defensive
                     _LOGGER.warning("Failed to dispatch shopping-added notifications: %s", err)
+        elif action == "shopping_item_completed":
+            shopping_notifications = _build_shopping_bought_notifications(
+                runtime,
+                row,
+                members_by_id=members_by_id,
+            )
+            if shopping_notifications:
+                try:
+                    await _dispatch_notifications(
+                        hass,
+                        runtime,
+                        shopping_notifications,
+                        default_category="shopping",
+                    )
+                except Exception as err:  # pragma: no cover - defensive
+                    _LOGGER.warning("Failed to dispatch shopping-bought notifications: %s", err)
 
         next_cursor = row_id if next_cursor is None else max(next_cursor, row_id)
 
@@ -1455,6 +1522,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.options.get(
             CONF_NOTIFY_SHOPPING_ITEM_ADDED,
             DEFAULT_NOTIFY_SHOPPING_ITEM_ADDED,
+        )
+    )
+    runtime.runtime_state[CONF_NOTIFY_SHOPPING_ITEM_BOUGHT] = bool(
+        entry.options.get(
+            CONF_NOTIFY_SHOPPING_ITEM_BOUGHT,
+            DEFAULT_NOTIFY_SHOPPING_ITEM_BOUGHT,
         )
     )
     runtime.runtime_state[CONF_SHOPPING_NOTIFICATION_LINK] = str(

@@ -110,8 +110,11 @@ _stub("aiohttp",
 # ---------------------------------------------------------------------------
 from custom_components.hass_flatmate import (  # noqa: E402
     HassFlatmateRuntime,
+    _build_shopping_added_notifications,
+    _build_shopping_bought_notifications,
     _build_member_sync_payload,
     _dispatch_notifications,
+    _emit_new_activity_events,
     _resolve_member_notify_services,
 )
 
@@ -430,6 +433,92 @@ class TestBuildMemberSyncPayload:
         )
         assert len(result) == 1
         assert result[0]["display_name"] == "Jo"
+
+
+# ---------------------------------------------------------------------------
+# Tests: shopping activity notification builders
+# ---------------------------------------------------------------------------
+
+
+class TestShoppingActivityNotificationBuilders:
+    def test_added_notifications_disabled_by_default(self) -> None:
+        runtime = make_runtime(runtime_state={})
+        notifications = _build_shopping_added_notifications(
+            runtime,
+            {"actor_member_id": 1, "payload_json": {"name": "Milk"}},
+            members_by_id={
+                1: {"id": 1, "display_name": "Jo", "active": True, "notify_service": "notify.mobile_app_jo"},
+                2: {
+                    "id": 2,
+                    "display_name": "Pat",
+                    "active": True,
+                    "notify_service": "notify.mobile_app_pat",
+                },
+            },
+        )
+        assert notifications == []
+
+    def test_bought_notifications_enabled_for_other_active_members(self) -> None:
+        runtime = make_runtime(runtime_state={"notify_shopping_item_bought": True})
+        notifications = _build_shopping_bought_notifications(
+            runtime,
+            {"actor_member_id": 1, "payload_json": {"name": "Milk"}},
+            members_by_id={
+                1: {"id": 1, "display_name": "Jo", "active": True, "notify_service": "notify.mobile_app_jo"},
+                2: {
+                    "id": 2,
+                    "display_name": "Pat",
+                    "active": True,
+                    "notify_service": "notify.mobile_app_pat",
+                },
+                3: {"id": 3, "display_name": "Sam", "active": False, "notify_service": "notify.mobile_app_sam"},
+                4: {"id": 4, "display_name": "Alex", "active": True},
+            },
+        )
+
+        assert notifications == [
+            {
+                "member_id": 2,
+                "notify_service": "notify.mobile_app_pat",
+                "title": "Shopping Item Bought",
+                "message": "Jo bought Milk from the shopping list.",
+                "category": "shopping",
+            }
+        ]
+
+    def test_deleted_activity_does_not_dispatch_notifications(self) -> None:
+        hass = MockHass()
+        runtime = make_runtime(
+            members=[
+                {"id": 1, "ha_user_id": "uid_jo", "display_name": "Jo", "notify_service": "notify.mobile_app_jo"},
+                {
+                    "id": 2,
+                    "ha_user_id": "uid_pat",
+                    "display_name": "Pat",
+                    "notify_service": "notify.mobile_app_pat",
+                },
+            ],
+            runtime_state={
+                "notify_shopping_item_added": True,
+                "notify_shopping_item_bought": True,
+            },
+        )
+        runtime.coordinator.data["activity"] = [
+            {
+                "id": 42,
+                "action": "shopping_item_deleted",
+                "actor_member_id": 1,
+                "actor_user_id_raw": "uid_jo",
+                "payload_json": {"name": "Milk"},
+                "created_at": "2025-01-01T00:00:00Z",
+            }
+        ]
+
+        asyncio.get_event_loop().run_until_complete(
+            _emit_new_activity_events(hass, runtime)
+        )
+
+        assert hass.service_calls == []
 
 
 # ---------------------------------------------------------------------------
