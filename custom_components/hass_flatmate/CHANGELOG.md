@@ -1,5 +1,14 @@
 # Hass Flatmate Integration Changelog
 
+## [0.1.47] - 2026-03-03
+
+### Changed
+- Notification payload metadata now keeps category grouping (`group`) without reusing a shared `tag`, preventing reminder/shopping pushes from being silently replaced while preserving grouped presentation.
+
+### Fixed
+- Member sync now preserves previously known notify-service mappings when person mapping is temporarily unavailable.
+- Notification dispatch now allows a guarded fallback to stored notify targets only for members without `person.*` mapping, while retaining strict person/device resolution when mapping exists.
+
 ## [0.1.46] - 2026-02-26
 
 ### Added

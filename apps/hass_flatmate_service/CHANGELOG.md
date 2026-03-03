@@ -1,5 +1,10 @@
 # Hass Flatmate Service App Changelog
 
+## [0.1.47] - 2026-03-03
+
+### Changed
+- Version alignment release for integration-side notification delivery reliability updates (grouped notifications without replacement and resilient member notify resolution fallback).
+
 ## [0.1.46] - 2026-02-26
 
 ### Changed

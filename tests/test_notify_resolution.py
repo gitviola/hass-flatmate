@@ -418,6 +418,28 @@ class TestBuildMemberSyncPayload:
         assert result[0]["notify_services"] == []
         assert result[0]["device_trackers"] == []
 
+    def test_preserves_existing_notify_mapping_without_person_entity(self) -> None:
+        hass = MockHass(
+            states=[],
+            notify_services={"mobile_app_jo_iphone": {}},
+            users=[MockUser("Jo", "uid_jo")],
+        )
+        result = asyncio.get_event_loop().run_until_complete(
+            _build_member_sync_payload(
+                hass,
+                existing_members_by_user_id={
+                    "uid_jo": {
+                        "notify_service": "notify.mobile_app_jo_iphone",
+                        "notify_services": ["notify.mobile_app_jo_iphone"],
+                        "device_trackers": ["device_tracker.jo_iphone"],
+                    }
+                },
+            )
+        )
+        assert result[0]["notify_service"] == "notify.mobile_app_jo_iphone"
+        assert result[0]["notify_services"] == ["notify.mobile_app_jo_iphone"]
+        assert result[0]["device_trackers"] == ["device_tracker.jo_iphone"]
+
     def test_skips_inactive_and_system_users(self) -> None:
         hass = MockHass(
             states=[],
@@ -564,14 +586,40 @@ class TestDispatchNotifications:
         assert ("notify", "mobile_app_jo_ipad") in services_called
         assert len(services_called) == 2
 
-    def test_does_not_fall_back_for_known_member(self) -> None:
-        """Known members must resolve via person/device_trackers, not stale fallback service."""
+    def test_falls_back_for_known_member_without_person_mapping(self) -> None:
+        """Known members without person mapping can use stored service as fallback."""
         hass = MockHass(
-            states=[],  # no person entities → resolution returns []
+            states=[],  # no person entities
             notify_services={"mobile_app_jo_iphone": {}},
         )
         runtime = make_runtime(members=[
             {"id": 1, "ha_user_id": "uid_jo", "display_name": "Jo",
+             "notify_service": "notify.mobile_app_jo_iphone"},
+        ])
+        notifications = [
+            {
+                "member_id": 1,
+                "notify_service": "notify.mobile_app_jo_iphone",
+                "title": "Cleaning",
+                "message": "Go clean!",
+            }
+        ]
+
+        asyncio.get_event_loop().run_until_complete(
+            _dispatch_notifications(hass, runtime, notifications)
+        )
+
+        assert len(hass.service_calls) == 1
+        assert hass.service_calls[0][:2] == ("notify", "mobile_app_jo_iphone")
+
+    def test_does_not_fall_back_when_person_mapping_exists(self) -> None:
+        """Person-mapped members still require person/device resolution."""
+        hass = MockHass(
+            states=[],  # mapped person entity is currently unavailable
+            notify_services={"mobile_app_jo_iphone": {}},
+        )
+        runtime = make_runtime(members=[
+            {"id": 1, "ha_user_id": "uid_jo", "ha_person_entity_id": "person.jo", "display_name": "Jo",
              "notify_service": "notify.mobile_app_jo_iphone"},
         ])
         notifications = [
@@ -733,3 +781,128 @@ class TestDispatchNotifications:
             "notify.mobile_app_jo_ipad",
         }
         assert all(r["status"] == "sent" for r in records)
+
+    def test_cleaning_notifications_keep_group_without_tag(self) -> None:
+        hass = MockHass(
+            states=[
+                MockState("person.jo", {
+                    "user_id": "uid_jo",
+                    "device_trackers": ["device_tracker.jo_iphone"],
+                }),
+            ],
+            notify_services={"mobile_app_jo_iphone": {}},
+        )
+        runtime = make_runtime(members=[
+            {"id": 1, "ha_user_id": "uid_jo", "display_name": "Jo",
+             "notify_service": "notify.mobile_app_jo_iphone"},
+        ])
+        notifications = [
+            {
+                "member_id": 1,
+                "title": "Cleaning",
+                "message": "Go clean!",
+                "category": "cleaning",
+                "week_start": "2025-01-06",
+                "notification_slot": "monday_11",
+            }
+        ]
+
+        asyncio.get_event_loop().run_until_complete(
+            _dispatch_notifications(hass, runtime, notifications, default_category="cleaning")
+        )
+
+        assert len(hass.service_calls) == 1
+        payload = hass.service_calls[0][2]
+        assert payload["data"]["group"] == "hass_flatmate_cleaning"
+        assert "tag" not in payload["data"]
+
+    def test_cleaning_without_slot_keeps_group_without_tag(self) -> None:
+        hass = MockHass(
+            states=[
+                MockState("person.jo", {
+                    "user_id": "uid_jo",
+                    "device_trackers": ["device_tracker.jo_iphone"],
+                }),
+            ],
+            notify_services={"mobile_app_jo_iphone": {}},
+        )
+        runtime = make_runtime(members=[
+            {"id": 1, "ha_user_id": "uid_jo", "display_name": "Jo",
+             "notify_service": "notify.mobile_app_jo_iphone"},
+        ])
+        notifications = [
+            {
+                "member_id": 1,
+                "title": "Cleaning",
+                "message": "Go clean!",
+                "category": "cleaning",
+            }
+        ]
+
+        asyncio.get_event_loop().run_until_complete(
+            _dispatch_notifications(hass, runtime, notifications, default_category="cleaning")
+        )
+
+        assert len(hass.service_calls) == 1
+        payload = hass.service_calls[0][2]
+        assert payload["data"]["group"] == "hass_flatmate_cleaning"
+        assert "tag" not in payload["data"]
+
+    def test_weekly_cleaning_reminder_keeps_group_without_tag(self) -> None:
+        hass = MockHass(
+            states=[
+                MockState("person.jo", {
+                    "user_id": "uid_jo",
+                    "device_trackers": ["device_tracker.jo_iphone"],
+                }),
+            ],
+            notify_services={"mobile_app_jo_iphone": {}},
+        )
+        runtime = make_runtime(members=[
+            {"id": 1, "ha_user_id": "uid_jo", "display_name": "Jo",
+             "notify_service": "notify.mobile_app_jo_iphone"},
+        ])
+        notifications = [
+            {
+                "member_id": 1,
+                "title": "Weekly Cleaning Shift",
+                "message": "Reminder",
+                "category": "cleaning",
+                "week_start": "2025-01-06",
+                "notification_slot": "sunday_18",
+                "notification_kind": "weekly_reminder",
+            }
+        ]
+
+        asyncio.get_event_loop().run_until_complete(
+            _dispatch_notifications(hass, runtime, notifications, default_category="cleaning")
+        )
+
+        assert len(hass.service_calls) == 1
+        payload = hass.service_calls[0][2]
+        assert payload["data"]["group"] == "hass_flatmate_cleaning"
+        assert "tag" not in payload["data"]
+
+    def test_shopping_notification_keeps_group_without_tag(self) -> None:
+        hass = MockHass(
+            states=[],
+            notify_services={"mobile_app_legacy_phone": {}},
+        )
+        runtime = make_runtime(members=[])
+        notifications = [
+            {
+                "notify_service": "notify.mobile_app_legacy_phone",
+                "title": "Shopping List Updated",
+                "message": "Someone added milk",
+                "category": "shopping",
+            }
+        ]
+
+        asyncio.get_event_loop().run_until_complete(
+            _dispatch_notifications(hass, runtime, notifications, default_category="shopping")
+        )
+
+        assert len(hass.service_calls) == 1
+        payload = hass.service_calls[0][2]
+        assert payload["data"]["group"] == "hass_flatmate_shopping"
+        assert "tag" not in payload["data"]

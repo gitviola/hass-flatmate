@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.47] - 2026-03-03
+
+### Changed
+- Mobile push payloads now keep notification `group` while avoiding shared `tag` reuse, so cleaning/shopping alerts remain grouped without silently replacing previous notifications.
+
+### Fixed
+- Cleaning reminder delivery now preserves and uses valid per-member notify services when person mapping is temporarily unavailable, reducing false "sent but unseen" cases.
+- Reminder routing fallback now applies only when a member has no `person.*` mapping, while keeping strict person/device resolution when mapping exists.
+
 ## [0.1.46] - 2026-02-26
 
 ### Added

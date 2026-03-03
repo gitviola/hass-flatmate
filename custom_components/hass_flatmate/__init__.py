@@ -238,6 +238,32 @@ def _notify_services_for_trackers(tracker_ids: list[str], available_notify_servi
     return list(dict.fromkeys(services))
 
 
+def _normalize_notify_service(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    candidate = value.strip()
+    if not candidate or "." not in candidate:
+        return None
+    domain, service = candidate.split(".", 1)
+    if domain != "notify" or not service:
+        return None
+    return f"{domain}.{service}"
+
+
+def _available_notify_service_values(hass: HomeAssistant, candidates: list[Any]) -> list[str]:
+    available_notify_services = hass.services.async_services().get("notify", {})
+    services: list[str] = []
+    for value in candidates:
+        normalized = _normalize_notify_service(value)
+        if normalized is None:
+            continue
+        _, service = normalized.split(".", 1)
+        if service not in available_notify_services:
+            continue
+        services.append(normalized)
+    return list(dict.fromkeys(services))
+
+
 def _resolve_member_notify_services(
     hass: HomeAssistant,
     runtime: HassFlatmateRuntime,
@@ -289,10 +315,8 @@ def _notification_data_payload(*, category: str | None, link: str | None) -> dic
     data: dict[str, Any] = {}
 
     if category == "shopping":
-        data["tag"] = "hass_flatmate_shopping"
         data["group"] = "hass_flatmate_shopping"
     elif category == "cleaning":
-        data["tag"] = "hass_flatmate_cleaning"
         data["group"] = "hass_flatmate_cleaning"
 
     if link:
@@ -741,7 +765,11 @@ def _get_primary_runtime(hass: HomeAssistant) -> HassFlatmateRuntime:
     return data.entries[first_key]
 
 
-async def _build_member_sync_payload(hass: HomeAssistant) -> list[dict[str, Any]]:
+async def _build_member_sync_payload(
+    hass: HomeAssistant,
+    *,
+    existing_members_by_user_id: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     users = await hass.auth.async_get_users()
     person_by_user_id: dict[str, str] = {}
     for state in hass.states.async_all("person"):
@@ -764,6 +792,24 @@ async def _build_member_sync_payload(hass: HomeAssistant) -> list[dict[str, Any]
             if person_state:
                 tracker_ids = _person_device_trackers(person_state)
                 resolved_notify_services = _notify_services_for_trackers(tracker_ids, notify_services)
+        elif existing_members_by_user_id:
+            existing_member = existing_members_by_user_id.get(user.id)
+            if isinstance(existing_member, dict):
+                fallback_candidates: list[Any] = []
+                notify_services_raw = existing_member.get("notify_services")
+                if isinstance(notify_services_raw, list):
+                    fallback_candidates.extend(notify_services_raw)
+                fallback_candidates.append(existing_member.get("notify_service"))
+                preserved_services = _available_notify_service_values(hass, fallback_candidates)
+                if preserved_services:
+                    resolved_notify_services = preserved_services
+                existing_trackers = existing_member.get("device_trackers")
+                if isinstance(existing_trackers, list):
+                    tracker_ids = [
+                        tracker_id
+                        for tracker_id in existing_trackers
+                        if isinstance(tracker_id, str) and tracker_id.startswith("device_tracker.")
+                    ]
         notify_service = resolved_notify_services[0] if resolved_notify_services else None
 
         payload.append(
@@ -838,9 +884,25 @@ async def _dispatch_notifications(
                     message = f"[Intended for member {member_id}] {message}"
         else:
             target_services = _resolve_member_notify_services(hass, runtime, member_id)
-            if not target_services and member_id is None:
-                fallback = item.get("notify_service")
-                target_services = [fallback] if fallback else []
+            if not target_services:
+                member = members_by_id.get(member_id) if member_id is not None else None
+                has_person_mapping = isinstance(
+                    member.get("ha_person_entity_id") if isinstance(member, dict) else None,
+                    str,
+                ) and str(member.get("ha_person_entity_id")).startswith("person.")
+
+                if member_id is not None and not has_person_mapping:
+                    fallback_candidates: list[Any] = []
+                    if isinstance(member, dict):
+                        notify_services_raw = member.get("notify_services")
+                        if isinstance(notify_services_raw, list):
+                            fallback_candidates.extend(notify_services_raw)
+                        fallback_candidates.append(member.get("notify_service"))
+                    fallback_candidates.append(item.get("notify_service"))
+                    target_services = _available_notify_service_values(hass, fallback_candidates)
+
+                if not target_services and member_id is None:
+                    target_services = _available_notify_service_values(hass, [item.get("notify_service")])
 
         if not target_services:
             if category == "cleaning":
@@ -930,7 +992,24 @@ async def _dispatch_notifications(
 
 
 async def _sync_members_from_ha(runtime: HassFlatmateRuntime, hass: HomeAssistant) -> None:
-    payload = await _build_member_sync_payload(hass)
+    existing_members_by_user_id: dict[str, dict[str, Any]] = {}
+    try:
+        existing_members = await runtime.api.get_members()
+    except HassFlatmateApiError as exc:
+        _LOGGER.debug("Failed to fetch current members before sync; proceeding without preservation: %s", exc)
+    else:
+        if isinstance(existing_members, list):
+            for row in existing_members:
+                if not isinstance(row, dict):
+                    continue
+                user_id = row.get("ha_user_id")
+                if isinstance(user_id, str) and user_id:
+                    existing_members_by_user_id[user_id] = row
+
+    payload = await _build_member_sync_payload(
+        hass,
+        existing_members_by_user_id=existing_members_by_user_id,
+    )
     response = await runtime.api.sync_members(payload)
     if not isinstance(response, dict):
         return
