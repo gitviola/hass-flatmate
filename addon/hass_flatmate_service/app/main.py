@@ -80,7 +80,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="hass-flatmate-service", version="0.1.46", lifespan=lifespan)
+app = FastAPI(title="hass-flatmate-service", version="0.1.48", lifespan=lifespan)
 
 
 def require_token(x_flatmate_token: str | None = Header(default=None)) -> None:
@@ -532,6 +532,8 @@ def put_members_sync(
         inactive_member_ids=inactive_member_ids,
         actor_user_id=None,
     )
+    if deactivated_member_ids:
+        cleaning.realign_rotation_after_member_removal(session)
     return MembersSyncResponse(
         members=[
             MemberResponse(

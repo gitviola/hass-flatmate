@@ -89,6 +89,16 @@ def get_or_create_rotation_config(session: Session) -> RotationConfig:
 
 
 def sync_rotation_members(session: Session) -> RotationConfig:
+    """Keep the rotation order stable: only append newly added members.
+
+    Removed/inactive members are *not* pruned from the ordered list. They are
+    skipped at lookup time (see ``baseline_assignee_member_id``). This preserves
+    historical baselines and the relative cadence of the remaining flatmates,
+    so removing a person does not retroactively reshuffle who was originally
+    scheduled for past weeks, and does not jump the rotation forward by a slot
+    for everyone who came after them in the cycle.
+    """
+
     config = get_or_create_rotation_config(session)
     active_members = get_active_members(session)
     active_ids = [m.id for m in active_members]
@@ -99,15 +109,20 @@ def sync_rotation_members(session: Session) -> RotationConfig:
         session.commit()
         return config
 
-    preserved = [member_id for member_id in config.ordered_member_ids_json if member_id in active_ids]
-    new_members = [member_id for member_id in active_ids if member_id not in preserved]
-    config.ordered_member_ids_json = preserved + new_members
+    existing_order = list(config.ordered_member_ids_json)
+    new_members = [member_id for member_id in active_ids if member_id not in existing_order]
+    if new_members:
+        config.ordered_member_ids_json = existing_order + new_members
 
     if config.anchor_week_start is None:
         config.anchor_week_start = monday_for(now_utc().date())
 
     session.commit()
     return config
+
+
+def _active_member_ids(session: Session) -> set[int]:
+    return {m.id for m in get_active_members(session)}
 
 
 def baseline_assignee_member_id(session: Session, week_start: date) -> int | None:
@@ -117,10 +132,15 @@ def baseline_assignee_member_id(session: Session, week_start: date) -> int | Non
     if not ordered:
         return None
 
+    active_ids = _active_member_ids(session)
+    active_in_order = [member_id for member_id in ordered if member_id in active_ids]
+    if not active_in_order:
+        return None
+
     anchor = config.anchor_week_start or week_start
     delta_weeks = (week_start - anchor).days // 7
-    idx = delta_weeks % len(ordered)
-    return ordered[idx]
+    idx = delta_weeks % len(active_in_order)
+    return active_in_order[idx]
 
 
 def _apply_override(assignee_member_id: int | None, override: CleaningOverride | None) -> int | None:
@@ -952,6 +972,64 @@ def _build_inactive_member_override_notifications(
     return notifications
 
 
+def realign_rotation_after_member_removal(session: Session) -> None:
+    """Keep the rotation cadence sensible after a flatmate moves out.
+
+    Removing one of N people from the cycle without re-anchoring would shift
+    the modulo math so that, e.g., the person who *just cleaned last week* can
+    end up scheduled for next week. To prevent that, this re-anchors the
+    rotation so that the week after the most recently completed cleaning slot
+    is filled by whoever would have been next in the old (full) rotation,
+    skipping inactive members.
+
+    Called after sync_members detects deactivations. Safe to call when nothing
+    changed (it'll detect there's nothing to realign and return).
+    """
+
+    config = get_or_create_rotation_config(session)
+    ordered = list(config.ordered_member_ids_json or [])
+    if not ordered or config.anchor_week_start is None:
+        return
+
+    active_ids = _active_member_ids(session)
+    if not active_ids:
+        return
+
+    active_in_order = [member_id for member_id in ordered if member_id in active_ids]
+    if not active_in_order:
+        return
+
+    latest_done = session.execute(
+        select(CleaningAssignment)
+        .where(CleaningAssignment.status == CleaningAssignmentStatus.DONE)
+        .order_by(CleaningAssignment.week_start.desc())
+    ).scalars().first()
+    if latest_done is None:
+        return
+
+    next_week = add_weeks(latest_done.week_start, 1)
+
+    delta_old = (next_week - config.anchor_week_start).days // 7
+    candidate_idx = delta_old % len(ordered)
+    next_active_member: int | None = None
+    for _ in range(len(ordered)):
+        candidate = ordered[candidate_idx]
+        if candidate in active_ids:
+            next_active_member = candidate
+            break
+        candidate_idx = (candidate_idx + 1) % len(ordered)
+    if next_active_member is None:
+        return
+
+    desired_idx = active_in_order.index(next_active_member)
+    new_anchor = next_week - timedelta(days=7 * desired_idx)
+    if config.anchor_week_start == new_anchor:
+        return
+
+    config.anchor_week_start = new_anchor
+    session.commit()
+
+
 def cancel_overrides_for_inactive_members(
     session: Session,
     *,
@@ -1107,13 +1185,68 @@ def mark_cleaning_takeover_done(
     return notifications
 
 
+def _override_for_week_any_status(session: Session, week_start: date) -> CleaningOverride | None:
+    """Return the most relevant override for a week, ignoring CANCELED.
+
+    Past locked rows have APPLIED overrides; ``_planned_override_for_week``
+    only sees PLANNED ones, which would lose the swap attribution after the
+    week is marked done.
+    """
+
+    return session.execute(
+        select(CleaningOverride)
+        .where(
+            CleaningOverride.week_start == week_start,
+            CleaningOverride.status != OverrideStatus.CANCELED,
+        )
+        .order_by(CleaningOverride.created_at.asc())
+    ).scalar_one_or_none()
+
+
+def _stabilize_locked_row(
+    session: Session,
+    assignment: CleaningAssignment,
+    baseline_id: int | None,
+    effective_id: int | None,
+    override: CleaningOverride | None,
+) -> tuple[int | None, int | None, CleaningOverride | None]:
+    """For locked (DONE/MISSED) assignments, return baseline/effective from
+    stored row data rather than the live rotation calculation. This keeps the
+    historical schedule stable when the rotation later changes (e.g. a member
+    moves out). Also surfaces APPLIED overrides so the swap attribution
+    survives past the week being marked done."""
+
+    if assignment.status == CleaningAssignmentStatus.PENDING:
+        return baseline_id, effective_id, override
+
+    locked_assignee = assignment.assignee_member_id
+    if locked_assignee is None:
+        return baseline_id, effective_id, override
+
+    effective_override = override
+    if effective_override is None:
+        effective_override = _override_for_week_any_status(session, assignment.week_start)
+
+    locked_effective = locked_assignee
+    if effective_override is not None and effective_override.member_to_id == locked_assignee:
+        locked_baseline = effective_override.member_from_id
+    elif effective_override is not None and effective_override.member_from_id == locked_assignee:
+        locked_baseline = effective_override.member_from_id
+    else:
+        locked_baseline = locked_assignee
+    return locked_baseline, locked_effective, effective_override
+
+
 def get_cleaning_current(session: Session, at: datetime | None = None) -> dict:
     now = at or now_utc()
     week_start = week_start_for(now)
     mark_past_pending_as_missed(session, week_start)
     assignment = ensure_assignment(session, week_start)
     baseline_id = baseline_assignee_member_id(session, week_start)
-    effective_id, _override = effective_assignee_member_id(session, week_start)
+    effective_id, override = effective_assignee_member_id(session, week_start)
+    baseline_id, effective_id, _ = _stabilize_locked_row(
+        session, assignment, baseline_id, effective_id, override
+    )
     session.commit()
 
     return {
@@ -1155,6 +1288,9 @@ def get_schedule(session: Session, *, weeks_ahead: int, from_week_start: date | 
         assignment = ensure_assignment(session, week)
         baseline_id = baseline_assignee_member_id(session, week)
         effective_id, override = effective_assignee_member_id(session, week)
+        baseline_id, effective_id, override = _stabilize_locked_row(
+            session, assignment, baseline_id, effective_id, override
+        )
         source_week_start = None
         if override is not None and override.source_event_id is not None:
             event_id = int(override.source_event_id)

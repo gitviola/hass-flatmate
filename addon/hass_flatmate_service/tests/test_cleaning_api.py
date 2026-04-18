@@ -17,6 +17,36 @@ def _sync_members(client, headers) -> None:
     assert response.status_code == 200
 
 
+def _sync_members_five(client, headers) -> None:
+    # Names sort alphabetically in the same order as insertion so that
+    # rotation order == member id order — keeps assertions easy to follow.
+    payload = {
+        "members": [
+            {"display_name": "Aaa", "ha_user_id": "u1", "notify_service": "notify.aaa", "active": True},
+            {"display_name": "Bbb", "ha_user_id": "u2", "notify_service": "notify.bbb", "active": True},
+            {"display_name": "Ccc", "ha_user_id": "u3", "notify_service": "notify.ccc", "active": True},
+            {"display_name": "Ddd", "ha_user_id": "u4", "notify_service": "notify.ddd", "active": True},
+            {"display_name": "Eee", "ha_user_id": "u5", "notify_service": "notify.eee", "active": True},
+        ]
+    }
+    response = client.put("/v1/members/sync", headers=headers, json=payload)
+    assert response.status_code == 200
+
+
+def _sync_members_five_without_u2(client, headers) -> dict:
+    payload = {
+        "members": [
+            {"display_name": "Aaa", "ha_user_id": "u1", "notify_service": "notify.aaa", "active": True},
+            {"display_name": "Ccc", "ha_user_id": "u3", "notify_service": "notify.ccc", "active": True},
+            {"display_name": "Ddd", "ha_user_id": "u4", "notify_service": "notify.ddd", "active": True},
+            {"display_name": "Eee", "ha_user_id": "u5", "notify_service": "notify.eee", "active": True},
+        ]
+    }
+    response = client.put("/v1/members/sync", headers=headers, json=payload)
+    assert response.status_code == 200
+    return response.json()
+
+
 def _sync_members_without_u2(client, headers) -> dict:
     payload = {
         "members": [
@@ -746,6 +776,128 @@ def test_member_sync_removes_inactive_members_from_rotation_and_cancels_override
         and date.fromisoformat(row["week_start"]) >= week_start
     }
     assert 2 not in future_effective_ids
+
+
+def test_member_removal_does_not_reshuffle_past_baselines_or_repeat_recent_cleaner(
+    client, auth_headers
+) -> None:
+    """Regression: when a flatmate moves out, three things must hold.
+
+    1. Past locked weeks keep their assignee + baseline (no "Originally X's
+       shift" appears for a week that had no swap).
+    2. The just-cleaned person is not re-assigned to next week.
+    3. The remaining flatmates rotate in the same relative order, so the
+       "next active person who would have come up in the old cycle" gets the
+       upcoming slot.
+    """
+
+    _sync_members_five(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers)
+    assert current.status_code == 200
+    week_n = date.fromisoformat(current.json()["week_start"])
+    week_n_baseline = current.json()["baseline_assignee_member_id"]
+    assert week_n_baseline == 1  # Alex
+
+    # Mark current week (Alex's regular shift) as done. This locks the row.
+    done = client.post(
+        "/v1/cleaning/mark_done",
+        headers=auth_headers,
+        json={"week_start": week_n.isoformat(), "actor_user_id": "u1"},
+    )
+    assert done.status_code == 200
+
+    # Sam (member 2) was originally going to clean week N+1.
+    schedule_before = client.get(
+        "/v1/cleaning/schedule?weeks_ahead=6", headers=auth_headers
+    ).json()["schedule"]
+    next_week_before = next(
+        row for row in schedule_before
+        if date.fromisoformat(row["week_start"]) == week_n + timedelta(days=7)
+    )
+    assert next_week_before["effective_assignee_member_id"] == 2
+
+    # Sam moves out.
+    _sync_members_five_without_u2(client, auth_headers)
+
+    schedule_after = client.get(
+        "/v1/cleaning/schedule?weeks_ahead=6", headers=auth_headers
+    ).json()["schedule"]
+    by_week = {date.fromisoformat(row["week_start"]): row for row in schedule_after}
+
+    # 1. Past locked week is stable: Alex still shown, baseline = Alex
+    #    (no spurious "Originally X's shift" since baseline == effective).
+    week_n_after = by_week[week_n]
+    assert week_n_after["status"] == "done"
+    assert week_n_after["effective_assignee_member_id"] == 1
+    assert week_n_after["baseline_assignee_member_id"] == 1
+
+    # 2. Next week is NOT Alex (he just cleaned).
+    next_week_after = by_week[week_n + timedelta(days=7)]
+    assert next_week_after["effective_assignee_member_id"] != 1, (
+        "The person who just cleaned must not be reassigned to the next week"
+    )
+
+    # 3. Next week is Pat (member 3) — the next active person who would have
+    #    come up in the old rotation after Sam was skipped.
+    assert next_week_after["effective_assignee_member_id"] == 3
+
+    # And subsequent weeks continue the 4-person cycle in stable order.
+    assert by_week[week_n + timedelta(days=14)]["effective_assignee_member_id"] == 4
+    assert by_week[week_n + timedelta(days=21)]["effective_assignee_member_id"] == 5
+    assert by_week[week_n + timedelta(days=28)]["effective_assignee_member_id"] == 1
+
+
+def test_member_removal_preserves_past_swap_attribution(client, auth_headers) -> None:
+    """A historical swap week still shows 'Originally X' correctly after the
+    swapped-out person becomes inactive — we read attribution from the locked
+    assignment + override, not from a recomputed live baseline."""
+
+    _sync_members_five(client, auth_headers)
+
+    current = client.get("/v1/cleaning/current", headers=auth_headers).json()
+    week_n = date.fromisoformat(current["week_start"])
+
+    # Week N+1's baseline is member 2 (Bbb). Pat (member 3) swaps with Bbb so
+    # Pat covers Bbb's week.
+    week_n1 = (week_n + timedelta(days=7)).isoformat()
+    swap = client.post(
+        "/v1/cleaning/overrides/swap",
+        headers=auth_headers,
+        json={
+            "week_start": week_n1,
+            "member_a_id": 2,
+            "member_b_id": 3,
+            "actor_user_id": "u3",
+            "cancel": False,
+        },
+    )
+    assert swap.status_code == 200
+
+    # Pat marks the swapped week as done (lock the row).
+    done = client.post(
+        "/v1/cleaning/mark_done",
+        headers=auth_headers,
+        json={
+            "week_start": week_n1,
+            "actor_user_id": "u3",
+            "completed_by_member_id": 3,
+        },
+    )
+    assert done.status_code == 200
+
+    # Now Bbb moves out.
+    _sync_members_five_without_u2(client, auth_headers)
+
+    schedule = client.get(
+        "/v1/cleaning/schedule?weeks_ahead=4", headers=auth_headers
+    ).json()["schedule"]
+    swap_row = next(row for row in schedule if row["week_start"] == week_n1)
+    # Effective stays Pat (the actual cleaner), and baseline points to Bbb
+    # (the swapped-out original) — so the UI can correctly say
+    # "Originally Bbb's shift, swapped to Pat".
+    assert swap_row["effective_assignee_member_id"] == 3
+    assert swap_row["baseline_assignee_member_id"] == 2
 
 
 def test_swap_rejects_inactive_members(client, auth_headers) -> None:
