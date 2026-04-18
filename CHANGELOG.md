@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.48] - 2026-04-18
+
+### Fixed
+- Cleaning rotation no longer reshuffles the past schedule when a flatmate is removed from Home Assistant. Previously, deactivating a member shrank the ordered rotation list, which retroactively rewrote `baseline_assignee_member_id` for every week (e.g. last week's "Originally X's shift" label could change from the actual original assignee to someone else even though the locked cleaner was correct).
+- The person who just cleaned is no longer auto-assigned to next week after another flatmate moves out. The rotation now re-anchors so the upcoming slot goes to the next active person from the *old* cycle (skipping the removed member), instead of falling out of the modulo math.
+- Past locked weeks (DONE/MISSED) now report baseline + effective assignee from the stored `cleaning_assignments` row rather than recomputing live, so historical attribution is stable across rotation changes.
+- "Originally X's shift" attribution now survives `mark_done` for swap weeks — APPLIED overrides are surfaced for past weeks (previously only PLANNED were considered), so the swap source remains visible after the week is closed out.
+
 ## [0.1.47] - 2026-03-03
 
 ### Changed
