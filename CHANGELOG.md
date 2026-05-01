@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.50] - 2026-05-01
+
+### Fixed
+- Add-on container failed to start cleanly on existing installs after the 0.1.49 update because of the new SQLite engine tuning (StaticPool + WAL pragmas applied via a connect-time event listener). Reverted those engine changes; the database setup is back to the 0.1.48 behavior.
+- Restored uvicorn `log_level="info"` so add-on startup is visible in the supervisor log again. Access logs stay disabled.
+
 ## [0.1.49] - 2026-05-01
 
 ### Performance

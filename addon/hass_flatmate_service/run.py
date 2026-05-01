@@ -16,5 +16,4 @@ if __name__ == "__main__":
         port=port,
         reload=False,
         access_log=False,
-        log_level="warning",
     )
