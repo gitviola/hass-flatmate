@@ -820,6 +820,10 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
     _attr_name = "Cleaning Schedule"
     _attr_unique_id = "hass_flatmate_cleaning_schedule"
     _attr_icon = "mdi:calendar-range"
+    # `weeks` carries the full schedule + per-week history/timeline used live by the
+    # cleaning card. It exceeds the recorder's 16 KB attribute cap; skip persistence
+    # rather than have the recorder silently drop the whole attribute payload.
+    _unrecorded_attributes = frozenset({"weeks"})
 
     @property
     def native_value(self) -> int:

@@ -1269,31 +1269,44 @@ async def _register_services(hass: HomeAssistant) -> None:
     data.services_registered = True
 
 
-async def _register_frontend_static_assets(hass: HomeAssistant) -> None:
-    data = _get_domain_data(hass)
-    if data.frontend_registered:
-        return
-
+def _resolve_frontend_static_targets() -> tuple[list[tuple[str, Path]], list[Path]]:
+    """Sync filesystem probe for frontend assets. Run via hass.async_add_executor_job."""
     targets = [
         (FRONTEND_SHOPPING_CARD_FILENAME, FRONTEND_SHOPPING_CARD_RESOURCE_URL),
         (FRONTEND_SHOPPING_COMPACT_CARD_FILENAME, FRONTEND_SHOPPING_COMPACT_CARD_RESOURCE_URL),
         (FRONTEND_CLEANING_CARD_FILENAME, FRONTEND_CLEANING_CARD_RESOURCE_URL),
         (FRONTEND_DISTRIBUTION_CARD_FILENAME, FRONTEND_DISTRIBUTION_CARD_RESOURCE_URL),
     ]
-    static_paths: list[StaticPathConfig] = []
+    found: list[tuple[str, Path]] = []
+    missing: list[Path] = []
     for filename, resource_url in targets:
         static_file = Path(__file__).parent / "frontend" / filename
-        if not static_file.exists():
-            _LOGGER.warning(
-                "Frontend asset not found, skipping static registration: %s",
-                static_file,
-            )
-            continue
-        static_paths.append(StaticPathConfig(resource_url, str(static_file), True))
+        if static_file.exists():
+            found.append((resource_url, static_file))
+        else:
+            missing.append(static_file)
+    return found, missing
 
-    if not static_paths:
+
+async def _register_frontend_static_assets(hass: HomeAssistant) -> None:
+    data = _get_domain_data(hass)
+    if data.frontend_registered:
         return
 
+    found, missing = await hass.async_add_executor_job(_resolve_frontend_static_targets)
+    for missing_path in missing:
+        _LOGGER.warning(
+            "Frontend asset not found, skipping static registration: %s",
+            missing_path,
+        )
+
+    if not found:
+        return
+
+    static_paths = [
+        StaticPathConfig(resource_url, str(static_file), True)
+        for resource_url, static_file in found
+    ]
     await hass.http.async_register_static_paths(static_paths)
     data.frontend_registered = True
 
@@ -1335,18 +1348,22 @@ async def _register_lovelace_card_resource(hass: HomeAssistant) -> None:
             CONF_RESOURCE_TYPE_WS: FRONTEND_DISTRIBUTION_CARD_RESOURCE_TYPE,
         },
     ]
-    integration_version = _integration_version()
-    resource_targets = []
-    for target in resource_targets_base:
-        file_path = Path(__file__).parent / "frontend" / _resource_url_path(target[CONF_URL]).rsplit("/", 1)[-1]
-        file_hash = _file_content_hash(file_path)
-        version_tag = f"{integration_version}-{file_hash}"
-        resource_targets.append({
-            CONF_URL: _resource_url_with_version(target[CONF_URL], version_tag),
-            CONF_TYPE: target[CONF_TYPE],
-            CONF_RESOURCE_TYPE_WS: target[CONF_RESOURCE_TYPE_WS],
-            "resource_path": _resource_url_path(target[CONF_URL]),
-        })
+    def _build_versioned_targets() -> list[dict[str, Any]]:
+        integration_version = _integration_version()
+        results: list[dict[str, Any]] = []
+        for target in resource_targets_base:
+            file_path = Path(__file__).parent / "frontend" / _resource_url_path(target[CONF_URL]).rsplit("/", 1)[-1]
+            file_hash = _file_content_hash(file_path)
+            version_tag = f"{integration_version}-{file_hash}"
+            results.append({
+                CONF_URL: _resource_url_with_version(target[CONF_URL], version_tag),
+                CONF_TYPE: target[CONF_TYPE],
+                CONF_RESOURCE_TYPE_WS: target[CONF_RESOURCE_TYPE_WS],
+                "resource_path": _resource_url_path(target[CONF_URL]),
+            })
+        return results
+
+    resource_targets = await hass.async_add_executor_job(_build_versioned_targets)
 
     if lovelace_data.resource_mode != MODE_STORAGE:
         resource_urls = ", ".join(target[CONF_URL] for target in resource_targets)

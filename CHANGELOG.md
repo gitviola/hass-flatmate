@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.51] - 2026-05-01
+
+### Fixed
+- Integration setup no longer makes blocking file reads on the asyncio event loop. `manifest.json` parsing and frontend asset hashing/existence checks are now offloaded to the executor, eliminating the four "Detected blocking call to read_text/open/read_bytes" warnings logged at Home Assistant startup that were also delaying other integration setups.
+- `sensor.hass_flatmate_cleaning_schedule` no longer trips the recorder's 16 KB attribute size limit. The large `weeks` payload (used live by the cleaning card) is now flagged as an unrecorded attribute, so the recorder stops silently dropping the entire attribute set and storing oversized rows. Other attributes on the entity continue to be recorded normally.
+
 ## [0.1.50] - 2026-05-01
 
 ### Fixed
