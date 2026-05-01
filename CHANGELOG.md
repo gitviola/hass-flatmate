@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.49] - 2026-05-01
+
+### Performance
+- Slashed steady-state CPU and RAM use of the add-on container.
+- Coordinator now polls the backend every 60 s (up from 30 s) and fetches a smaller cleaning schedule window (8 weeks instead of 24) and fewer activity events (50 instead of 200).
+- `get_schedule` now batch-fetches assignments and overrides for the whole window in two queries instead of running ~5–7 queries per week, and only commits when the schedule actually changed. The hot-path query count per poll dropped from roughly 150 to a handful.
+- `sync_rotation_members` and `ensure_assignment` no longer dirty/commit rows when nothing has changed, so idle polls no longer write to the database every cycle.
+- SQLite now runs with WAL, `synchronous=NORMAL`, an in-memory temp store and a small mmap, and SQLAlchemy uses a single shared connection (StaticPool) instead of the default 5+10 idle pool — meaningfully lower RAM and far less disk thrash.
+- Uvicorn access logs disabled and log level raised to `warning` to drop per-request log formatting overhead.
+
 ## [0.1.48] - 2026-04-18
 
 ### Fixed

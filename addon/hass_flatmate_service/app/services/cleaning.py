@@ -100,24 +100,29 @@ def sync_rotation_members(session: Session) -> RotationConfig:
     """
 
     config = get_or_create_rotation_config(session)
-    active_members = get_active_members(session)
-    active_ids = [m.id for m in active_members]
+    changed = False
 
     if not config.ordered_member_ids_json:
+        active_ids = [m.id for m in get_active_members(session)]
         config.ordered_member_ids_json = active_ids
         config.anchor_week_start = monday_for(now_utc().date())
         session.commit()
         return config
 
     existing_order = list(config.ordered_member_ids_json)
-    new_members = [member_id for member_id in active_ids if member_id not in existing_order]
+    existing_set = set(existing_order)
+    active_ids = [m.id for m in get_active_members(session)]
+    new_members = [member_id for member_id in active_ids if member_id not in existing_set]
     if new_members:
         config.ordered_member_ids_json = existing_order + new_members
+        changed = True
 
     if config.anchor_week_start is None:
         config.anchor_week_start = monday_for(now_utc().date())
+        changed = True
 
-    session.commit()
+    if changed:
+        session.commit()
     return config
 
 
@@ -181,7 +186,10 @@ def ensure_assignment(session: Session, week_start: date) -> CleaningAssignment:
         session.flush()
         return assignment
 
-    if assignment.status == CleaningAssignmentStatus.PENDING:
+    if (
+        assignment.status == CleaningAssignmentStatus.PENDING
+        and assignment.assignee_member_id != effective_id
+    ):
         assignment.assignee_member_id = effective_id
 
     return assignment
@@ -1247,7 +1255,8 @@ def get_cleaning_current(session: Session, at: datetime | None = None) -> dict:
     baseline_id, effective_id, _ = _stabilize_locked_row(
         session, assignment, baseline_id, effective_id, override
     )
-    session.commit()
+    if session.new or session.dirty:
+        session.commit()
 
     return {
         "week_start": week_start,
@@ -1278,19 +1287,87 @@ def _parse_source_week_start(payload: dict | None) -> date | None:
         return None
 
 
+def _baseline_assignee_for(active_in_order: list[int], anchor: date, week_start: date) -> int | None:
+    if not active_in_order:
+        return None
+    delta_weeks = (week_start - anchor).days // 7
+    return active_in_order[delta_weeks % len(active_in_order)]
+
+
 def get_schedule(session: Session, *, weeks_ahead: int, from_week_start: date | None = None) -> list[dict]:
     start = from_week_start or week_start_for(now_utc())
+    weeks_count = max(weeks_ahead, 0)
+    if weeks_count == 0:
+        return []
+
+    end_exclusive = add_weeks(start, weeks_count)
+
+    config = sync_rotation_members(session)
+    ordered = list(config.ordered_member_ids_json or [])
+    active_ids = _active_member_ids(session)
+    active_in_order = [member_id for member_id in ordered if member_id in active_ids]
+    anchor = config.anchor_week_start or start
+
+    assignments_by_week: dict[date, CleaningAssignment] = {
+        row.week_start: row
+        for row in session.execute(
+            select(CleaningAssignment).where(
+                CleaningAssignment.week_start >= start,
+                CleaningAssignment.week_start < end_exclusive,
+            )
+        ).scalars().all()
+    }
+    planned_overrides_by_week: dict[date, CleaningOverride] = {}
+    any_status_overrides_by_week: dict[date, CleaningOverride] = {}
+    for override in (
+        session.execute(
+            select(CleaningOverride)
+            .where(
+                CleaningOverride.week_start >= start,
+                CleaningOverride.week_start < end_exclusive,
+                CleaningOverride.status != OverrideStatus.CANCELED,
+            )
+            .order_by(CleaningOverride.created_at.asc())
+        ).scalars().all()
+    ):
+        if override.week_start not in any_status_overrides_by_week:
+            any_status_overrides_by_week[override.week_start] = override
+        if (
+            override.status == OverrideStatus.PLANNED
+            and override.week_start not in planned_overrides_by_week
+        ):
+            planned_overrides_by_week[override.week_start] = override
+
+    new_assignments: list[CleaningAssignment] = []
     rows: list[dict] = []
     source_week_by_event_id: dict[int, date | None] = {}
 
-    for offset in range(max(weeks_ahead, 0)):
+    for offset in range(weeks_count):
         week = add_weeks(start, offset)
-        assignment = ensure_assignment(session, week)
-        baseline_id = baseline_assignee_member_id(session, week)
-        effective_id, override = effective_assignee_member_id(session, week)
-        baseline_id, effective_id, override = _stabilize_locked_row(
-            session, assignment, baseline_id, effective_id, override
-        )
+        baseline_id = _baseline_assignee_for(active_in_order, anchor, week)
+        override = planned_overrides_by_week.get(week)
+        effective_id = _apply_override(baseline_id, override)
+
+        assignment = assignments_by_week.get(week)
+        if assignment is None:
+            assignment = CleaningAssignment(
+                week_start=week,
+                assignee_member_id=effective_id,
+                status=CleaningAssignmentStatus.PENDING,
+            )
+            session.add(assignment)
+            new_assignments.append(assignment)
+            assignments_by_week[week] = assignment
+        elif assignment.status == CleaningAssignmentStatus.PENDING:
+            if assignment.assignee_member_id != effective_id:
+                assignment.assignee_member_id = effective_id
+
+        if assignment.status != CleaningAssignmentStatus.PENDING:
+            stable_override = override or any_status_overrides_by_week.get(week)
+            baseline_id, effective_id, override = _stabilize_locked_row(
+                session, assignment, baseline_id, effective_id, stable_override
+            )
+
         source_week_start = None
         if override is not None and override.source_event_id is not None:
             event_id = int(override.source_event_id)
@@ -1315,7 +1392,9 @@ def get_schedule(session: Session, *, weeks_ahead: int, from_week_start: date | 
             }
         )
 
-    session.commit()
+    if new_assignments or session.dirty:
+        session.commit()
+
     return rows
 
 
