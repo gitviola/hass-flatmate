@@ -1,5 +1,10 @@
 # Hass Flatmate Service App Changelog
 
+## [0.3.0] - 2026-09-28
+
+### Added
+- `POST /v1/cleaning/notifications/resend`: rebuilds a previously dispatched cleaning notification (same recipient, title, message, week and slot) so the integration can send it again, and logs who requested it. Rejects unknown events and recipients who are no longer active. Used by the integration's admin-only resend button.
+
 ## [0.2.1] - 2026-09-28
 
 ### Changed

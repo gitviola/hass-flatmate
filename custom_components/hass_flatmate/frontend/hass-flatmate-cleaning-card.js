@@ -6,6 +6,8 @@ class HassFlatmateCleaningCard extends HTMLElement {
     this._errorMessage = "";
     this._pendingDoneWeeks = new Set();
     this._pendingSwapWeeks = new Set();
+    this._pendingResendIds = new Set();
+    this._resendStatus = null;
     this._optimisticWeekPatches = new Map();
     this._modalOpen = false;
     this._modalWeekStart = "";
@@ -120,6 +122,8 @@ class HassFlatmateCleaningCard extends HTMLElement {
       markTakeoverDone:
         attributes.service_mark_takeover_done || "hass_flatmate_mark_cleaning_takeover_done",
       swapWeek: attributes.service_swap_week || "hass_flatmate_swap_cleaning_week",
+      resendNotification:
+        attributes.service_resend_notification || "hass_flatmate_resend_cleaning_notification",
     };
   }
 
@@ -481,7 +485,40 @@ class HassFlatmateCleaningCard extends HTMLElement {
   _closeHistoryModal() {
     this._historyModalOpen = false;
     this._historyModalWeekStart = "";
+    this._resendStatus = null;
     this._render();
+  }
+
+  _isAdminUser() {
+    return !!this._hass?.user?.is_admin;
+  }
+
+  async _resendNotification(dispatchEventId) {
+    // UI gate only; the integration service is admin-only and rejects non-admins itself.
+    if (!this._isAdminUser() || !Number.isInteger(dispatchEventId) || dispatchEventId <= 0) {
+      return;
+    }
+    if (this._pendingResendIds.has(dispatchEventId)) {
+      return;
+    }
+    if (!window.confirm("Send this notification again to the same flatmate?")) {
+      return;
+    }
+
+    this._pendingResendIds.add(dispatchEventId);
+    this._resendStatus = null;
+    this._render();
+    try {
+      const meta = this._serviceMeta(this._stateObj?.attributes || {});
+      await this._callService(meta.resendNotification, { dispatch_event_id: dispatchEventId });
+      this._requestEntityRefresh();
+      this._resendStatus = { ok: true, text: "Notification sent again." };
+    } catch (error) {
+      this._resendStatus = { ok: false, text: error?.message || "Could not resend the notification." };
+    } finally {
+      this._pendingResendIds.delete(dispatchEventId);
+      this._render();
+    }
   }
 
   _openDoneModal(weekRow, members) {
@@ -1158,6 +1195,13 @@ class HassFlatmateCleaningCard extends HTMLElement {
       }
     });
 
+    this._root.querySelectorAll("[data-resend-event]").forEach((el) => {
+      el.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this._resendNotification(Number(el.dataset.resendEvent));
+      });
+    });
+
     this._root.querySelectorAll("[data-timeline-toggle]").forEach((el) => {
       el.addEventListener("click", () => {
         el.classList.toggle("expanded");
@@ -1702,6 +1746,10 @@ class HassFlatmateCleaningCard extends HTMLElement {
       }
     }
 
+    const isAdmin = this._isAdminUser();
+    const resendStatusHtml = this._resendStatus
+      ? `<div class="resend-status ${this._resendStatus.ok ? "ok" : "error"}">${this._escape(this._resendStatus.text)}</div>`
+      : "";
     const historyTimeline = Array.isArray(historyModalWeek?.timeline)
       ? historyModalWeek.timeline
       : [];
@@ -1728,6 +1776,21 @@ class HassFlatmateCleaningCard extends HTMLElement {
             const notifMessage = entry.notification_message ? this._escape(entry.notification_message) : "";
             const reason = entry.reason ? this._escape(entry.reason) : "";
             const hasExpandable = entryType === "notification" && (notifMessage || reason);
+            const dispatchEventId = Number(entry.dispatch_event_id);
+            const canResend =
+              isAdmin &&
+              entryType === "notification" &&
+              !isFuture &&
+              Number.isInteger(dispatchEventId) &&
+              dispatchEventId > 0 &&
+              !!notifTitle &&
+              !!notifMessage;
+            const resendPending = canResend && this._pendingResendIds.has(dispatchEventId);
+            const resendHtml = canResend
+              ? `<button class="btn secondary resend-btn" type="button" data-resend-event="${dispatchEventId}" ${resendPending ? "disabled" : ""}>
+                  <ha-icon icon="mdi:bell-ring-outline"></ha-icon>${resendPending ? "Sending…" : "Resend"}
+                </button>`
+              : "";
 
             let expandableHtml = "";
             if (hasExpandable) {
@@ -1758,6 +1821,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
                   ${detail ? `<span class="timeline-detail">${detail}</span>` : ""}
                   ${expandableHtml}
                   ${timestamp ? `<span class="timeline-time">${timestamp}</span>` : ""}
+                  ${resendHtml}
                 </div>
               </li>
             `;
@@ -2040,6 +2104,7 @@ class HassFlatmateCleaningCard extends HTMLElement {
                 <ul class="timeline-list">
                   ${timelineRowsHtml}
                 </ul>
+                ${resendStatusHtml}
               </div>
 
               <div class="modal-actions">
@@ -2839,6 +2904,31 @@ class HassFlatmateCleaningCard extends HTMLElement {
         .timeline-time {
           color: var(--secondary-text-color);
           font-size: 0.76rem;
+        }
+
+        .resend-btn {
+          justify-self: start;
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          margin-top: 6px;
+          min-height: 28px;
+          padding: 2px 10px;
+          font-size: 0.8rem;
+          --mdc-icon-size: 16px;
+        }
+
+        .resend-status {
+          margin-top: 8px;
+          font-size: 0.85rem;
+        }
+
+        .resend-status.ok {
+          color: var(--success-color, #43a047);
+        }
+
+        .resend-status.error {
+          color: var(--error-color, #db4437);
         }
 
         .modal-actions {

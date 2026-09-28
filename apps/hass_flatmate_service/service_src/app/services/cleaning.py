@@ -1540,6 +1540,69 @@ def due_notifications(session: Session, at: datetime) -> list[dict]:
     return notifications
 
 
+def build_notification_resend(
+    session: Session,
+    *,
+    dispatch_event_id: int,
+    actor_user_id: str | None = None,
+) -> list[dict]:
+    """Rebuild a previously dispatched cleaning notification so it can be sent again.
+
+    The original recipient, title, message, week and slot are reused. Admin
+    authorization happens in the Home Assistant integration, which is the only
+    caller holding the API token.
+    """
+
+    event = session.get(ActivityEvent, dispatch_event_id)
+    if event is None or event.action != "cleaning_notification_dispatch":
+        raise ValueError("Notification dispatch not found")
+
+    payload = event.payload_json or {}
+    title = payload.get("title")
+    message = payload.get("message")
+    if not title or not message:
+        raise ValueError("This notification has no recorded title/message to resend")
+
+    week_start_raw = payload.get("week_start")
+    try:
+        week_start = date.fromisoformat(str(week_start_raw))
+    except ValueError as exc:
+        raise ValueError("This notification has no valid week") from exc
+
+    member_id = payload.get("member_id")
+    member = get_member_by_id(session, int(member_id)) if member_id is not None else None
+    if member is None or not member.active:
+        raise ValueError("The flatmate this notification was sent to is no longer active")
+
+    actor_member = resolve_actor_member(session, actor_user_id)
+    log_event(
+        session,
+        domain="cleaning",
+        action="cleaning_notification_resend_requested",
+        actor_member_id=actor_member.id if actor_member else None,
+        actor_user_id_raw=actor_user_id,
+        payload={
+            "week_start": week_start.isoformat(),
+            "member_id": member.id,
+            "notification_slot": payload.get("notification_slot"),
+            "source_event_id": event.id,
+        },
+    )
+    session.commit()
+
+    return [
+        _member_notification(
+            member,
+            str(title),
+            str(message),
+            week_start=week_start,
+            notification_kind=payload.get("notification_kind"),
+            notification_slot=payload.get("notification_slot"),
+            source_action="cleaning_notification_resend",
+        )
+    ]
+
+
 def record_notification_dispatches(session: Session, *, records: list[dict]) -> int:
     if not records:
         return 0

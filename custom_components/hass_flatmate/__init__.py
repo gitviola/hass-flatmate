@@ -18,11 +18,12 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry, ConfigEntryNotReady
 from homeassistant.const import CONF_API_TOKEN, CONF_TYPE, CONF_URL, EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import Event, HomeAssistant, ServiceCall, callback
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, Unauthorized
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 
@@ -72,6 +73,7 @@ from .const import (
     SERVICE_ATTR_ITEM_ID,
     SERVICE_ATTR_CLEANING_HISTORY_ROWS,
     SERVICE_ATTR_CLEANING_OVERRIDE_ROWS,
+    SERVICE_ATTR_DISPATCH_EVENT_ID,
     SERVICE_ATTR_MEMBER_A_ID,
     SERVICE_ATTR_MEMBER_B_ID,
     SERVICE_ATTR_NAME,
@@ -87,6 +89,7 @@ from .const import (
     SERVICE_MARK_CLEANING_DONE,
     SERVICE_MARK_CLEANING_UNDONE,
     SERVICE_MARK_CLEANING_TAKEOVER_DONE,
+    SERVICE_RESEND_CLEANING_NOTIFICATION,
     SERVICE_SWAP_CLEANING_WEEK,
     SERVICE_SYNC_MEMBERS,
 )
@@ -1130,6 +1133,31 @@ async def _register_services(hass: HomeAssistant) -> None:
         await _sync_members_from_ha(runtime, hass)
         _schedule_refresh_and_process_activity(hass, runtime)
 
+    async def resend_cleaning_notification(call: ServiceCall) -> None:
+        # Registered as an admin service, so HA already rejects non-admin users;
+        # re-check here so the guarantee doesn't depend on how it was registered.
+        user_id = call.context.user_id
+        if user_id:
+            user = await hass.auth.async_get_user(user_id)
+            if user is None or not user.is_admin:
+                raise Unauthorized(context=call.context)
+
+        runtime = _get_primary_runtime(hass)
+        try:
+            response = await runtime.api.resend_cleaning_notification(
+                dispatch_event_id=call.data[SERVICE_ATTR_DISPATCH_EVENT_ID],
+                actor_user_id=user_id,
+            )
+        except HassFlatmateApiError as exc:
+            raise HomeAssistantError(str(exc)) from exc
+        await _dispatch_notifications(
+            hass,
+            runtime,
+            response.get("notifications", []),
+            default_category="cleaning",
+        )
+        _schedule_refresh_and_process_activity(hass, runtime)
+
     async def import_manual_data(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
         try:
@@ -1223,6 +1251,13 @@ async def _register_services(hass: HomeAssistant) -> None:
         ),
     )
     hass.services.async_register(DOMAIN, SERVICE_SYNC_MEMBERS, sync_members)
+    async_register_admin_service(
+        hass,
+        DOMAIN,
+        SERVICE_RESEND_CLEANING_NOTIFICATION,
+        resend_cleaning_notification,
+        schema=vol.Schema({vol.Required(SERVICE_ATTR_DISPATCH_EVENT_ID): cv.positive_int}),
+    )
     hass.services.async_register(
         DOMAIN,
         SERVICE_IMPORT_MANUAL_DATA,

@@ -131,6 +131,18 @@ hass_flatmate_swap_cleaning_week:
       selector:
         boolean:
 
+hass_flatmate_resend_cleaning_notification:
+  name: Resend cleaning notification
+  description: Admin only. Send a previously dispatched cleaning notification again to the same flatmate, with the original title and message.
+  fields:
+    dispatch_event_id:
+      required: true
+      example: 802
+      selector:
+        number:
+          min: 1
+          mode: box
+
 hass_flatmate_sync_members:
   name: Sync members
   description: Sync Home Assistant users/persons into hass-flatmate members (deactivates departed members and auto-cancels impacted planned overrides).

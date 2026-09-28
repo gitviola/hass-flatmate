@@ -30,6 +30,7 @@ from .schemas import (
     CleaningMarkTakeoverDoneRequest,
     CleaningNotificationDispatchRequest,
     CleaningNotificationDueResponse,
+    CleaningNotificationResendRequest,
     CleaningRotationResponse,
     CleaningRotationUpdateRequest,
     CleaningScheduleResponse,
@@ -1070,6 +1071,26 @@ def post_swap_override(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return OperationResponse(ok=True, id=override.id if override else None, notifications=notifications)
+
+
+@app.post(
+    "/v1/cleaning/notifications/resend",
+    response_model=OperationResponse,
+    dependencies=[Depends(require_token)],
+)
+def post_resend_notification(
+    payload: CleaningNotificationResendRequest,
+    session: Session = Depends(get_session),
+) -> OperationResponse:
+    try:
+        notifications = cleaning.build_notification_resend(
+            session,
+            dispatch_event_id=payload.dispatch_event_id,
+            actor_user_id=payload.actor_user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return OperationResponse(ok=True, notifications=notifications)
 
 
 @app.get(

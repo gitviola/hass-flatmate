@@ -20,6 +20,7 @@ from .const import (
     SERVICE_MARK_CLEANING_DONE,
     SERVICE_MARK_CLEANING_TAKEOVER_DONE,
     SERVICE_MARK_CLEANING_UNDONE,
+    SERVICE_RESEND_CLEANING_NOTIFICATION,
     SERVICE_SWAP_CLEANING_WEEK,
     SERVICE_COMPLETE_SHOPPING_ITEM,
     SERVICE_DELETE_SHOPPING_ITEM,
@@ -234,6 +235,15 @@ def _cleaning_history_text(
                 f"{member_from_name} and {member_to_name} was canceled because {inactive_label} is inactive."
             ),
         )
+    if action == "cleaning_notification_resend_requested":
+        recipient = _member_name(members, payload.get("member_id"))
+        slot = str(payload.get("notification_slot", "")).strip().lower()
+        slot_label = {
+            "monday_11": "Monday assignment",
+            "sunday_18": "Sunday evening reminder",
+            "sunday_21": "Sunday final reminder",
+        }.get(slot, "notification")
+        return f"{actor_name} resent the {slot_label}", f"Sent again to {recipient}."
     if action == "cleaning_notification_dispatch":
         status = str(payload.get("status", "")).strip().lower()
         slot = str(payload.get("notification_slot", "")).strip().lower()
@@ -393,6 +403,7 @@ def _notification_slots_for_week(
                     "reason": _dispatch_reason_label(reason) if reason else None,
                     "notification_title": dispatch_event.get("notification_title"),
                     "notification_message": dispatch_event.get("notification_message"),
+                    "dispatch_event_id": dispatch_event.get("id"),
                     "last_event_at": dispatch_event.get("created_at"),
                 }
             )
@@ -437,6 +448,7 @@ _TIMELINE_EVENT_ICONS: dict[str, str] = {
     "cleaning_swap_canceled": "mdi:close-circle",
     "cleaning_compensation_planned": "mdi:calendar-plus",
     "cleaning_override_auto_canceled_member_inactive": "mdi:account-remove",
+    "cleaning_notification_resend_requested": "mdi:bell-ring",
 }
 
 _TIMELINE_NOTIFICATION_ICONS: dict[str, str] = {
@@ -489,6 +501,7 @@ def _build_week_timeline(
             "notification_title": str(notif_title) if notif_title else None,
             "notification_message": str(notif_message) if notif_message else None,
             "reason": str(reason) if reason else None,
+            "dispatch_event_id": slot.get("dispatch_event_id"),
             "_sort_ts": ts_val.timestamp() if ts_val else 0.0,
         })
 
@@ -540,6 +553,7 @@ def _build_week_timeline(
             entry["notification_title"] = str(notif_title) if notif_title else None
             entry["notification_message"] = str(notif_message) if notif_message else None
             entry["reason"] = _dispatch_reason_label(reason) if reason else None
+            entry["dispatch_event_id"] = event.get("id")
 
         timeline.append(entry)
 
@@ -999,6 +1013,7 @@ class CleaningScheduleSensor(HassFlatmateCoordinatorEntity, SensorEntity):
             "service_mark_undone": SERVICE_MARK_CLEANING_UNDONE,
             "service_mark_takeover_done": SERVICE_MARK_CLEANING_TAKEOVER_DONE,
             "service_swap_week": SERVICE_SWAP_CLEANING_WEEK,
+            "service_resend_notification": SERVICE_RESEND_CLEANING_NOTIFICATION,
         }
 
 

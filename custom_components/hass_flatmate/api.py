@@ -249,6 +249,18 @@ class HassFlatmateApiClient:
             },
         )
 
+    async def resend_cleaning_notification(
+        self,
+        *,
+        dispatch_event_id: int,
+        actor_user_id: str | None,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "POST",
+            "/v1/cleaning/notifications/resend",
+            json={"dispatch_event_id": dispatch_event_id, "actor_user_id": actor_user_id},
+        )
+
     async def get_due_notifications(self, *, at: datetime) -> dict[str, Any]:
         return await self._request(
             "GET",

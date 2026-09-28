@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.0] - 2026-09-28
+
+### Added
+- Admins can resend a cleaning notification from the shift details timeline: a "Resend" button appears on notifications that were already sent and sends the original title and message again to the same flatmate. The button is only shown to Home Assistant admins, and the new `hass_flatmate_resend_cleaning_notification` service is registered as an admin-only service and re-checks the caller, so non-admin users are rejected even if they call it directly. Resends are logged in the timeline ("<name> resent the Monday assignment").
+- Backend endpoint `POST /v1/cleaning/notifications/resend`.
+
 ## [0.2.1] - 2026-09-28
 
 ### Fixed

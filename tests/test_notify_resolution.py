@@ -62,7 +62,12 @@ _stub("homeassistant.config_entries", parent="homeassistant",
       ConfigEntry=MagicMock,
       ConfigEntryNotReady=type("ConfigEntryNotReady", (Exception,), {}))
 _stub("homeassistant.exceptions", parent="homeassistant",
-      HomeAssistantError=type("HomeAssistantError", (Exception,), {}))
+      HomeAssistantError=type("HomeAssistantError", (Exception,), {}),
+      Unauthorized=type(
+          "Unauthorized",
+          (Exception,),
+          {"__init__": lambda self, *args, context=None, **kwargs: Exception.__init__(self, *args)},
+      ))
 _stub("homeassistant.components", parent="homeassistant")
 _stub("homeassistant.components.http", parent="homeassistant.components",
       StaticPathConfig=MagicMock)
@@ -79,6 +84,8 @@ _stub("homeassistant.helpers.entity_registry",
       async_entries_for_config_entry=MagicMock(return_value=[]))
 _stub("homeassistant.helpers.event", parent="homeassistant.helpers",
       async_track_time_change=MagicMock())
+_stub("homeassistant.helpers.service", parent="homeassistant.helpers",
+      async_register_admin_service=MagicMock())
 _stub("homeassistant.helpers.typing", parent="homeassistant.helpers",
       ConfigType=dict)
 _stub("homeassistant.helpers.update_coordinator",
@@ -109,6 +116,7 @@ _stub("aiohttp",
 # NOW import from the integration
 # ---------------------------------------------------------------------------
 from custom_components.hass_flatmate import (  # noqa: E402
+    _register_services,
     _event_start_datetime,
     HassFlatmateRuntime,
     _build_shopping_added_notifications,
@@ -917,3 +925,53 @@ class TestBackendTimestampParsing:
 
         aware = _event_start_datetime({"created_at": "2026-09-28T09:00:00+00:00"})
         assert aware.isoformat() == "2026-09-28T11:00:00+02:00"
+
+
+# ---------------------------------------------------------------------------
+# Tests: admin-only resend service
+# ---------------------------------------------------------------------------
+
+
+class TestResendNotificationService:
+    def _register(self, users: dict[str, Any]):
+        import sys as _sys
+        from types import SimpleNamespace
+
+        from custom_components.hass_flatmate.const import DOMAIN
+
+        register_admin = _sys.modules["homeassistant.helpers.service"].async_register_admin_service
+        register_admin.reset_mock()
+
+        runtime = make_runtime()
+        runtime.api.resend_cleaning_notification = AsyncMock(return_value={"notifications": []})
+        hass = MagicMock()
+        hass.data = {}
+        hass.auth.async_get_user = AsyncMock(side_effect=lambda user_id: users.get(user_id))
+        asyncio.get_event_loop().run_until_complete(_register_services(hass))
+        hass.data[DOMAIN].entries["entry"] = runtime
+
+        (_hass, domain, service, handler), kwargs = register_admin.call_args
+        assert service == "hass_flatmate_resend_cleaning_notification"
+        return handler, runtime, SimpleNamespace
+
+    def test_non_admin_is_rejected_before_calling_backend(self) -> None:
+        import sys as _sys
+
+        handler, runtime, ns = self._register({"uid_user": MagicMock(is_admin=False)})
+        call = ns(data={"dispatch_event_id": 5}, context=ns(user_id="uid_user"))
+        unauthorized = _sys.modules["homeassistant.exceptions"].Unauthorized
+        try:
+            asyncio.get_event_loop().run_until_complete(handler(call))
+        except unauthorized:
+            pass
+        else:
+            raise AssertionError("non-admin resend was not rejected")
+        runtime.api.resend_cleaning_notification.assert_not_called()
+
+    def test_admin_resend_calls_backend(self) -> None:
+        handler, runtime, ns = self._register({"uid_admin": MagicMock(is_admin=True)})
+        call = ns(data={"dispatch_event_id": 5}, context=ns(user_id="uid_admin"))
+        asyncio.get_event_loop().run_until_complete(handler(call))
+        runtime.api.resend_cleaning_notification.assert_awaited_once_with(
+            dispatch_event_id=5, actor_user_id="uid_admin"
+        )

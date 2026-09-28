@@ -118,6 +118,11 @@ class CleaningRotationUpdateRequest(BaseModel):
     actor_user_id: str | None = None
 
 
+class CleaningNotificationResendRequest(BaseModel):
+    dispatch_event_id: int
+    actor_user_id: str | None = None
+
+
 class CleaningSwapRequest(BaseModel):
     week_start: date
     member_a_id: int
