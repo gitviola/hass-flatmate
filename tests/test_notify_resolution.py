@@ -388,17 +388,22 @@ class TestBuildMemberSyncPayload:
         assert by_name["Jo"]["notify_service"] == "notify.mobile_app_jo_iphone"
         assert by_name["Johan"]["notify_service"] == "notify.mobile_app_johan_phone"
 
-    def test_no_person_entity_gives_none(self) -> None:
+    def test_skips_users_without_person_entity(self) -> None:
         hass = MockHass(
-            states=[],  # no person entities
-            notify_services={"mobile_app_jo_iphone": {}},
-            users=[MockUser("Jo", "uid_jo")],
+            states=[
+                MockState("person.jo", {"user_id": "uid_jo", "device_trackers": []}),
+            ],
+            notify_services={},
+            users=[
+                MockUser("Jo", "uid_jo"),
+                MockUser("HA-MCP Server", "uid_mcp"),
+            ],
         )
         result = asyncio.get_event_loop().run_until_complete(
             _build_member_sync_payload(hass)
         )
-        assert len(result) == 1
-        assert result[0]["notify_service"] is None
+        assert [r["display_name"] for r in result] == ["Jo"]
+        assert result[0]["ha_person_entity_id"] == "person.jo"
 
     def test_no_device_trackers_gives_none(self) -> None:
         hass = MockHass(
@@ -418,31 +423,13 @@ class TestBuildMemberSyncPayload:
         assert result[0]["notify_services"] == []
         assert result[0]["device_trackers"] == []
 
-    def test_preserves_existing_notify_mapping_without_person_entity(self) -> None:
-        hass = MockHass(
-            states=[],
-            notify_services={"mobile_app_jo_iphone": {}},
-            users=[MockUser("Jo", "uid_jo")],
-        )
-        result = asyncio.get_event_loop().run_until_complete(
-            _build_member_sync_payload(
-                hass,
-                existing_members_by_user_id={
-                    "uid_jo": {
-                        "notify_service": "notify.mobile_app_jo_iphone",
-                        "notify_services": ["notify.mobile_app_jo_iphone"],
-                        "device_trackers": ["device_tracker.jo_iphone"],
-                    }
-                },
-            )
-        )
-        assert result[0]["notify_service"] == "notify.mobile_app_jo_iphone"
-        assert result[0]["notify_services"] == ["notify.mobile_app_jo_iphone"]
-        assert result[0]["device_trackers"] == ["device_tracker.jo_iphone"]
-
     def test_skips_inactive_and_system_users(self) -> None:
         hass = MockHass(
-            states=[],
+            states=[
+                MockState("person.bot", {"user_id": "uid_bot"}),
+                MockState("person.disabled", {"user_id": "uid_disabled"}),
+                MockState("person.jo", {"user_id": "uid_jo"}),
+            ],
             notify_services={},
             users=[
                 MockUser("Bot", "uid_bot", system_generated=True),

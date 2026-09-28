@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.52] - 2026-09-28
+
+### Fixed
+- Only Home Assistant users linked to a `person` entity are synced as flatmates. Service accounts without a person (e.g. an "HA-MCP Server" user) no longer show up in the shopping distribution or join the cleaning rotation; previously synced ones are deactivated on the next sync.
+- Member sync is skipped if no person-linked users are found (e.g. person states not loaded yet), so a startup race can't deactivate every flatmate. The integration now declares a dependency on `person` so it loads after it.
+
 ## [0.1.51] - 2026-05-01
 
 ### Fixed

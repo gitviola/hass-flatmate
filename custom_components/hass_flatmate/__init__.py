@@ -765,11 +765,7 @@ def _get_primary_runtime(hass: HomeAssistant) -> HassFlatmateRuntime:
     return data.entries[first_key]
 
 
-async def _build_member_sync_payload(
-    hass: HomeAssistant,
-    *,
-    existing_members_by_user_id: dict[str, dict[str, Any]] | None = None,
-) -> list[dict[str, Any]]:
+async def _build_member_sync_payload(hass: HomeAssistant) -> list[dict[str, Any]]:
     users = await hass.auth.async_get_users()
     person_by_user_id: dict[str, str] = {}
     for state in hass.states.async_all("person"):
@@ -784,32 +780,18 @@ async def _build_member_sync_payload(
         if not user.is_active or user.system_generated:
             continue
 
+        # Only HA users linked to a person entity are flatmates; service accounts
+        # (e.g. an MCP server user) must not join shopping stats or cleaning rotation.
         person_entity_id = person_by_user_id.get(user.id)
+        if not person_entity_id:
+            continue
+
         tracker_ids: list[str] = []
         resolved_notify_services: list[str] = []
-        if person_entity_id:
-            person_state = hass.states.get(person_entity_id)
-            if person_state:
-                tracker_ids = _person_device_trackers(person_state)
-                resolved_notify_services = _notify_services_for_trackers(tracker_ids, notify_services)
-        elif existing_members_by_user_id:
-            existing_member = existing_members_by_user_id.get(user.id)
-            if isinstance(existing_member, dict):
-                fallback_candidates: list[Any] = []
-                notify_services_raw = existing_member.get("notify_services")
-                if isinstance(notify_services_raw, list):
-                    fallback_candidates.extend(notify_services_raw)
-                fallback_candidates.append(existing_member.get("notify_service"))
-                preserved_services = _available_notify_service_values(hass, fallback_candidates)
-                if preserved_services:
-                    resolved_notify_services = preserved_services
-                existing_trackers = existing_member.get("device_trackers")
-                if isinstance(existing_trackers, list):
-                    tracker_ids = [
-                        tracker_id
-                        for tracker_id in existing_trackers
-                        if isinstance(tracker_id, str) and tracker_id.startswith("device_tracker.")
-                    ]
+        person_state = hass.states.get(person_entity_id)
+        if person_state:
+            tracker_ids = _person_device_trackers(person_state)
+            resolved_notify_services = _notify_services_for_trackers(tracker_ids, notify_services)
         notify_service = resolved_notify_services[0] if resolved_notify_services else None
 
         payload.append(
@@ -992,24 +974,12 @@ async def _dispatch_notifications(
 
 
 async def _sync_members_from_ha(runtime: HassFlatmateRuntime, hass: HomeAssistant) -> None:
-    existing_members_by_user_id: dict[str, dict[str, Any]] = {}
-    try:
-        existing_members = await runtime.api.get_members()
-    except HassFlatmateApiError as exc:
-        _LOGGER.debug("Failed to fetch current members before sync; proceeding without preservation: %s", exc)
-    else:
-        if isinstance(existing_members, list):
-            for row in existing_members:
-                if not isinstance(row, dict):
-                    continue
-                user_id = row.get("ha_user_id")
-                if isinstance(user_id, str) and user_id:
-                    existing_members_by_user_id[user_id] = row
-
-    payload = await _build_member_sync_payload(
-        hass,
-        existing_members_by_user_id=existing_members_by_user_id,
-    )
+    payload = await _build_member_sync_payload(hass)
+    if not payload:
+        # No person-linked users (e.g. person states not loaded yet): syncing an
+        # empty list would deactivate every flatmate, so keep the current members.
+        _LOGGER.warning("No Home Assistant users linked to a person entity; skipping member sync")
+        return
     response = await runtime.api.sync_members(payload)
     if not isinstance(response, dict):
         return
