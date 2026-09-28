@@ -130,6 +130,80 @@ def _active_member_ids(session: Session) -> set[int]:
     return {m.id for m in get_active_members(session)}
 
 
+def get_rotation_order(session: Session) -> dict:
+    """Return active members in the order they clean, starting with the current week."""
+
+    config = sync_rotation_members(session)
+    members_by_id = {m.id: m for m in get_active_members(session)}
+    active_in_order = [
+        member_id for member_id in (config.ordered_member_ids_json or []) if member_id in members_by_id
+    ]
+    current_week = week_start_for(now_utc())
+
+    if active_in_order:
+        anchor = config.anchor_week_start or current_week
+        offset = ((current_week - anchor).days // 7) % len(active_in_order)
+        active_in_order = active_in_order[offset:] + active_in_order[:offset]
+
+    return {
+        "week_start": current_week,
+        "members": [
+            {
+                "member_id": member_id,
+                "display_name": members_by_id[member_id].display_name,
+                "week_start": add_weeks(current_week, idx),
+            }
+            for idx, member_id in enumerate(active_in_order)
+        ],
+    }
+
+
+def set_rotation_order(
+    session: Session,
+    *,
+    member_ids: list[int],
+    actor_user_id: str | None = None,
+) -> dict:
+    """Replace the rotation order; the first member cleans the current week.
+
+    Only pending assignments from the current week onward are re-resolved, so
+    completed/missed weeks keep their history. No notifications are produced.
+    """
+
+    active_ids = _active_member_ids(session)
+    if len(member_ids) != len(set(member_ids)):
+        raise ValueError("Rotation order must not contain duplicate members")
+    if set(member_ids) != active_ids:
+        raise ValueError("Rotation order must contain every active member exactly once")
+
+    current_week = week_start_for(now_utc())
+    config = get_or_create_rotation_config(session)
+    config.ordered_member_ids_json = list(member_ids)
+    config.anchor_week_start = current_week
+    session.flush()
+
+    pending_weeks = session.execute(
+        select(CleaningAssignment.week_start).where(
+            CleaningAssignment.week_start >= current_week,
+            CleaningAssignment.status == CleaningAssignmentStatus.PENDING,
+        )
+    ).scalars().all()
+    for week_start in pending_weeks:
+        ensure_assignment(session, week_start)
+
+    actor_member = resolve_actor_member(session, actor_user_id)
+    log_event(
+        session,
+        domain="cleaning",
+        action="rotation_reordered",
+        actor_member_id=actor_member.id if actor_member else None,
+        actor_user_id_raw=actor_user_id,
+        payload={"ordered_member_ids": list(member_ids), "anchor_week_start": current_week.isoformat()},
+    )
+    session.commit()
+    return get_rotation_order(session)
+
+
 def baseline_assignee_member_id(session: Session, week_start: date) -> int | None:
     config = sync_rotation_members(session)
     ordered = config.ordered_member_ids_json

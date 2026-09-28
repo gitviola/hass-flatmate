@@ -102,6 +102,22 @@ class CleaningMarkTakeoverDoneRequest(BaseModel):
     actor_user_id: str | None = None
 
 
+class CleaningRotationMember(BaseModel):
+    member_id: int
+    display_name: str
+    week_start: date
+
+
+class CleaningRotationResponse(BaseModel):
+    week_start: date
+    members: list[CleaningRotationMember]
+
+
+class CleaningRotationUpdateRequest(BaseModel):
+    member_ids: list[int]
+    actor_user_id: str | None = None
+
+
 class CleaningSwapRequest(BaseModel):
     week_start: date
     member_a_id: int

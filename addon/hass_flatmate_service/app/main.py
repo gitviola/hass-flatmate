@@ -30,6 +30,8 @@ from .schemas import (
     CleaningMarkTakeoverDoneRequest,
     CleaningNotificationDispatchRequest,
     CleaningNotificationDueResponse,
+    CleaningRotationResponse,
+    CleaningRotationUpdateRequest,
     CleaningScheduleResponse,
     CleaningSwapRequest,
     ManualImportRequest,
@@ -261,6 +263,46 @@ def ingress_migration_ui() -> str:
         padding: 2px 8px;
         font-size: 12px;
       }
+
+      .rotation-list {
+        list-style: none;
+        margin: 10px 0 0;
+        padding: 0;
+      }
+
+      .rotation-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px;
+        border-bottom: 1px solid #334155;
+      }
+
+      .rotation-pos {
+        width: 28px;
+        text-align: right;
+        color: #cbd5e1;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .rotation-week {
+        width: 150px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .rotation-name {
+        flex: 1;
+        font-weight: 600;
+      }
+
+      .rotation-item.moved .rotation-name {
+        color: var(--accent);
+      }
+
+      .rotation-item button {
+        padding: 4px 10px;
+      }
     </style>
   </head>
   <body>
@@ -279,6 +321,20 @@ def ingress_migration_ui() -> str:
         <div class="muted" style="margin-top:8px">Uses Home Assistant person entities and phone trackers (not guessed device names).</div>
         <div class="status" id="members-status"></div>
         <div id="members-table" class="table-wrap" style="margin-top:10px"></div>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <strong>Cleaning Rotation Order</strong>
+          <button id="load-rotation">Reload</button>
+        </div>
+        <div class="muted" style="margin-top:8px">The first person cleans this week, the next one next week, and so on. Saving does not send notifications. Completed weeks and planned swaps stay as they are.</div>
+        <ol id="rotation-list" class="rotation-list"></ol>
+        <div class="row" style="margin-top:10px">
+          <button id="save-rotation" class="primary" disabled>Save order</button>
+          <button id="reset-rotation" disabled>Discard changes</button>
+        </div>
+        <div class="status" id="rotation-status"></div>
       </div>
 
       <div class="card">
@@ -398,6 +454,107 @@ def ingress_migration_ui() -> str:
 
       document.getElementById("load-members").addEventListener("click", loadMembers);
 
+      const rotationList = document.getElementById("rotation-list");
+      const rotationStatus = document.getElementById("rotation-status");
+      const saveRotationButton = document.getElementById("save-rotation");
+      const resetRotationButton = document.getElementById("reset-rotation");
+      let rotationSaved = [];
+      let rotationDraft = [];
+      let rotationWeekStart = null;
+
+      const rotationDirty = () => rotationDraft.some((row, idx) => row.member_id !== rotationSaved[idx]?.member_id);
+
+      const weekLabel = (idx) => {
+        if (idx === 0) return "This week";
+        if (idx === 1) return "Next week";
+        if (!rotationWeekStart) return "";
+        const day = new Date(rotationWeekStart + "T00:00:00");
+        day.setDate(day.getDate() + idx * 7);
+        return "Week of " + day.toLocaleDateString(undefined, {day: "numeric", month: "short"});
+      };
+
+      const renderRotation = () => {
+        if (rotationDraft.length === 0) {
+          rotationList.innerHTML = '<li class="muted">No active members.</li>';
+        } else {
+          rotationList.innerHTML = rotationDraft.map((row, idx) =>
+            '<li class="rotation-item' + (row.member_id !== rotationSaved[idx]?.member_id ? " moved" : "") + '">' +
+            '<span class="rotation-pos">' + (idx + 1) + '.</span>' +
+            '<span class="rotation-week">' + escapeHtml(weekLabel(idx)) + '</span>' +
+            '<span class="rotation-name">' + escapeHtml(row.display_name) + '</span>' +
+            '<button data-move="-1" data-idx="' + idx + '" aria-label="Move up"' + (idx === 0 ? " disabled" : "") + '>&uarr;</button>' +
+            '<button data-move="1" data-idx="' + idx + '" aria-label="Move down"' + (idx === rotationDraft.length - 1 ? " disabled" : "") + '>&darr;</button>' +
+            '</li>'
+          ).join("");
+        }
+        const dirty = rotationDirty();
+        saveRotationButton.disabled = !dirty;
+        resetRotationButton.disabled = !dirty;
+      };
+
+      const applyRotation = (payload) => {
+        rotationWeekStart = payload?.week_start || null;
+        rotationSaved = Array.isArray(payload?.members) ? payload.members : [];
+        rotationDraft = rotationSaved.slice();
+        renderRotation();
+      };
+
+      const loadRotation = async () => {
+        setStatus(rotationStatus, "Loading rotation...", null);
+        try {
+          const response = await fetch("v1/cleaning/rotation", {
+            method: "GET",
+            headers: authHeaders(false),
+          });
+          if (!response.ok) {
+            throw new Error(await parseError(response));
+          }
+          applyRotation(await response.json());
+          setStatus(rotationStatus, "", null);
+        } catch (err) {
+          setStatus(rotationStatus, "Failed to load rotation: " + (err?.message || String(err)), false);
+        }
+      };
+
+      rotationList.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-move]");
+        if (!button) return;
+        const idx = Number(button.dataset.idx);
+        const target = idx + Number(button.dataset.move);
+        if (target < 0 || target >= rotationDraft.length) return;
+        [rotationDraft[idx], rotationDraft[target]] = [rotationDraft[target], rotationDraft[idx]];
+        renderRotation();
+        setStatus(rotationStatus, "Unsaved changes.", null);
+      });
+
+      resetRotationButton.addEventListener("click", () => {
+        rotationDraft = rotationSaved.slice();
+        renderRotation();
+        setStatus(rotationStatus, "Changes discarded.", true);
+      });
+
+      saveRotationButton.addEventListener("click", async () => {
+        saveRotationButton.disabled = true;
+        setStatus(rotationStatus, "Saving rotation...", null);
+        try {
+          const response = await fetch("v1/cleaning/rotation", {
+            method: "PUT",
+            headers: authHeaders(true),
+            body: JSON.stringify({member_ids: rotationDraft.map((row) => row.member_id)}),
+          });
+          if (!response.ok) {
+            throw new Error(await parseError(response));
+          }
+          applyRotation(await response.json());
+          setStatus(rotationStatus, "Rotation order saved.", true);
+        } catch (err) {
+          renderRotation();
+          setStatus(rotationStatus, "Save failed: " + (err?.message || String(err)), false);
+        }
+      });
+
+      document.getElementById("load-rotation").addEventListener("click", loadRotation);
+
       document.getElementById("export").addEventListener("click", async () => {
         setStatus(exportStatus, "Exporting snapshot...", null);
         try {
@@ -490,6 +647,7 @@ def ingress_migration_ui() -> str:
       });
 
       loadMembers();
+      loadRotation();
     </script>
   </body>
 </html>
@@ -796,6 +954,35 @@ def get_cleaning_schedule(
         from_week_start=cleaning.add_weeks(cleaning.week_start_for(cleaning.now_utc()), -include_previous_weeks),
     )
     return CleaningScheduleResponse(schedule=rows)
+
+
+@app.get(
+    "/v1/cleaning/rotation",
+    response_model=CleaningRotationResponse,
+    dependencies=[Depends(require_token)],
+)
+def get_cleaning_rotation(session: Session = Depends(get_session)) -> CleaningRotationResponse:
+    return CleaningRotationResponse(**cleaning.get_rotation_order(session))
+
+
+@app.put(
+    "/v1/cleaning/rotation",
+    response_model=CleaningRotationResponse,
+    dependencies=[Depends(require_token)],
+)
+def put_cleaning_rotation(
+    payload: CleaningRotationUpdateRequest,
+    session: Session = Depends(get_session),
+) -> CleaningRotationResponse:
+    try:
+        result = cleaning.set_rotation_order(
+            session,
+            member_ids=payload.member_ids,
+            actor_user_id=payload.actor_user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return CleaningRotationResponse(**result)
 
 
 @app.post(

@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.0] - 2026-09-28
+
+### Added
+- Cleaning rotation order editor on the add-on web page. Reorder flatmates with up/down arrows (shown as this week, next week, …) and commit with "Save order". Saving re-anchors the rotation so the first person cleans the current week, only re-resolves pending weeks (completed/missed weeks keep their history), and sends no notifications. The existing manual import service (`rotation_rows`) is unchanged.
+- Backend endpoints `GET /v1/cleaning/rotation` and `PUT /v1/cleaning/rotation`.
+
 ## [0.1.52] - 2026-09-28
 
 ### Fixed
