@@ -131,6 +131,18 @@ hass_flatmate_swap_cleaning_week:
       selector:
         boolean:
 
+hass_flatmate_get_member_purchases:
+  name: Get member purchases
+  description: Return every shopping purchase a flatmate completed (all time, newest first), each flagged whether it falls in the 90-day distribution window.
+  fields:
+    member_id:
+      required: true
+      example: 1
+      selector:
+        number:
+          min: 1
+          mode: box
+
 hass_flatmate_resend_cleaning_notification:
   name: Resend cleaning notification
   description: Admin only. Send a previously dispatched cleaning notification again to the same flatmate, with the original title and message.

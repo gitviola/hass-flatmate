@@ -62,6 +62,7 @@ SERVICE_MARK_CLEANING_TAKEOVER_DONE = "hass_flatmate_mark_cleaning_takeover_done
 SERVICE_SWAP_CLEANING_WEEK = "hass_flatmate_swap_cleaning_week"
 SERVICE_SYNC_MEMBERS = "hass_flatmate_sync_members"
 SERVICE_RESEND_CLEANING_NOTIFICATION = "hass_flatmate_resend_cleaning_notification"
+SERVICE_GET_MEMBER_PURCHASES = "hass_flatmate_get_member_purchases"
 SERVICE_IMPORT_MANUAL_DATA = "hass_flatmate_import_manual_data"
 # Backward-compat internal alias; user-facing service naming is manual/generic.
 SERVICE_IMPORT_FLATASTIC_DATA = SERVICE_IMPORT_MANUAL_DATA
@@ -78,6 +79,7 @@ SERVICE_ATTR_MEMBER_B_ID = "member_b_id"
 SERVICE_ATTR_RETURN_WEEK_START = "return_week_start"
 SERVICE_ATTR_CANCEL = "cancel"
 SERVICE_ATTR_DISPATCH_EVENT_ID = "dispatch_event_id"
+SERVICE_ATTR_MEMBER_ID = "member_id"
 SERVICE_ATTR_ROTATION_ROWS = "rotation_rows"
 SERVICE_ATTR_CLEANING_HISTORY_ROWS = "cleaning_history_rows"
 SERVICE_ATTR_SHOPPING_HISTORY_ROWS = "shopping_history_rows"

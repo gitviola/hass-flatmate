@@ -303,6 +303,56 @@ def buy_distribution(session: Session, window_days: int = 90) -> dict:
     }
 
 
+def _as_utc(value: datetime) -> datetime:
+    # SQLite drops the offset; stored timestamps are UTC.
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def member_purchase_history(session: Session, member_id: int, window_days: int = 90) -> dict:
+    """All purchases completed by a member, newest first.
+
+    ``in_window`` uses the same rolling cutoff as ``buy_distribution`` so the
+    flagged purchases add up to the member's distribution count.
+    """
+
+    member = session.get(Member, member_id)
+    if member is None:
+        raise LookupError("Member not found")
+
+    cutoff = now_utc() - timedelta(days=window_days)
+    rows = session.execute(
+        select(ShoppingItem)
+        .where(
+            ShoppingItem.completed_by_member_id == member_id,
+            ShoppingItem.status == ShoppingStatus.COMPLETED,
+            ShoppingItem.completed_at.is_not(None),
+        )
+        .order_by(ShoppingItem.completed_at.desc(), ShoppingItem.id.desc())
+    ).scalars().all()
+
+    purchases = []
+    for row in rows:
+        completed_at = _as_utc(row.completed_at)
+        purchases.append(
+            {
+                "id": row.id,
+                "name": row.name,
+                "completed_at": completed_at,
+                "in_window": completed_at >= cutoff,
+            }
+        )
+
+    return {
+        "member_id": member.id,
+        "display_name": member.display_name,
+        "window_days": window_days,
+        "window_start": cutoff,
+        "total_count": len(purchases),
+        "in_window_count": sum(1 for p in purchases if p["in_window"]),
+        "purchases": purchases,
+    }
+
+
 def distribution_svg(stats: dict) -> str:
     rows = stats["distribution"]
     width = 820

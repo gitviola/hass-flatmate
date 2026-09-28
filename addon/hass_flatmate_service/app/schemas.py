@@ -74,6 +74,23 @@ class BuyStatsResponse(BaseModel):
     svg_render_version: str
 
 
+class MemberPurchase(BaseModel):
+    id: int
+    name: str
+    completed_at: datetime
+    in_window: bool
+
+
+class MemberPurchaseHistoryResponse(BaseModel):
+    member_id: int
+    display_name: str
+    window_days: int
+    window_start: datetime
+    total_count: int
+    in_window_count: int
+    purchases: list[MemberPurchase]
+
+
 class ActivityEventResponse(BaseModel):
     id: int
     domain: str

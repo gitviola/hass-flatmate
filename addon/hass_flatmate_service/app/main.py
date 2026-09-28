@@ -36,6 +36,7 @@ from .schemas import (
     CleaningScheduleResponse,
     CleaningSwapRequest,
     ManualImportRequest,
+    MemberPurchaseHistoryResponse,
     ManualImportResponse,
     FavoritesResponse,
     MemberResponse,
@@ -833,6 +834,23 @@ def get_buy_stats(
     session: Session = Depends(get_session),
 ) -> BuyStatsResponse:
     return BuyStatsResponse(**shopping.buy_distribution(session, window_days=window_days))
+
+
+@app.get(
+    "/v1/shopping/members/{member_id}/purchases",
+    response_model=MemberPurchaseHistoryResponse,
+    dependencies=[Depends(require_token)],
+)
+def get_member_purchases(
+    member_id: int,
+    window_days: int = Query(default=90, ge=1, le=3650),
+    session: Session = Depends(get_session),
+) -> MemberPurchaseHistoryResponse:
+    try:
+        history = shopping.member_purchase_history(session, member_id, window_days=window_days)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return MemberPurchaseHistoryResponse(**history)
 
 
 @app.get(

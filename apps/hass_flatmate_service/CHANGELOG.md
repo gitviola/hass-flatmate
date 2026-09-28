@@ -1,5 +1,10 @@
 # Hass Flatmate Service App Changelog
 
+## [0.4.0] - 2026-09-28
+
+### Added
+- `GET /v1/shopping/members/{member_id}/purchases`: all purchases completed by a flatmate, newest first, each flagged `in_window` using the same rolling 90-day cutoff as the distribution, so the flagged purchases match the distribution count.
+
 ## [0.3.2] - 2026-09-28
 
 ### Changed

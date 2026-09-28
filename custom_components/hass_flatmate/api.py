@@ -108,6 +108,13 @@ class HassFlatmateApiClient:
     async def get_buy_stats(self, *, window_days: int = 90) -> dict[str, Any]:
         return await self._request("GET", "/v1/stats/buys", params={"window_days": window_days})
 
+    async def get_member_purchases(self, *, member_id: int, window_days: int = 90) -> dict[str, Any]:
+        return await self._request(
+            "GET",
+            f"/v1/shopping/members/{member_id}/purchases",
+            params={"window_days": window_days},
+        )
+
     async def get_buy_stats_svg(self, *, window_days: int = 90) -> str:
         return await self._request("GET", "/v1/stats/buys.svg", params={"window_days": window_days})
 

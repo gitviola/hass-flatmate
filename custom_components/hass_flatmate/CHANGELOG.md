@@ -1,5 +1,11 @@
 # Hass Flatmate Integration Changelog
 
+## [0.4.0] - 2026-09-28
+
+### Added
+- Shopping distribution card: click a flatmate's name to see everything they ever bought, newest first. The list is split into "Last 90 days" (counted in the distribution) and "Older than 90 days" (not counted), so it's clear which purchases make up the bar. Available in the bars and compact layouts; disabled in e-ink mode.
+- New service `hass_flatmate_get_member_purchases` (returns the history as a service response).
+
 ## [0.3.2] - 2026-09-28
 
 ### Changed

@@ -3,6 +3,8 @@ class HassFlatmateDistributionCard extends HTMLElement {
     super();
     this._root = this.attachShadow({ mode: "open" });
     this._stateSnapshot = "";
+    this._history = null;
+    this._historyRequestId = 0;
   }
 
   static async getConfigElement() {
@@ -79,9 +81,151 @@ class HassFlatmateDistributionCard extends HTMLElement {
       .replaceAll("'", "&#039;");
   }
 
+  _nameHtml(row, className) {
+    const memberId = Number(row.memberId);
+    if (!this._historyEnabled() || !Number.isInteger(memberId) || memberId <= 0) {
+      return `<span class="${className}">${this._escape(row.name)}</span>`;
+    }
+    return `<button class="${className} name-btn" type="button" data-history-member="${memberId}" data-history-name="${this._escape(row.name)}" title="Show purchase history">${this._escape(row.name)}</button>`;
+  }
+
   _number(value, fallback = 0) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  _historyEnabled() {
+    return !this._config?.eink;
+  }
+
+  async _openHistory(memberId, name) {
+    if (!this._historyEnabled() || !Number.isInteger(memberId) || memberId <= 0 || !this._hass) {
+      return;
+    }
+    const requestId = ++this._historyRequestId;
+    this._history = { memberId, name, loading: true, error: "", data: null };
+    this._render();
+
+    try {
+      const result = await this._hass.callWS({
+        type: "call_service",
+        domain: "hass_flatmate",
+        service: "hass_flatmate_get_member_purchases",
+        service_data: { member_id: memberId },
+        return_response: true,
+      });
+      if (requestId !== this._historyRequestId || !this._history) {
+        return;
+      }
+      this._history = { ...this._history, loading: false, data: result?.response || {} };
+    } catch (error) {
+      if (requestId !== this._historyRequestId || !this._history) {
+        return;
+      }
+      this._history = {
+        ...this._history,
+        loading: false,
+        error: error?.message || "Could not load the purchase history.",
+      };
+    }
+    this._render();
+  }
+
+  _closeHistory() {
+    this._historyRequestId += 1;
+    this._history = null;
+    this._render();
+  }
+
+  _formatPurchaseDate(value) {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return "";
+    }
+    const locale = this._hass?.locale?.language || this._hass?.language || undefined;
+    return parsed.toLocaleDateString(locale, { day: "numeric", month: "short", year: "numeric" });
+  }
+
+  _historyModalHtml(windowDays) {
+    const history = this._history;
+    if (!history) {
+      return "";
+    }
+
+    const data = history.data || {};
+    const purchases = Array.isArray(data.purchases) ? data.purchases : [];
+    const days = Math.max(1, Math.round(this._number(data.window_days, windowDays)));
+    const inWindow = purchases.filter((row) => row?.in_window);
+    const older = purchases.filter((row) => !row?.in_window);
+
+    const rowHtml = (row) => `
+      <li class="purchase-row">
+        <span class="purchase-name">${this._escape(row?.name || "Item")}</span>
+        <span class="purchase-date">${this._escape(this._formatPurchaseDate(row?.completed_at))}</span>
+      </li>
+    `;
+    const sectionHtml = (title, hint, rows, extraClass) => `
+      <section class="purchase-section ${extraClass}">
+        <div class="purchase-section-head">
+          <span class="purchase-section-title">${title}</span>
+          <span class="purchase-section-hint">${hint}</span>
+        </div>
+        ${rows.length
+          ? `<ul class="purchase-list">${rows.map(rowHtml).join("")}</ul>`
+          : '<p class="empty">Nothing in this period.</p>'}
+      </section>
+    `;
+
+    let bodyHtml;
+    if (history.loading) {
+      bodyHtml = '<p class="empty">Loading purchase history…</p>';
+    } else if (history.error) {
+      bodyHtml = `<p class="history-error">${this._escape(history.error)}</p>`;
+    } else if (purchases.length === 0) {
+      bodyHtml = '<p class="empty">No purchases recorded yet.</p>';
+    } else {
+      bodyHtml = `
+        <p class="history-summary">
+          <strong>${inWindow.length}</strong> in the last ${days} days &middot; <strong>${purchases.length}</strong> in total
+        </p>
+        <div class="history-scroll">
+          ${sectionHtml(`Last ${days} days`, "counted in the distribution", inWindow, "in-window")}
+          ${older.length
+            ? sectionHtml(`Older than ${days} days`, "not counted", older, "outside-window")
+            : ""}
+        </div>
+      `;
+    }
+
+    return `
+      <div class="modal-backdrop" data-history-backdrop>
+        <div class="modal" role="dialog" aria-modal="true" aria-label="Purchase history">
+          <div class="modal-header">
+            <h3>${this._escape(data.display_name || history.name)}'s purchases</h3>
+            <button class="icon-btn" type="button" data-history-close aria-label="Close purchase history">
+              <ha-icon icon="mdi:close"></ha-icon>
+            </button>
+          </div>
+          ${bodyHtml}
+        </div>
+      </div>
+    `;
+  }
+
+  _bindEvents() {
+    this._root.querySelectorAll("[data-history-member]").forEach((el) => {
+      el.addEventListener("click", () => {
+        this._openHistory(Number(el.dataset.historyMember), el.dataset.historyName || "");
+      });
+    });
+    this._root.querySelectorAll("[data-history-close]").forEach((el) => {
+      el.addEventListener("click", () => this._closeHistory());
+    });
+    this._root.querySelector("[data-history-backdrop]")?.addEventListener("click", (event) => {
+      if (event.target?.hasAttribute?.("data-history-backdrop")) {
+        this._closeHistory();
+      }
+    });
   }
 
   _render() {
@@ -145,7 +289,7 @@ class HassFlatmateDistributionCard extends HTMLElement {
         return `
           <li class="row" style="--accent:${accent}; --bar-width:${barWidth}%;">
             <div class="row-head">
-              <span class="name">${this._escape(row.name)}</span>
+              ${this._nameHtml(row, "name")}
               <span class="metrics">${row.count} purchase${row.count === 1 ? "" : "s"}</span>
             </div>
             <div class="track">
@@ -188,7 +332,7 @@ class HassFlatmateDistributionCard extends HTMLElement {
       .map(
         (row, idx) => `
           <li class="compact-cell" style="--compact-share:${compactShares[idx] || 0};">
-            <span class="compact-name">${this._escape(row.name)}</span>
+            ${this._nameHtml(row, "compact-name")}
             <span class="compact-count">${row.count}</span>
           </li>
         `
@@ -235,6 +379,7 @@ class HassFlatmateDistributionCard extends HTMLElement {
 
           ${bodyHtml}
         </div>
+        ${this._historyModalHtml(windowDays)}
       </ha-card>
 
       <style>
@@ -421,8 +566,158 @@ class HassFlatmateDistributionCard extends HTMLElement {
           --secondary-text-color: #000;
           --secondary-background-color: #fff;
         }
+
+        .name-btn {
+          border: none;
+          background: none;
+          padding: 0;
+          margin: 0;
+          font: inherit;
+          color: inherit;
+          text-align: inherit;
+          cursor: pointer;
+          text-decoration: underline dotted;
+          text-underline-offset: 3px;
+        }
+
+        .name-btn:hover,
+        .name-btn:focus-visible {
+          color: var(--primary-color);
+          text-decoration-style: solid;
+        }
+
+        .modal-backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.38);
+          display: grid;
+          place-items: center;
+          z-index: 20;
+          padding: var(--ha-space-4, 16px);
+          box-sizing: border-box;
+        }
+
+        .modal {
+          width: min(480px, 100%);
+          max-height: min(80vh, 720px);
+          background: var(--ha-card-background, var(--card-background-color, #fff));
+          border: var(--ha-border-width-sm, 1px) solid var(--divider-color);
+          border-radius: var(--ha-border-radius-xl, 16px);
+          box-shadow: var(--ha-box-shadow-l, 0 8px 12px rgba(0, 0, 0, 0.14));
+          padding: var(--ha-space-4, 16px);
+          display: grid;
+          grid-template-rows: auto auto minmax(0, 1fr);
+          gap: var(--ha-space-3, 12px);
+          box-sizing: border-box;
+        }
+
+        .modal-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: var(--ha-space-2, 8px);
+        }
+
+        .modal-header h3 {
+          margin: 0;
+          font-size: var(--ha-font-size-l, 1rem);
+          font-weight: var(--ha-font-weight-bold, 700);
+        }
+
+        .icon-btn {
+          cursor: pointer;
+          width: var(--ha-space-9, 36px);
+          height: var(--ha-space-9, 36px);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+          border: var(--ha-border-width-sm, 1px) solid var(--outline-color, var(--divider-color));
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
+          border-radius: var(--ha-border-radius-pill, 9999px);
+        }
+
+        .history-summary {
+          margin: 0;
+          color: var(--secondary-text-color);
+          font-size: var(--ha-font-size-s, 0.85rem);
+        }
+
+        .history-summary strong {
+          color: var(--primary-text-color);
+        }
+
+        .history-error {
+          margin: 0;
+          color: var(--error-color, #db4437);
+          font-size: var(--ha-font-size-s, 0.85rem);
+        }
+
+        .history-scroll {
+          overflow-y: auto;
+          min-height: 0;
+          display: grid;
+          gap: var(--ha-space-4, 16px);
+          align-content: start;
+        }
+
+        .purchase-section-head {
+          display: flex;
+          justify-content: space-between;
+          align-items: baseline;
+          gap: var(--ha-space-2, 8px);
+          padding-bottom: var(--ha-space-1, 4px);
+          border-bottom: 2px solid var(--primary-color, #03a9f4);
+        }
+
+        .purchase-section.outside-window .purchase-section-head {
+          border-bottom-color: var(--divider-color, #e0e0e0);
+        }
+
+        .purchase-section-title {
+          font-weight: var(--ha-font-weight-bold, 700);
+          font-size: var(--ha-font-size-s, 0.85rem);
+        }
+
+        .purchase-section-hint {
+          color: var(--secondary-text-color);
+          font-size: var(--ha-font-size-xs, 0.75rem);
+        }
+
+        .purchase-list {
+          list-style: none;
+          margin: 0;
+          padding: 0;
+        }
+
+        .purchase-row {
+          display: flex;
+          justify-content: space-between;
+          gap: var(--ha-space-3, 12px);
+          padding: var(--ha-space-2, 8px) 0;
+          border-bottom: 1px solid var(--divider-color, #e0e0e0);
+          font-size: var(--ha-font-size-m, 0.875rem);
+        }
+
+        .purchase-section.outside-window .purchase-row {
+          color: var(--secondary-text-color);
+        }
+
+        .purchase-name {
+          min-width: 0;
+          overflow-wrap: anywhere;
+        }
+
+        .purchase-date {
+          white-space: nowrap;
+          color: var(--secondary-text-color);
+          font-variant-numeric: tabular-nums;
+        }
       </style>
     `;
+
+    this._bindEvents();
   }
 }
 

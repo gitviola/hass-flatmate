@@ -57,7 +57,7 @@ _stub("homeassistant.const", parent="homeassistant",
       EVENT_HOMEASSISTANT_STARTED="ha_started", Platform=MagicMock())
 _stub("homeassistant.core", parent="homeassistant",
       Event=MagicMock, HomeAssistant=MagicMock, ServiceCall=MagicMock,
-      callback=lambda f: f)
+      ServiceResponse=dict, SupportsResponse=MagicMock(), callback=lambda f: f)
 _stub("homeassistant.config_entries", parent="homeassistant",
       ConfigEntry=MagicMock,
       ConfigEntryNotReady=type("ConfigEntryNotReady", (Exception,), {}))

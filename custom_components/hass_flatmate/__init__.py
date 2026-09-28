@@ -17,7 +17,7 @@ import voluptuous as vol
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry, ConfigEntryNotReady
 from homeassistant.const import CONF_API_TOKEN, CONF_TYPE, CONF_URL, EVENT_HOMEASSISTANT_STARTED
-from homeassistant.core import Event, HomeAssistant, ServiceCall, callback
+from homeassistant.core import Event, HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse, callback
 from homeassistant.exceptions import HomeAssistantError, Unauthorized
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -74,6 +74,7 @@ from .const import (
     SERVICE_ATTR_CLEANING_HISTORY_ROWS,
     SERVICE_ATTR_CLEANING_OVERRIDE_ROWS,
     SERVICE_ATTR_DISPATCH_EVENT_ID,
+    SERVICE_ATTR_MEMBER_ID,
     SERVICE_ATTR_MEMBER_A_ID,
     SERVICE_ATTR_MEMBER_B_ID,
     SERVICE_ATTR_NAME,
@@ -85,6 +86,7 @@ from .const import (
     SERVICE_COMPLETE_SHOPPING_ITEM,
     SERVICE_DELETE_FAVORITE_ITEM,
     SERVICE_DELETE_SHOPPING_ITEM,
+    SERVICE_GET_MEMBER_PURCHASES,
     SERVICE_IMPORT_MANUAL_DATA,
     SERVICE_MARK_CLEANING_DONE,
     SERVICE_MARK_CLEANING_UNDONE,
@@ -1157,6 +1159,35 @@ async def _register_services(hass: HomeAssistant) -> None:
         )
         _schedule_refresh_and_process_activity(hass, runtime)
 
+    async def get_member_purchases(call: ServiceCall) -> ServiceResponse:
+        runtime = _get_primary_runtime(hass)
+        try:
+            history = await runtime.api.get_member_purchases(member_id=call.data[SERVICE_ATTR_MEMBER_ID])
+        except HassFlatmateApiError as exc:
+            raise HomeAssistantError(str(exc)) from exc
+
+        purchases = []
+        for row in history.get("purchases") or []:
+            completed_at = _event_start_datetime({"created_at": row.get("completed_at")})
+            purchases.append(
+                {
+                    "id": row.get("id"),
+                    "name": row.get("name"),
+                    "completed_at": completed_at.isoformat() if completed_at else None,
+                    "in_window": bool(row.get("in_window")),
+                }
+            )
+        window_start = _event_start_datetime({"created_at": history.get("window_start")})
+        return {
+            "member_id": history.get("member_id"),
+            "display_name": history.get("display_name"),
+            "window_days": history.get("window_days"),
+            "window_start": window_start.isoformat() if window_start else None,
+            "total_count": history.get("total_count", len(purchases)),
+            "in_window_count": history.get("in_window_count", 0),
+            "purchases": purchases,
+        }
+
     async def import_manual_data(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
         try:
@@ -1250,6 +1281,13 @@ async def _register_services(hass: HomeAssistant) -> None:
         ),
     )
     hass.services.async_register(DOMAIN, SERVICE_SYNC_MEMBERS, sync_members)
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_GET_MEMBER_PURCHASES,
+        get_member_purchases,
+        schema=vol.Schema({vol.Required(SERVICE_ATTR_MEMBER_ID): cv.positive_int}),
+        supports_response=SupportsResponse.ONLY,
+    )
     async_register_admin_service(
         hass,
         DOMAIN,
