@@ -3012,6 +3012,23 @@ class HassFlatmateCleaningCard extends HTMLElement {
         .card.eink .compact-assignee {
           font-weight: 700;
         }
+
+        /* Strike line overhangs the name by about a space on each side so it reads clearly on e-ink. */
+        .card.eink .compact-assignee.striked {
+          position: relative;
+          align-self: flex-start;
+          text-decoration: none;
+        }
+
+        .card.eink .compact-assignee.striked::after {
+          content: "";
+          position: absolute;
+          left: -0.3em;
+          right: -0.3em;
+          top: 50%;
+          border-top: 2px solid #000;
+          transform: translateY(-50%);
+        }
       </style>
     `;
 

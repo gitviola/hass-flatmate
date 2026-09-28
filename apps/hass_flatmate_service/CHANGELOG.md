@@ -1,5 +1,10 @@
 # Hass Flatmate Service App Changelog
 
+## [0.3.2] - 2026-09-28
+
+### Changed
+- Version alignment release for an integration-side e-ink card styling tweak.
+
 ## [0.3.1] - 2026-09-28
 
 ### Changed

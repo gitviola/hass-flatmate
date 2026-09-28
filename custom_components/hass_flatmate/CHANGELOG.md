@@ -1,5 +1,10 @@
 # Hass Flatmate Integration Changelog
 
+## [0.3.2] - 2026-09-28
+
+### Changed
+- E-ink cleaning card: the strike-through on completed shifts now extends about a space beyond both ends of the name and is thicker (2px), so a crossed-out name is easier to recognise on e-ink displays.
+
 ## [0.3.1] - 2026-09-28
 
 ### Changed
