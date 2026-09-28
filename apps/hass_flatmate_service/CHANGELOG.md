@@ -1,5 +1,44 @@
 # Hass Flatmate Service App Changelog
 
+## [0.2.0] - 2026-09-28
+
+### Added
+- Cleaning rotation order editor on the app's web page. Reorder flatmates with up/down arrows (shown as this week, next week, …) and commit with "Save order". The first person cleans the current week. Saving sends no notifications and has the same effect as the manual import service with `rotation_rows`: completed/missed weeks keep their history and planned swaps stay on their weeks.
+- Backend endpoints `GET /v1/cleaning/rotation` and `PUT /v1/cleaning/rotation`.
+
+## [0.1.52] - 2026-09-28
+
+### Changed
+- Version alignment release for the integration-side member sync fix: only Home Assistant users linked to a `person` entity are synced, so service accounts (e.g. an "HA-MCP Server" user) are deactivated and drop out of the shopping distribution and cleaning rotation.
+
+## [0.1.51] - 2026-05-01
+
+### Changed
+- Version alignment release for integration-side fixes (no blocking file reads on the event loop, cleaning schedule sensor within the recorder attribute limit).
+
+## [0.1.50] - 2026-05-01
+
+### Fixed
+- App failed to start cleanly on existing installs after 0.1.49 because of the new SQLite engine tuning (StaticPool + WAL pragmas). Reverted those engine changes; database setup is back to the 0.1.48 behavior.
+- Restored uvicorn `log_level="info"` so startup is visible in the supervisor log again. Access logs stay disabled.
+
+## [0.1.49] - 2026-05-01
+
+### Performance
+- Lower steady-state CPU and RAM use.
+- The cleaning schedule now batch-fetches assignments and overrides for the whole window instead of running several queries per week, and only commits when something changed.
+- Idle polls no longer write to the database every cycle.
+- Uvicorn access logs disabled to drop per-request logging overhead.
+- (The SQLite engine tuning from this release was reverted in 0.1.50.)
+
+## [0.1.48] - 2026-04-18
+
+### Fixed
+- Cleaning rotation no longer reshuffles the past schedule when a flatmate is removed.
+- The person who just cleaned is no longer auto-assigned to next week after another flatmate moves out; the rotation re-anchors to the next active person from the old cycle.
+- Past locked weeks (DONE/MISSED) report baseline and effective assignee from the stored assignment, so historical attribution is stable across rotation changes.
+- "Originally X's shift" attribution survives marking a swap week as done.
+
 ## [0.1.47] - 2026-03-03
 
 ### Changed

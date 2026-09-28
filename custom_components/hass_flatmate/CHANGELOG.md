@@ -1,5 +1,37 @@
 # Hass Flatmate Integration Changelog
 
+## [0.2.0] - 2026-09-28
+
+### Changed
+- Version alignment release for the app's new cleaning rotation order editor (on the app's web page).
+
+## [0.1.52] - 2026-09-28
+
+### Fixed
+- Only Home Assistant users linked to a `person` entity are synced as flatmates. Service accounts without a person (e.g. an "HA-MCP Server" user) no longer show up in the shopping distribution or join the cleaning rotation; previously synced ones are deactivated on the next sync.
+- Member sync is skipped if no person-linked users are found (e.g. person states not loaded yet), so a startup race can't deactivate every flatmate. The integration now declares a dependency on `person` so it loads after it.
+
+## [0.1.51] - 2026-05-01
+
+### Fixed
+- Setup no longer makes blocking file reads on the event loop (`manifest.json` parsing and frontend asset checks run in the executor), removing the "Detected blocking call" warnings at startup.
+- `sensor.hass_flatmate_cleaning_schedule` no longer exceeds the recorder's 16 KB attribute limit; the large `weeks` attribute is excluded from recording.
+
+## [0.1.50] - 2026-05-01
+
+### Changed
+- Version alignment release for the app startup fix.
+
+## [0.1.49] - 2026-05-01
+
+### Performance
+- Coordinator polls the backend every 60 s (was 30 s) and fetches a smaller cleaning schedule window (8 weeks instead of 24) and fewer activity events (50 instead of 200).
+
+## [0.1.48] - 2026-04-18
+
+### Changed
+- Version alignment release for the app's cleaning rotation stability fixes when a flatmate moves out.
+
 ## [0.1.47] - 2026-03-03
 
 ### Changed

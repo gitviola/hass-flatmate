@@ -73,9 +73,10 @@ Integration (HA) syncs persons to backend via `POST /members/sync` → Backend o
 
 Steps:
 1. Update version in both `apps/hass_flatmate_service/config.yaml` and `custom_components/hass_flatmate/manifest.json`.
-2. Commit with message `release X.Y.Z`.
-3. **Always create and push a git tag**: `git tag vX.Y.Z && git push origin vX.Y.Z`. Never forget the tag — the release is not complete without it.
-4. Push both the commits and the tag: `git push origin main && git push origin vX.Y.Z`.
+2. Add the release entry to all three changelogs: root `CHANGELOG.md`, `apps/hass_flatmate_service/CHANGELOG.md` (shown in the HA app store, app-side changes), and `custom_components/hass_flatmate/CHANGELOG.md` (integration-side changes). If a component didn't change, add a short "Version alignment release" entry.
+3. Commit with message `release X.Y.Z`.
+4. **Always create and push a git tag**: `git tag vX.Y.Z && git push origin vX.Y.Z`. Never forget the tag — the release is not complete without it.
+5. Push both the commits and the tag: `git push origin main && git push origin vX.Y.Z`.
 
 Use patch bumps (0.1.X → 0.1.X+1) for bugfixes, minor bumps for features.
 
