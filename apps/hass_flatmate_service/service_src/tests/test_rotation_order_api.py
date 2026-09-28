@@ -104,3 +104,51 @@ def test_put_rotation_keeps_completed_current_week(client, auth_headers) -> None
 def test_rotation_requires_token(client) -> None:
     assert client.get("/v1/cleaning/rotation").status_code == 401
     assert client.put("/v1/cleaning/rotation", json={"member_ids": []}).status_code == 401
+
+
+def _setup_with_history(client, headers) -> tuple[dict[str, int], dict]:
+    ids = _sync_members(client, headers)
+    current = client.get("/v1/cleaning/current", headers=headers).json()
+    week_start = date.fromisoformat(current["week_start"])
+    # history: last week done, plus a planned swap three weeks out
+    client.post("/v1/cleaning/mark_done", headers=headers, json={"week_start": (week_start - timedelta(weeks=1)).isoformat()})
+    client.post(
+        "/v1/cleaning/overrides/swap",
+        headers=headers,
+        json={"week_start": (week_start + timedelta(weeks=3)).isoformat(), "member_a_id": ids["Alex"], "member_b_id": ids["Sam"]},
+    )
+    return ids, current
+
+
+def test_put_rotation_matches_manual_import_service(client, tmp_path, auth_headers) -> None:
+    """Saving in the editor must leave the same state as the rotation_rows import service."""
+    from app import db
+    from app.db import Base
+
+    results = []
+    for mode in ("service", "editor"):
+        # fresh database per mode, reusing the fixture's authenticated client
+        db.configure_engine(f"sqlite:///{tmp_path / (mode + '.db')}")
+        Base.metadata.create_all(bind=db.engine)
+        ids, current = _setup_with_history(client, auth_headers)
+        order = [ids["Pat"], ids["Sam"], ids["Alex"]]
+        if mode == "service":
+            week_start = date.fromisoformat(current["week_start"])
+            names = {v: k for k, v in ids.items()}
+            rows = "\n".join(
+                f"{(week_start + timedelta(weeks=i)).isoformat()},{names[member_id]}"
+                for i, member_id in enumerate(order)
+            )
+            response = client.post("/v1/import/manual", headers=auth_headers, json={"rotation_rows": rows})
+        else:
+            response = client.put("/v1/cleaning/rotation", headers=auth_headers, json={"member_ids": order})
+        assert response.status_code == 200, response.text
+        schedule = client.get(
+            "/v1/cleaning/schedule?weeks_ahead=9&include_previous_weeks=2", headers=auth_headers
+        ).json()["schedule"]
+        results.append([
+            (row["week_start"], row["baseline_assignee_member_id"], row["effective_assignee_member_id"], row["status"])
+            for row in schedule
+        ])
+
+    assert results[0] == results[1]
