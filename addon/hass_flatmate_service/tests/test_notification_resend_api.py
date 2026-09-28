@@ -50,7 +50,7 @@ def test_resend_returns_original_notification_and_logs_request(client, auth_head
     response = client.post(
         "/v1/cleaning/notifications/resend",
         headers=auth_headers,
-        json={"dispatch_event_id": event_id, "actor_user_id": "u1"},
+        json={"dispatch_event_id": event_id},
     )
     assert response.status_code == 200
     notifications = response.json()["notifications"]
@@ -70,7 +70,8 @@ def test_resend_returns_original_notification_and_logs_request(client, auth_head
 
     activity = client.get("/v1/activity?limit=20", headers=auth_headers).json()
     requested = next(row for row in activity if row["action"] == "cleaning_notification_resend_requested")
-    assert requested["actor_member_id"] == 1
+    assert requested["actor_member_id"] is None
+    assert requested["actor_user_id_raw"] is None
     assert requested["payload_json"]["source_event_id"] == event_id
 
 

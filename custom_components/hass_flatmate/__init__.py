@@ -1146,7 +1146,6 @@ async def _register_services(hass: HomeAssistant) -> None:
         try:
             response = await runtime.api.resend_cleaning_notification(
                 dispatch_event_id=call.data[SERVICE_ATTR_DISPATCH_EVENT_ID],
-                actor_user_id=user_id,
             )
         except HassFlatmateApiError as exc:
             raise HomeAssistantError(str(exc)) from exc

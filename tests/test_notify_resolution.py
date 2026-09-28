@@ -973,5 +973,5 @@ class TestResendNotificationService:
         call = ns(data={"dispatch_event_id": 5}, context=ns(user_id="uid_admin"))
         asyncio.get_event_loop().run_until_complete(handler(call))
         runtime.api.resend_cleaning_notification.assert_awaited_once_with(
-            dispatch_event_id=5, actor_user_id="uid_admin"
+            dispatch_event_id=5
         )

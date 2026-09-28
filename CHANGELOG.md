@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.1] - 2026-09-28
+
+### Changed
+- Resent notifications no longer show who triggered them. The timeline now reads e.g. "Monday assignment resent" / "Sent again to Andy.", and the backend no longer records the admin who requested the resend.
+
 ## [0.3.0] - 2026-09-28
 
 ### Added

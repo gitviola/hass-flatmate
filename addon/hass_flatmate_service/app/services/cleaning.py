@@ -1544,13 +1544,13 @@ def build_notification_resend(
     session: Session,
     *,
     dispatch_event_id: int,
-    actor_user_id: str | None = None,
 ) -> list[dict]:
     """Rebuild a previously dispatched cleaning notification so it can be sent again.
 
     The original recipient, title, message, week and slot are reused. Admin
     authorization happens in the Home Assistant integration, which is the only
-    caller holding the API token.
+    caller holding the API token. Who requested the resend is intentionally
+    not recorded.
     """
 
     event = session.get(ActivityEvent, dispatch_event_id)
@@ -1574,13 +1574,12 @@ def build_notification_resend(
     if member is None or not member.active:
         raise ValueError("The flatmate this notification was sent to is no longer active")
 
-    actor_member = resolve_actor_member(session, actor_user_id)
     log_event(
         session,
         domain="cleaning",
         action="cleaning_notification_resend_requested",
-        actor_member_id=actor_member.id if actor_member else None,
-        actor_user_id_raw=actor_user_id,
+        actor_member_id=None,
+        actor_user_id_raw=None,
         payload={
             "week_start": week_start.isoformat(),
             "member_id": member.id,

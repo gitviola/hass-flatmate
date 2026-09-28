@@ -1,5 +1,10 @@
 # Hass Flatmate Service App Changelog
 
+## [0.3.1] - 2026-09-28
+
+### Changed
+- The resend endpoint no longer records who requested a resend (`actor_user_id` removed from the request).
+
 ## [0.3.0] - 2026-09-28
 
 ### Added

@@ -120,7 +120,6 @@ class CleaningRotationUpdateRequest(BaseModel):
 
 class CleaningNotificationResendRequest(BaseModel):
     dispatch_event_id: int
-    actor_user_id: str | None = None
 
 
 class CleaningSwapRequest(BaseModel):

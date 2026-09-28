@@ -243,7 +243,7 @@ def _cleaning_history_text(
             "sunday_18": "Sunday evening reminder",
             "sunday_21": "Sunday final reminder",
         }.get(slot, "notification")
-        return f"{actor_name} resent the {slot_label}", f"Sent again to {recipient}."
+        return f"{slot_label[0].upper()}{slot_label[1:]} resent", f"Sent again to {recipient}."
     if action == "cleaning_notification_dispatch":
         status = str(payload.get("status", "")).strip().lower()
         slot = str(payload.get("notification_slot", "")).strip().lower()

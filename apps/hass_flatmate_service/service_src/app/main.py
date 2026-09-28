@@ -1086,7 +1086,6 @@ def post_resend_notification(
         notifications = cleaning.build_notification_resend(
             session,
             dispatch_event_id=payload.dispatch_event_id,
-            actor_user_id=payload.actor_user_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
