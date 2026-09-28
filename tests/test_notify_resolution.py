@@ -109,6 +109,7 @@ _stub("aiohttp",
 # NOW import from the integration
 # ---------------------------------------------------------------------------
 from custom_components.hass_flatmate import (  # noqa: E402
+    _event_start_datetime,
     HassFlatmateRuntime,
     _build_shopping_added_notifications,
     _build_shopping_bought_notifications,
@@ -893,3 +894,26 @@ class TestDispatchNotifications:
         payload = hass.service_calls[0][2]
         assert payload["data"]["group"] == "hass_flatmate_shopping"
         assert "tag" not in payload["data"]
+
+
+# ---------------------------------------------------------------------------
+# Tests: backend timestamps (naive UTC) → local time
+# ---------------------------------------------------------------------------
+
+
+class TestBackendTimestampParsing:
+    def test_naive_backend_timestamp_is_treated_as_utc(self, monkeypatch) -> None:
+        from datetime import datetime, timezone
+        from zoneinfo import ZoneInfo
+
+        madrid = ZoneInfo("Europe/Madrid")
+        monkeypatch.setattr(_dt, "UTC", timezone.utc, raising=False)
+        monkeypatch.setattr(_dt, "parse_datetime", datetime.fromisoformat)
+        monkeypatch.setattr(_dt, "as_local", lambda value: value.astimezone(madrid))
+
+        # Monday 11:00 Madrid reminder, stored by the backend as 09:00 UTC without offset.
+        parsed = _event_start_datetime({"created_at": "2026-09-28T09:00:00.175756"})
+        assert parsed.isoformat() == "2026-09-28T11:00:00.175756+02:00"
+
+        aware = _event_start_datetime({"created_at": "2026-09-28T09:00:00+00:00"})
+        assert aware.isoformat() == "2026-09-28T11:00:00+02:00"

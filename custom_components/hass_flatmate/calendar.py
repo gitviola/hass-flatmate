@@ -34,8 +34,9 @@ def _parse_event(item: dict) -> CalendarEvent | None:
     parsed = dt_util.parse_datetime(str(created))
     if parsed is None:
         return None
+    # Backend timestamps are UTC but lose their offset in SQLite; as_utc() would treat them as local time.
     if parsed.tzinfo is None:
-        parsed = dt_util.as_utc(parsed)
+        parsed = parsed.replace(tzinfo=dt_util.UTC)
     parsed = dt_util.as_local(parsed)
 
     summary = _build_event_summary(item)

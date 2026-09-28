@@ -42,8 +42,9 @@ def _parse_datetime_local(value: Any) -> datetime | None:
     parsed = dt_util.parse_datetime(str(value))
     if parsed is None:
         return None
+    # Backend timestamps are UTC but lose their offset in SQLite; as_utc() would treat them as local time.
     if parsed.tzinfo is None:
-        parsed = dt_util.as_utc(parsed)
+        parsed = parsed.replace(tzinfo=dt_util.UTC)
     return dt_util.as_local(parsed)
 
 

@@ -1,5 +1,10 @@
 # Hass Flatmate Service App Changelog
 
+## [0.2.1] - 2026-09-28
+
+### Changed
+- Version alignment release for the integration-side fix of history/activity times being shown 2 hours early.
+
 ## [0.2.0] - 2026-09-28
 
 ### Added

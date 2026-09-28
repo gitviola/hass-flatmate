@@ -1,5 +1,10 @@
 # Hass Flatmate Integration Changelog
 
+## [0.2.1] - 2026-09-28
+
+### Fixed
+- Times in the cleaning history, activity and calendar were shown 2 hours early (e.g. the Monday 11:00 reminder was logged as 09:00). Backend timestamps are UTC but come back without an offset, and the integration interpreted them as local time. They are now treated as UTC and converted to Home Assistant's time zone. Notifications were always sent at the right time (Monday 11:00 local); only the displayed times were wrong.
+
 ## [0.2.0] - 2026-09-28
 
 ### Changed
