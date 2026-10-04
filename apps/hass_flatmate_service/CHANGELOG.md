@@ -3,7 +3,7 @@
 ## [0.4.1] - 2026-10-05
 
 ### Changed
-- Version alignment release.
+- Version alignment release for an integration-side fix (shopping distribution image failing to load).
 
 ## [0.4.0] - 2026-09-28
 

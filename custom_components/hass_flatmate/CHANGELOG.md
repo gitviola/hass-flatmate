@@ -3,7 +3,7 @@
 ## [0.4.1] - 2026-10-05
 
 ### Fixed
-- Shopping distribution image (`image.hass_flatmate_shopping_distribution_90d`) failed to load with `AttributeError: ... no attribute 'last_update_success_time'`, so it showed up broken on dashboards. It now loads again.
+- Shopping distribution image (`image.hass_flatmate_shopping_distribution_90d`) shows up again on dashboards. It was failing to load because the image entity read a coordinator attribute (`last_update_success_time`) that doesn't exist.
 
 ## [0.4.0] - 2026-09-28
 
