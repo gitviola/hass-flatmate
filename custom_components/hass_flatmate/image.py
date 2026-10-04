@@ -8,6 +8,7 @@ from homeassistant.components.image import ImageEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from .entity import HassFlatmateCoordinatorEntity, get_runtime
 
@@ -38,7 +39,7 @@ class ShoppingDistributionImage(HassFlatmateCoordinatorEntity, ImageEntity):
             svg = await self.runtime.api.get_buy_stats_svg(window_days=90)
             self._image_bytes = svg.encode("utf-8")
             self._svg_version = version
-            self._last_updated = self.coordinator.last_update_success_time
+            self._last_updated = dt_util.utcnow()
 
         return self._image_bytes
 

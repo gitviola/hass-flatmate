@@ -1,5 +1,10 @@
 # Hass Flatmate Integration Changelog
 
+## [0.4.1] - 2026-10-05
+
+### Fixed
+- Shopping distribution image (`image.hass_flatmate_shopping_distribution_90d`) failed to load with `AttributeError: ... no attribute 'last_update_success_time'`, so it showed up broken on dashboards. It now loads again.
+
 ## [0.4.0] - 2026-09-28
 
 ### Added

@@ -1,5 +1,10 @@
 # Hass Flatmate Service App Changelog
 
+## [0.4.1] - 2026-10-05
+
+### Changed
+- Version alignment release.
+
 ## [0.4.0] - 2026-09-28
 
 ### Added
