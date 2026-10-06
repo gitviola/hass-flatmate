@@ -641,7 +641,7 @@ class ShoppingDistributionSensor(HassFlatmateCoordinatorEntity, SensorEntity):
 
 
 class ShoppingNextBuyerSensor(HassFlatmateCoordinatorEntity, SensorEntity):
-    """Who should buy next, fair to people who moved in recently."""
+    """The two flatmates who should buy next, most pressing first."""
 
     _attr_name = "Shopping Next Buyer"
     _attr_unique_id = "hass_flatmate_shopping_next_buyer"
@@ -652,20 +652,27 @@ class ShoppingNextBuyerSensor(HassFlatmateCoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self) -> str | None:
-        order = self._order()
-        return order[0]["name"] if order else None
+        recommended = self._order()[:2]
+        return ", ".join(row["name"] for row in recommended) if recommended else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         order = self._order()
         window_days = int(self.coordinator.data.get("shopping_stats", {}).get("window_days", 90))
-        first = order[0] if order else {}
+        recommended = order[:2]
         names = [row["name"] for row in order]
+        attributes: dict[str, Any] = {}
+        for key, index in (("first", 0), ("second", 1)):
+            row = order[index] if len(order) > index else {}
+            attributes[key] = row.get("name")
+            attributes[f"{key}_member_id"] = row.get("member_id")
+            attributes[f"{key}_person_entity_id"] = row.get("person_entity_id")
+            attributes[f"{key}_reason"] = row.get("reason", "")
+            attributes[f"{key}_note"] = row.get("note", "")
         return {
-            "member_id": first.get("member_id"),
-            "person_entity_id": first.get("person_entity_id"),
-            "reason": first.get("reason", ""),
-            "note": first.get("note", ""),
+            **attributes,
+            "recommended": recommended,
+            "recommended_names": [row["name"] for row in recommended],
             "order": order,
             "order_names": names,
             "order_comma": ", ".join(names),
@@ -677,8 +684,8 @@ class ShoppingNextBuyerSensor(HassFlatmateCoordinatorEntity, SensorEntity):
             "window_days": window_days,
             "method": (
                 f"Purchases from the last {window_days} days are split into fair shares by how many of "
-                "those days each flatmate lived here. Whoever is furthest below their fair share buys "
-                "next; on a tie, whoever bought longest ago."
+                "those days each flatmate lived here. The two furthest below their fair share are "
+                "recommended, most behind first; on a tie, whoever bought longest ago."
             ),
         }
 

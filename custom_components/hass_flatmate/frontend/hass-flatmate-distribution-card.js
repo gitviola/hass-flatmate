@@ -64,24 +64,25 @@ class HassFlatmateDistributionCard extends HTMLElement {
       window_days: attrs.window_days,
       distribution: attrs.distribution,
       layout: this._layout(),
-      next: this._nextBuyer(hass),
+      next: this._nextBuyers(hass),
     });
   }
 
-  _nextBuyer(hass = this._hass) {
+  _nextBuyers(hass = this._hass) {
     if (this._config?.show_next_buyer === false) {
-      return null;
+      return [];
     }
     const entityId = this._config?.next_buyer_entity || "sensor.hass_flatmate_shopping_next_buyer";
-    const attrs = hass?.states?.[entityId]?.attributes;
-    if (!attrs || attrs.member_id == null) {
-      return null;
+    const recommended = hass?.states?.[entityId]?.attributes?.recommended;
+    if (!Array.isArray(recommended)) {
+      return [];
     }
-    return {
-      memberId: Number(attrs.member_id),
+    return recommended.map((row, idx) => ({
+      memberId: Number(row?.member_id),
+      label: idx === 0 ? "Buys next" : "Then",
       // The note explains orders that look odd; otherwise the plain reason is enough.
-      why: String(attrs.note || attrs.reason || ""),
-    };
+      why: String(row?.note || row?.reason || ""),
+    }));
   }
 
   _layout() {
@@ -295,8 +296,8 @@ class HassFlatmateDistributionCard extends HTMLElement {
       "#bc6c25",
     ];
 
-    const nextBuyer = this._nextBuyer();
-    const isNext = (row) => nextBuyer !== null && Number(row.memberId) === nextBuyer.memberId;
+    const nextBuyers = this._nextBuyers();
+    const nextFor = (row) => nextBuyers.find((buyer) => buyer.memberId === Number(row.memberId)) || null;
 
     const rowsHtml = distribution
       .map((row, idx) => {
@@ -305,20 +306,21 @@ class HassFlatmateDistributionCard extends HTMLElement {
           ? Math.max(6, Math.min(100, relativeWidth))
           : 0;
         const accent = palette[idx % palette.length];
+        const next = nextFor(row);
 
         return `
-          <li class="row ${isNext(row) ? "next" : ""}" style="--accent:${accent}; --bar-width:${barWidth}%;">
+          <li class="row ${next ? "next" : ""}" style="--accent:${accent}; --bar-width:${barWidth}%;">
             <div class="row-head">
               <span class="name-wrap">
                 ${this._nameHtml(row, "name")}
-                ${isNext(row) ? '<span class="next-chip">Buys next</span>' : ""}
+                ${next ? `<span class="next-chip ${next.label === "Then" ? "then" : ""}">${next.label}</span>` : ""}
               </span>
               <span class="metrics">${row.count} purchase${row.count === 1 ? "" : "s"}</span>
             </div>
             <div class="track">
               <div class="fill"></div>
             </div>
-            ${isNext(row) && nextBuyer.why ? `<div class="next-why">${this._escape(nextBuyer.why)}</div>` : ""}
+            ${next?.why ? `<div class="next-why">${this._escape(next.why)}</div>` : ""}
           </li>
         `;
       })
@@ -353,14 +355,15 @@ class HassFlatmateDistributionCard extends HTMLElement {
     })();
 
     const compactRowsHtml = distribution
-      .map(
-        (row, idx) => `
-          <li class="compact-cell ${isNext(row) ? "next" : ""}" style="--compact-share:${compactShares[idx] || 0};" ${isNext(row) && nextBuyer.why ? `title="Buys next: ${this._escape(nextBuyer.why)}"` : ""}>
+      .map((row, idx) => {
+        const next = nextFor(row);
+        return `
+          <li class="compact-cell ${next ? (next.label === "Then" ? "next then" : "next") : ""}" style="--compact-share:${compactShares[idx] || 0};" ${next?.why ? `title="${next.label}: ${this._escape(next.why)}"` : ""}>
             ${this._nameHtml(row, "compact-name")}
             <span class="compact-count">${row.count}</span>
           </li>
-        `
-      )
+        `;
+      })
       .join("");
 
     const layout = this._layout();
@@ -517,6 +520,12 @@ class HassFlatmateDistributionCard extends HTMLElement {
           white-space: nowrap;
         }
 
+        .next-chip.then {
+          background: none;
+          color: var(--primary-color);
+          box-shadow: inset 0 0 0 1px var(--primary-color);
+        }
+
         .row.next .name {
           font-weight: var(--ha-font-weight-bold, 600);
         }
@@ -532,6 +541,10 @@ class HassFlatmateDistributionCard extends HTMLElement {
           box-shadow: inset 0 -3px 0 var(--primary-color);
         }
 
+        .compact-cell.next.then {
+          background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.06);
+        }
+
         .compact-cell.next .compact-name {
           font-weight: var(--ha-font-weight-bold, 600);
         }
@@ -539,6 +552,12 @@ class HassFlatmateDistributionCard extends HTMLElement {
         .card.eink .next-chip {
           background: #000;
           color: #fff;
+        }
+
+        .card.eink .next-chip.then {
+          background: #fff;
+          color: #000;
+          box-shadow: inset 0 0 0 1px #000;
         }
 
         .card.eink .compact-cell.next {
@@ -549,6 +568,16 @@ class HassFlatmateDistributionCard extends HTMLElement {
         .card.eink .compact-cell.next .compact-name,
         .card.eink .compact-cell.next .compact-count {
           color: #fff;
+        }
+
+        .card.eink .compact-cell.next.then {
+          background: #fff;
+          box-shadow: inset 0 -4px 0 #000;
+        }
+
+        .card.eink .compact-cell.next.then .compact-name,
+        .card.eink .compact-cell.next.then .compact-count {
+          color: #000;
         }
 
         .metrics {
@@ -861,7 +890,7 @@ class HassFlatmateDistributionCardEditor extends HTMLElement {
 
         <label>
           <input id="hf-editor-next-buyer" type="checkbox" ${this._config.show_next_buyer === false ? "" : "checked"} />
-          Highlight who buys next
+          Highlight the two who buy next
         </label>
       </div>
 

@@ -1,5 +1,10 @@
 # Hass Flatmate Service App Changelog
 
+## [0.5.1] - 2026-10-06
+
+### Changed
+- Version alignment release for an integration-side change (the next-buyer sensor recommends two flatmates).
+
 ## [0.5.0] - 2026-10-06
 
 ### Added

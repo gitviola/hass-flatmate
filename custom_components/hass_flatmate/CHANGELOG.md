@@ -1,5 +1,11 @@
 # Hass Flatmate Integration Changelog
 
+## [0.5.1] - 2026-10-06
+
+### Changed
+- `sensor.hass_flatmate_shopping_next_buyer` now always recommends two flatmates, most pressing first. State is both names; attributes `first` / `second` (each with `_reason`, `_note`, `_member_id`, `_person_entity_id`), `recommended` and `recommended_names` replace the single-person `reason`, `note`, `member_id` and `person_entity_id`.
+- Shopping distribution card marks the two with "Buys next" and "Then".
+
 ## [0.5.0] - 2026-10-06
 
 ### Added

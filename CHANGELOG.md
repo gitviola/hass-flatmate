@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.1] - 2026-10-06
+
+### Changed
+- `sensor.hass_flatmate_shopping_next_buyer` now always recommends two flatmates, most pressing first. The state is both names (`Andy, Carolina`); new attributes `first` / `second` with their own `_reason`, `_note`, `_member_id` and `_person_entity_id`, plus `recommended` and `recommended_names`. These replace the single-person `reason`, `note`, `member_id` and `person_entity_id` attributes.
+- Shopping distribution card marks the two with "Buys next" and "Then", each with their reason or note.
+
 ## [0.5.0] - 2026-10-06
 
 ### Added
