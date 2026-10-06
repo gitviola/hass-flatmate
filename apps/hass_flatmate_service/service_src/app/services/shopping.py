@@ -445,6 +445,7 @@ def buy_order(
                 "new_member": is_new,
                 "last_purchase_at": row["last_purchase"],
                 "reason": reason,
+                "recommendation": _recommendation(index, row, is_new),
             }
         )
 
@@ -452,6 +453,22 @@ def buy_order(
 
 
 RECOMMENDED_COUNT = 2
+
+
+def _recommendation(index: int, row: dict, is_new: bool) -> str:
+    """Short label for lists; empty when there's nothing to say."""
+
+    if index < RECOMMENDED_COUNT:
+        return "Buy next"
+    # Not expected to have bought anything yet, so a low count is no reason to nag.
+    if is_new and row["fair_share"] < 1:
+        return "Just moved in"
+    # A whole purchase of margin, so nobody is nagged for being a fraction off.
+    if row["balance"] <= -1:
+        return "Catch up"
+    if row["balance"] >= 1:
+        return "Thanks!"
+    return ""
 
 
 def _recommendation_note(rows: list[dict], now: datetime) -> str:

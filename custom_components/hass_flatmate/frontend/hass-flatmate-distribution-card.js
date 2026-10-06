@@ -66,6 +66,7 @@ class HassFlatmateDistributionCard extends HTMLElement {
       layout: this._layout(),
       next: this._nextBuyers(hass),
       next_note: this._nextBuyerNote(hass),
+      labels: this._recommendations(hass),
     });
   }
 
@@ -82,6 +83,19 @@ class HassFlatmateDistributionCard extends HTMLElement {
       memberId: Number(row?.member_id),
       primary: idx === 0,
     }));
+  }
+
+  // Per-flatmate label ("Buy next", "Catch up", "Just moved in", "Thanks!"); e-ink keeps the plain highlight.
+  _recommendations(hass = this._hass) {
+    if (this._config?.show_next_buyer === false || this._config?.eink) {
+      return {};
+    }
+    const entityId = this._config?.next_buyer_entity || "sensor.hass_flatmate_shopping_next_buyer";
+    const order = hass?.states?.[entityId]?.attributes?.order;
+    if (!Array.isArray(order)) {
+      return {};
+    }
+    return Object.fromEntries(order.map((row) => [Number(row?.member_id), String(row?.recommendation || "")]));
   }
 
   _nextBuyerNote(hass = this._hass) {
@@ -305,6 +319,21 @@ class HassFlatmateDistributionCard extends HTMLElement {
 
     const nextBuyers = this._nextBuyers();
     const nextFor = (row) => nextBuyers.find((buyer) => buyer.memberId === Number(row.memberId)) || null;
+    const recommendations = this._recommendations();
+    const chipFor = (row) => {
+      const next = nextFor(row);
+      const label = this._config.eink ? (next ? "Should buy" : "") : recommendations[Number(row.memberId)] || "";
+      if (!label) {
+        return "";
+      }
+      let variant = "quiet";
+      if (next) {
+        variant = next.primary ? "" : "then";
+      } else if (label === "Catch up") {
+        variant = "catch-up";
+      }
+      return `<span class="next-chip ${variant}">${this._escape(label)}</span>`;
+    };
 
     const rowsHtml = distribution
       .map((row, idx) => {
@@ -320,7 +349,7 @@ class HassFlatmateDistributionCard extends HTMLElement {
             <div class="row-head">
               <span class="name-wrap">
                 ${this._nameHtml(row, "name")}
-                ${next ? `<span class="next-chip ${next.primary ? "" : "then"}">Should buy</span>` : ""}
+                ${chipFor(row)}
               </span>
               <span class="metrics">${row.count} purchase${row.count === 1 ? "" : "s"}</span>
             </div>
@@ -363,16 +392,19 @@ class HassFlatmateDistributionCard extends HTMLElement {
     const compactRowsHtml = distribution
       .map((row, idx) => {
         const next = nextFor(row);
+        const label = recommendations[Number(row.memberId)] || "";
         return `
           <li class="compact-cell ${next ? (next.primary ? "next" : "next then") : ""}" style="--compact-share:${compactShares[idx] || 0};">
             ${this._nameHtml(row, "compact-name")}
             <span class="compact-count">${row.count}</span>
+            ${label ? `<span class="compact-label">${this._escape(label)}</span>` : ""}
           </li>
         `;
       })
       .join("");
 
-    const nextNote = nextBuyers.length > 0 ? this._nextBuyerNote() : "";
+    // The labels explain the order on screen; only e-ink, which has no labels, gets the note.
+    const nextNote = this._config.eink && nextBuyers.length > 0 ? this._nextBuyerNote() : "";
     const noteHtml = nextNote ? `<p class="next-note">* ${this._escape(nextNote)}</p>` : "";
 
     const layout = this._layout();
@@ -535,6 +567,29 @@ class HassFlatmateDistributionCard extends HTMLElement {
           background: none;
           color: var(--primary-color);
           box-shadow: inset 0 0 0 1px var(--primary-color);
+        }
+
+        .next-chip.catch-up {
+          background: none;
+          color: var(--primary-text-color);
+          box-shadow: inset 0 0 0 1px var(--secondary-text-color);
+        }
+
+        .next-chip.quiet {
+          background: rgba(var(--rgb-primary-text-color, 33, 33, 33), 0.06);
+          color: var(--secondary-text-color);
+          font-weight: var(--ha-font-weight-medium, 500);
+        }
+
+        .compact-label {
+          color: var(--secondary-text-color);
+          font-size: var(--ha-font-size-xs, 0.6875rem);
+          line-height: var(--ha-line-height-condensed, 1.2);
+        }
+
+        .compact-cell.next .compact-label {
+          color: var(--primary-color);
+          font-weight: var(--ha-font-weight-bold, 600);
         }
 
         .row.next .name {

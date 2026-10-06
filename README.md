@@ -170,7 +170,7 @@ Attributes, so templates can shape the data for other tools:
 | `recommended` | ordered list (most pressing first) of the two entries from `order` |
 | `recommended_names` | `["Andy", "Carolina"]` |
 | `note` | one short line, only set when the recommendation would look unfair. Meant as a `*` footnote. See below. |
-| `order` | everyone, ranked: `rank`, `member_id`, `name`, `person_entity_id`, `count`, `fair_share`, `balance`, `days_present`, `moved_in_at`, `new_member`, `last_purchase_at`, `reason` |
+| `order` | everyone, ranked: `rank`, `member_id`, `name`, `person_entity_id`, `count`, `fair_share`, `balance`, `days_present`, `moved_in_at`, `new_member`, `last_purchase_at`, `reason`, `recommendation` (`Buy next`, `Catch up`, `Just moved in`, `Thanks!` or empty) |
 | `order_names` | `["Andy", "Carolina", ...]` |
 | `order_comma` | `Andy, Carolina, Martin, Gianmarco, Michelle` |
 | `order_semicolon` | `Andy;Carolina;Martin;Gianmarco;Michelle` |
@@ -193,7 +193,9 @@ Possible notes (full sentences; both appear when both apply):
 
 Each active flatmate also gets a `sensor.hass_flatmate_<person>_moved_in` timestamp sensor (with `person_entity_id` and `from_initial_sync` attributes; for initial-sync flatmates the state is that first sync, not a real move-in date). Home Assistant doesn't let integrations add attributes to `person.*` entities, so this sits next to them.
 
-The distribution card marks both with "Should buy" (the stronger color is the more pressing one) and shows the note as a footnote below the list. Turn it off with `show_next_buyer: false`.
+The distribution card shows each flatmate's `recommendation` next to their name (the filled "Buy next" is the more pressing one). In e-ink mode it keeps the plain "Should buy" highlight with the note as a footnote.
+
+`recommendation` rules: the two recommended get `Buy next`; someone who moved in within the window and isn't expected to have bought a whole item yet gets `Just moved in`; at least one purchase behind gets `Catch up`; at least one ahead gets `Thanks!`; everyone else nothing. Turn it off with `show_next_buyer: false`.
 
 ## Notification Test Mode
 

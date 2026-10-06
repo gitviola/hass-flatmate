@@ -82,6 +82,7 @@ class BuyOrderEntry(BaseModel):
     new_member: bool
     last_purchase_at: datetime | None
     reason: str
+    recommendation: str = ""
 
 
 class BuyStatsResponse(BaseModel):

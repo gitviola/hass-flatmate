@@ -71,6 +71,19 @@ def test_new_member_is_not_pushed_to_front(client, auth_headers) -> None:
 
     assert carolina["reason"].startswith("Moved in 7 days ago: 0 bought in 90 days")
     assert _stats(client, auth_headers)["buy_order_note"] == "Carolina only moved in 7 days ago."
+    assert [row["recommendation"] for row in order] == ["Buy next", "Buy next", "", "Thanks!"]
+
+
+def test_newcomer_who_is_not_recommended_is_labelled(client, auth_headers) -> None:
+    _setup(client, auth_headers, [(10, "Martin")] + [(10, "Michelle")] * 6)
+
+    order = _order(client, auth_headers)
+    assert [(row["name"], row["recommendation"]) for row in order] == [
+        ("Andy", "Buy next"),
+        ("Martin", "Buy next"),
+        ("Carolina", "Just moved in"),
+        ("Michelle", "Thanks!"),
+    ]
 
 
 def test_distribution_puts_the_more_pressing_buyer_lower_on_equal_counts(client, auth_headers) -> None:
@@ -94,6 +107,15 @@ def test_new_member_who_is_behind_goes_first(client, auth_headers) -> None:
     assert stats["buy_order"][0]["name"] == "Carolina"
     assert stats["buy_order"][0]["balance"] < 0
     assert stats["buy_order_note"] == ""
+
+
+def test_catch_up_beyond_the_recommended_pair(client, auth_headers) -> None:
+    _setup(client, auth_headers, [(10, "Michelle")] * 9)
+    _set_created_days_ago("Carolina", 200)
+
+    order = _order(client, auth_headers)
+    # 9 purchases, 2.25 each: three are 2.25 behind, but only two can be "Buy next"
+    assert [row["recommendation"] for row in order] == ["Buy next", "Buy next", "Catch up", "Thanks!"]
 
 
 def test_tie_goes_to_whoever_bought_longer_ago(client, auth_headers) -> None:

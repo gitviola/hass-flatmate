@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.7] - 2026-10-06
+
+### Added
+- Every flatmate in the next-buyer `order` gets a short `recommendation`: `Buy next` (the two recommended), `Just moved in` (moved in recently, not expected to have bought anything yet), `Catch up` (at least one purchase behind), `Thanks!` (at least one ahead) or empty.
+- Shopping distribution card shows that label next to each name (bars) or under the count (compact). It replaces the "Should buy" badge and the footnote. E-ink mode is unchanged.
+
 ## [0.5.6] - 2026-10-06
 
 ### Changed

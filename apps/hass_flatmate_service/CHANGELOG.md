@@ -1,5 +1,10 @@
 # Hass Flatmate Service App Changelog
 
+## [0.5.7] - 2026-10-06
+
+### Added
+- `buy_order` entries have a `recommendation` label: `Buy next`, `Just moved in`, `Catch up`, `Thanks!` or empty.
+
 ## [0.5.6] - 2026-10-06
 
 ### Changed

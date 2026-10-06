@@ -1,5 +1,11 @@
 # Hass Flatmate Integration Changelog
 
+## [0.5.7] - 2026-10-06
+
+### Added
+- Next-buyer `order` entries carry a `recommendation` label (`Buy next`, `Just moved in`, `Catch up`, `Thanks!`).
+- Shopping distribution card shows that label per flatmate instead of the "Should buy" badge and footnote. E-ink mode is unchanged.
+
 ## [0.5.6] - 2026-10-06
 
 ### Changed
