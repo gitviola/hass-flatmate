@@ -694,8 +694,8 @@ class MemberMovedInSensor(HassFlatmateCoordinatorEntity, SensorEntity):
         slug = person_entity_id.split(".", 1)[1] if "." in person_entity_id else slugify(str(member["display_name"]))
         super().__init__(config_entry, runtime)
         self._attr_unique_id = f"hass_flatmate_member_{self._member_id}_moved_in"
-        self._attr_object_id = f"hass_flatmate_{slug}_moved_in"
-        self._attr_suggested_object_id = self._attr_object_id
+        # Explicit, because HA ignores the suggested object id for these and would register sensor.<person>_moved_in.
+        self.entity_id = f"sensor.hass_flatmate_{slug}_moved_in"
         self._attr_name = f"{member['display_name']} Moved In"
 
     def _member(self) -> dict[str, Any] | None:

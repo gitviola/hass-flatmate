@@ -1,5 +1,10 @@
 # Hass Flatmate Integration Changelog
 
+## [0.5.4] - 2026-10-06
+
+### Fixed
+- Move-in sensors are registered as `sensor.hass_flatmate_<person>_moved_in` instead of `sensor.<person>_moved_in`.
+
 ## [0.5.3] - 2026-10-06
 
 ### Changed

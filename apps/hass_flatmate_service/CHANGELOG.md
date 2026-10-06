@@ -1,5 +1,10 @@
 # Hass Flatmate Service App Changelog
 
+## [0.5.4] - 2026-10-06
+
+### Changed
+- Version alignment release for an integration-side fix (move-in sensor entity ids).
+
 ## [0.5.3] - 2026-10-06
 
 ### Changed

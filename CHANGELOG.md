@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.4] - 2026-10-06
+
+### Fixed
+- Per-flatmate move-in sensors now get the documented entity id `sensor.hass_flatmate_<person>_moved_in` instead of `sensor.<person>_moved_in`. Sensors already registered under the old id keep it until renamed in Settings → Entities.
+
 ## [0.5.3] - 2026-10-06
 
 ### Changed
