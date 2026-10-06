@@ -664,15 +664,14 @@ class ShoppingNextBuyerSensor(HassFlatmateCoordinatorEntity, SensorEntity):
         return {
             "recommended": recommended,
             "recommended_names": [row["name"] for row in recommended],
-            # Answers "why me?" for the recommended pair; empty when the order is unsurprising.
-            "caveat": " ".join(row["note"] for row in recommended if row.get("note")),
+            # One short line for when the recommendation would look unfair; empty otherwise.
+            "note": self.coordinator.data.get("shopping_stats", {}).get("buy_order_note", ""),
             "order": order,
             "order_names": names,
             "order_comma": ", ".join(names),
             "order_semicolon": ";".join(names),
             "order_lines": "\n".join(
-                f"{row['rank']}. {row['name']}: {row['reason']}" + (f" ({row['note']})" if row["note"] else "")
-                for row in order
+                f"{row['rank']}. {row['name']}: {row['reason']}" for row in order
             ),
             "window_days": window_days,
             "method": (

@@ -1,5 +1,10 @@
 # Hass Flatmate Service App Changelog
 
+## [0.5.3] - 2026-10-06
+
+### Changed
+- `GET /v1/stats/buys` returns one `buy_order_note` about the recommended pair instead of a `note` per flatmate.
+
 ## [0.5.2] - 2026-10-06
 
 ### Changed

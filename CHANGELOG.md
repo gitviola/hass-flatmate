@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.3] - 2026-10-06
+
+### Changed
+- `sensor.hass_flatmate_shopping_next_buyer`: the per-person notes and `caveat` are replaced by one short `note` about the recommendation, only set when it would look unfair. Possible notes: `Carolina only moved in 7 days ago`, `Carolina and Bob only moved in recently`, `Same amount, so whoever bought longest ago goes first`. Meant as a footnote on the e-ink display or in notifications.
+- Shopping distribution card shows the note as a `*` footnote below the list.
+
 ## [0.5.2] - 2026-10-06
 
 ### Changed

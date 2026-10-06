@@ -169,25 +169,30 @@ Attributes, so templates can shape the data for other tools:
 | --- | --- |
 | `recommended` | ordered list (most pressing first) of the two entries from `order` |
 | `recommended_names` | `["Andy", "Carolina"]` |
-| `caveat` | only set when a recommended flatmate might ask "why me?", e.g. `Andy goes before Carolina (moved in 7 days ago, fair share 0.4), who bought less but moved in recently.` Handy as a `*` footnote. |
-| `order` | everyone, ranked: `rank`, `member_id`, `name`, `person_entity_id`, `count`, `fair_share`, `balance`, `days_present`, `moved_in_at`, `new_member`, `last_purchase_at`, `reason`, `note` (the per-person "why me?") |
+| `note` | one short line, only set when the recommendation would look unfair. Meant as a `*` footnote. See below. |
+| `order` | everyone, ranked: `rank`, `member_id`, `name`, `person_entity_id`, `count`, `fair_share`, `balance`, `days_present`, `moved_in_at`, `new_member`, `last_purchase_at`, `reason` |
 | `order_names` | `["Andy", "Carolina", ...]` |
 | `order_comma` | `Andy, Carolina, Martin, Gianmarco, Michelle` |
 | `order_semicolon` | `Andy;Carolina;Martin;Gianmarco;Michelle` |
-| `order_lines` | one `1. Andy: <reason> (<note>)` line per flatmate |
+| `order_lines` | one `1. Andy: <reason>` line per flatmate |
 | `method` | a one-sentence explanation of the rule |
 
 Examples:
 
 ```jinja
 Should buy: {{ state_attr('sensor.hass_flatmate_shopping_next_buyer', 'recommended_names') | join(' & ') }}
-{% set caveat = state_attr('sensor.hass_flatmate_shopping_next_buyer', 'caveat') %}{% if caveat %}* {{ caveat }}{% endif %}
+{% set note = state_attr('sensor.hass_flatmate_shopping_next_buyer', 'note') %}{% if note %}* {{ note }}{% endif %}
 {{ state_attr('sensor.hass_flatmate_shopping_next_buyer', 'order') | map(attribute='name') | join(' > ') }}
 ```
 
+Possible notes (joined with ` · ` when both apply):
+- `Carolina only moved in 7 days ago` (or `today`, `yesterday`, `3 weeks ago`): a recommended flatmate goes before someone who bought less but moved in recently.
+- `Carolina and Bob only moved in recently`: the same, for several newcomers.
+- `Same amount, so whoever bought longest ago goes first`: equal standing decided who is recommended or in which order.
+
 Each active flatmate also gets a `sensor.hass_flatmate_<person>_moved_in` timestamp sensor (with `person_entity_id` and `from_initial_sync` attributes; for initial-sync flatmates the state is that first sync, not a real move-in date). Home Assistant doesn't let integrations add attributes to `person.*` entities, so this sits next to them.
 
-The distribution card marks both with "Should buy" (the stronger color is the more pressing one) and shows the "why me?" note under a bar when there is one. Turn it off with `show_next_buyer: false`.
+The distribution card marks both with "Should buy" (the stronger color is the more pressing one) and shows the note as a footnote below the list. Turn it off with `show_next_buyer: false`.
 
 ## Notification Test Mode
 

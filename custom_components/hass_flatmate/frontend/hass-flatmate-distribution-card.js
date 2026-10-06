@@ -65,6 +65,7 @@ class HassFlatmateDistributionCard extends HTMLElement {
       distribution: attrs.distribution,
       layout: this._layout(),
       next: this._nextBuyers(hass),
+      next_note: this._nextBuyerNote(hass),
     });
   }
 
@@ -80,9 +81,15 @@ class HassFlatmateDistributionCard extends HTMLElement {
     return recommended.map((row, idx) => ({
       memberId: Number(row?.member_id),
       primary: idx === 0,
-      // Only set when the order would make someone ask "why me?".
-      why: String(row?.note || ""),
     }));
+  }
+
+  _nextBuyerNote(hass = this._hass) {
+    if (this._config?.show_next_buyer === false) {
+      return "";
+    }
+    const entityId = this._config?.next_buyer_entity || "sensor.hass_flatmate_shopping_next_buyer";
+    return String(hass?.states?.[entityId]?.attributes?.note || "");
   }
 
   _layout() {
@@ -320,7 +327,6 @@ class HassFlatmateDistributionCard extends HTMLElement {
             <div class="track">
               <div class="fill"></div>
             </div>
-            ${next?.why ? `<div class="next-why">${this._escape(next.why)}</div>` : ""}
           </li>
         `;
       })
@@ -358,13 +364,16 @@ class HassFlatmateDistributionCard extends HTMLElement {
       .map((row, idx) => {
         const next = nextFor(row);
         return `
-          <li class="compact-cell ${next ? (next.primary ? "next" : "next then") : ""}" style="--compact-share:${compactShares[idx] || 0};" ${next?.why ? `title="${this._escape(next.why)}"` : ""}>
+          <li class="compact-cell ${next ? (next.primary ? "next" : "next then") : ""}" style="--compact-share:${compactShares[idx] || 0};">
             ${this._nameHtml(row, "compact-name")}
             <span class="compact-count">${row.count}</span>
           </li>
         `;
       })
       .join("");
+
+    const nextNote = nextBuyers.length > 0 ? this._nextBuyerNote() : "";
+    const noteHtml = nextNote ? `<p class="next-note">* ${this._escape(nextNote)}</p>` : "";
 
     const layout = this._layout();
     const titleText = String(this._config.title || "").trim();
@@ -376,6 +385,7 @@ class HassFlatmateDistributionCard extends HTMLElement {
             <ul class="compact-list">
               ${compactList}
             </ul>
+            ${noteHtml}
           </div>
         `
       : `
@@ -383,6 +393,7 @@ class HassFlatmateDistributionCard extends HTMLElement {
             <ul class="list">
               ${rowsHtml || emptyState}
             </ul>
+            ${noteHtml}
           </div>
         `;
     const headerHtml = showHeader
@@ -530,7 +541,8 @@ class HassFlatmateDistributionCard extends HTMLElement {
           font-weight: var(--ha-font-weight-bold, 600);
         }
 
-        .next-why {
+        .next-note {
+          margin: var(--ha-space-2, 8px) 0 0;
           color: var(--secondary-text-color);
           font-size: var(--ha-font-size-s, 0.75rem);
           line-height: var(--ha-line-height-condensed, 1.2);

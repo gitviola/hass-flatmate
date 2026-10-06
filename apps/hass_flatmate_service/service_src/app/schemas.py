@@ -82,7 +82,6 @@ class BuyOrderEntry(BaseModel):
     new_member: bool
     last_purchase_at: datetime | None
     reason: str
-    note: str
 
 
 class BuyStatsResponse(BaseModel):
@@ -92,6 +91,7 @@ class BuyStatsResponse(BaseModel):
     distribution: list[DistributionEntry]
     svg_render_version: str
     buy_order: list[BuyOrderEntry] = Field(default_factory=list)
+    buy_order_note: str = ""
 
 
 class MemberPurchase(BaseModel):

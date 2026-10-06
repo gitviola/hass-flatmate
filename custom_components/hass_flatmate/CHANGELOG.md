@@ -1,5 +1,11 @@
 # Hass Flatmate Integration Changelog
 
+## [0.5.3] - 2026-10-06
+
+### Changed
+- `sensor.hass_flatmate_shopping_next_buyer`: one short `note` attribute about the recommendation replaces `caveat` and the per-person notes.
+- Shopping distribution card shows the note as a `*` footnote below the list.
+
 ## [0.5.2] - 2026-10-06
 
 ### Changed

@@ -313,7 +313,7 @@ def buy_distribution(session: Session, window_days: int = 90) -> dict:
         "unknown_excluded_count": unknown_excluded_count,
         "distribution": distribution,
         "svg_render_version": svg_render_version,
-        "buy_order": buy_order(
+        **buy_order(
             active_members,
             counts_by_member,
             last_purchase_by_member,
@@ -342,7 +342,13 @@ def _days_ago(days: int) -> str:
         return "today"
     if days == 1:
         return "yesterday"
+    if days >= 14:
+        return f"{days // 7} weeks ago"
     return f"{days} days ago"
+
+
+def _join_names(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
 
 
 def buy_order(
@@ -359,6 +365,9 @@ def buy_order(
     window's days each member lived in the flat, so someone who just moved in
     isn't pushed to the front for having bought nothing yet. Whoever is furthest
     below their fair share goes first; on a tie, whoever bought least recently.
+
+    Returns ``buy_order`` plus ``buy_order_note``: one short line explaining the
+    recommended pair when it would otherwise look unfair, else empty.
     """
 
     now = now_utc()
@@ -414,25 +423,6 @@ def buy_order(
         if is_new:
             reason = f"Moved in {_days_ago(days_since_joined)}: {reason}"
 
-        # Only answers "why me?": someone ranked after this member bought less, or is even with them.
-        notes = []
-        overtaken = [
-            other for other in rows[index + 1 :] if other["count"] < row["count"] and other["joined"] is not None
-        ]
-        if overtaken:
-            details = ", ".join(
-                f"{other['member'].display_name} (moved in "
-                f"{_days_ago(int((now - other['joined']).total_seconds() // 86400))}, fair share {other['fair_share']:.1f})"
-                for other in overtaken
-            )
-            notes.append(f"{member.display_name} goes before {details}, who bought less but moved in recently.")
-        for other in rows[index + 1 : index + 2]:
-            if other["balance"] == row["balance"]:
-                notes.append(
-                    f"{member.display_name} and {other['member'].display_name} are even, "
-                    f"but {member.display_name} last bought longer ago."
-                )
-
         order.append(
             {
                 "rank": index + 1,
@@ -447,10 +437,36 @@ def buy_order(
                 "new_member": is_new,
                 "last_purchase_at": row["last_purchase"],
                 "reason": reason,
-                "note": " ".join(notes),
             }
         )
-    return order
+
+    return {"buy_order": order, "buy_order_note": _recommendation_note(rows, now)}
+
+
+RECOMMENDED_COUNT = 2
+
+
+def _recommendation_note(rows: list[dict], now: datetime) -> str:
+    """Explain the recommended pair where people would ask "why me?"."""
+
+    recommended = rows[:RECOMMENDED_COUNT]
+    # Newcomers ranked after a recommended member who bought more than them.
+    newcomers = [
+        other
+        for index, other in enumerate(rows)
+        if other["joined"] is not None
+        and any(row["count"] > other["count"] for row in recommended[:index])
+    ]
+    notes = []
+    if len(newcomers) == 1:
+        days = int((now - newcomers[0]["joined"]).total_seconds() // 86400)
+        notes.append(f"{newcomers[0]['member'].display_name} only moved in {_days_ago(days)}")
+    elif newcomers:
+        notes.append(f"{_join_names([row['member'].display_name for row in newcomers])} only moved in recently")
+    # A tie that decides who is recommended, or in which order.
+    if any(rows[index]["balance"] == rows[index + 1]["balance"] for index in range(min(RECOMMENDED_COUNT, len(rows) - 1))):
+        notes.append("Same amount, so whoever bought longest ago goes first")
+    return " · ".join(notes)
 
 
 def as_utc(value: datetime) -> datetime:
