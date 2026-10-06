@@ -1,5 +1,10 @@
 # Hass Flatmate Service App Changelog
 
+## [0.5.6] - 2026-10-06
+
+### Changed
+- `GET /v1/stats/buys`: equal counts in `distribution` are ordered by `buy_order` (more pressing buyer lower) instead of by name.
+
 ## [0.5.5] - 2026-10-06
 
 ### Changed

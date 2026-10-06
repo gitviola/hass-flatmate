@@ -73,6 +73,18 @@ def test_new_member_is_not_pushed_to_front(client, auth_headers) -> None:
     assert _stats(client, auth_headers)["buy_order_note"] == "Carolina only moved in 7 days ago."
 
 
+def test_distribution_puts_the_more_pressing_buyer_lower_on_equal_counts(client, auth_headers) -> None:
+    # Martin bought most recently, so of the two with 2 purchases Andy is more pressing.
+    purchases = [(30, "Andy"), (20, "Andy"), (10, "Martin"), (1, "Martin"), (5, "Michelle")]
+    _setup(client, auth_headers, purchases)
+
+    stats = _stats(client, auth_headers)
+    andy_rank = next(row["rank"] for row in stats["buy_order"] if row["name"] == "Andy")
+    martin_rank = next(row["rank"] for row in stats["buy_order"] if row["name"] == "Martin")
+    assert andy_rank < martin_rank
+    assert [row["name"] for row in stats["distribution"]] == ["Martin", "Andy", "Michelle", "Carolina"]
+
+
 def test_new_member_who_is_behind_goes_first(client, auth_headers) -> None:
     # Everyone else bought several times since Carolina arrived; she hasn't.
     purchases = [(5, "Andy")] * 9 + [(5, "Martin")] * 10 + [(5, "Michelle")] * 11

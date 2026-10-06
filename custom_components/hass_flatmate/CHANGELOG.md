@@ -1,5 +1,10 @@
 # Hass Flatmate Integration Changelog
 
+## [0.5.6] - 2026-10-06
+
+### Changed
+- Version alignment release: the distribution order comes from the app (equal counts follow the recommendation).
+
 ## [0.5.5] - 2026-10-06
 
 ### Changed

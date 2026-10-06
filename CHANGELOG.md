@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.6] - 2026-10-06
+
+### Changed
+- Shopping distribution (chart, card, image and anything reading `distribution`): flatmates with the same purchase count are ordered by the recommendation, with the more pressing buyer lower, closer to the "should buy" line. Before, equal counts were sorted by name, so the list could contradict the recommendation.
+
 ## [0.5.5] - 2026-10-06
 
 ### Changed

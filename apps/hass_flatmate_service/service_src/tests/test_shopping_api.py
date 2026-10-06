@@ -110,7 +110,8 @@ def test_shopping_lifecycle_and_stats(client, auth_headers) -> None:
 
     distribution = payload["distribution"]
     names = [row["name"] for row in distribution]
-    assert names == ["Martin", "Gianmarco", "Maria", "Martina"]
+    # Equal counts: the more pressing buyer (alphabetical here, nobody has bought yet) goes lower.
+    assert names == ["Martin", "Martina", "Maria", "Gianmarco"]
 
     by_name = {row["name"]: row for row in distribution}
     assert by_name["Martin"]["count"] == 1

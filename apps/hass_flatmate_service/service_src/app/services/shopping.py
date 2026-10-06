@@ -301,7 +301,16 @@ def buy_distribution(session: Session, window_days: int = 90) -> dict:
         for member in active_members
     ]
 
-    distribution.sort(key=lambda x: (-x["count"], x["name"].lower()))
+    recommendation = buy_order(
+        active_members,
+        counts_by_member,
+        last_purchase_by_member,
+        first_member_created_at=first_member_created_at,
+        window_days=window_days,
+    )
+    # Most purchases first; on equal counts the more pressing buyer goes lower, next to the recommendation.
+    rank_by_member = {row["member_id"]: row["rank"] for row in recommendation["buy_order"]}
+    distribution.sort(key=lambda x: (-x["count"], -rank_by_member.get(x["member_id"], 0), x["name"].lower()))
 
     svg_render_version = hashlib.sha1(
         str([(row["member_id"], row["count"]) for row in distribution]).encode("utf-8")
@@ -313,13 +322,7 @@ def buy_distribution(session: Session, window_days: int = 90) -> dict:
         "unknown_excluded_count": unknown_excluded_count,
         "distribution": distribution,
         "svg_render_version": svg_render_version,
-        **buy_order(
-            active_members,
-            counts_by_member,
-            last_purchase_by_member,
-            first_member_created_at=first_member_created_at,
-            window_days=window_days,
-        ),
+        **recommendation,
     }
 
 
