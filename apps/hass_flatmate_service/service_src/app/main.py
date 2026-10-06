@@ -660,6 +660,7 @@ def ingress_migration_ui() -> str:
 @app.get("/v1/members", response_model=list[MemberResponse], dependencies=[Depends(require_token)])
 def get_members(session: Session = Depends(get_session)) -> list[MemberResponse]:
     rows = session.execute(select(Member).order_by(Member.display_name.asc())).scalars().all()
+    first_member_created_at = min((row.created_at for row in rows), default=None)
     return [
         MemberResponse(
             id=row.id,
@@ -670,6 +671,8 @@ def get_members(session: Session = Depends(get_session)) -> list[MemberResponse]
             notify_services=list(row.notify_services or []),
             device_trackers=list(row.device_trackers or []),
             active=row.active,
+            created_at=shopping.as_utc(row.created_at),
+            moved_in_at=shopping.moved_in_at(row, first_member_created_at),
         )
         for row in rows
     ]

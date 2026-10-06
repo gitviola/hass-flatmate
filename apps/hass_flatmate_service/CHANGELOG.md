@@ -1,5 +1,11 @@
 # Hass Flatmate Service App Changelog
 
+## [0.5.0] - 2026-10-06
+
+### Added
+- `GET /v1/stats/buys` returns `buy_order`: active flatmates ranked by who should buy next, with each person's fair share of the window's purchases based on how many of those days they lived here, plus a `reason` and (when the order looks odd) a `note`.
+- `GET /v1/members` returns `created_at` and `moved_in_at` (empty for flatmates from the very first sync).
+
 ## [0.4.1] - 2026-10-05
 
 ### Changed

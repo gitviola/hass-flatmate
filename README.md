@@ -155,6 +155,40 @@ title: Shopping Distribution (Compact)
 layout: compact
 ```
 
+## Who Buys Next
+
+`sensor.hass_flatmate_shopping_next_buyer` holds the name of the flatmate who should buy next.
+
+How it's fair: the purchases of the last 90 days are split into fair shares by how many of those days each flatmate lived in the flat. Whoever is furthest below their fair share goes next, so someone who moved in last week isn't pushed to the front for having bought nothing yet. On a tie, whoever bought longest ago goes first.
+
+The move-in date is when the person was first synced from Home Assistant (the sync automation runs regularly, so that's within minutes of adding them). Flatmates from the very first sync count as living here for the whole window.
+
+Attributes, so templates can shape the data for other tools:
+
+| Attribute | Example |
+| --- | --- |
+| `reason` | `3 bought in 90 days, fair share 4.7, 1.7 behind` |
+| `note` | only set when the order looks odd, e.g. `Before Carolina despite buying more: Carolina moved in 7 days ago (fair share 0.4)` |
+| `member_id`, `person_entity_id` | the next buyer |
+| `order` | list of objects: `rank`, `member_id`, `name`, `person_entity_id`, `count`, `fair_share`, `balance`, `days_present`, `moved_in_at`, `new_member`, `last_purchase_at`, `reason`, `note` |
+| `order_names` | `["Andy", "Carolina", ...]` |
+| `order_comma` | `Andy, Carolina, Martin, Gianmarco, Michelle` |
+| `order_semicolon` | `Andy;Carolina;Martin;Gianmarco;Michelle` |
+| `order_lines` | one `1. Andy: <reason> (<note>)` line per flatmate |
+| `method` | a one-sentence explanation of the rule |
+
+Examples:
+
+```jinja
+{{ states('sensor.hass_flatmate_shopping_next_buyer') }}
+{{ state_attr('sensor.hass_flatmate_shopping_next_buyer', 'note') or state_attr('sensor.hass_flatmate_shopping_next_buyer', 'reason') }}
+{{ state_attr('sensor.hass_flatmate_shopping_next_buyer', 'order') | map(attribute='name') | join(' > ') }}
+```
+
+Each active flatmate also gets a `sensor.hass_flatmate_<person>_moved_in` timestamp sensor (with `person_entity_id` and `from_initial_sync` attributes; for initial-sync flatmates the state is that first sync, not a real move-in date). Home Assistant doesn't let integrations add attributes to `person.*` entities, so this sits next to them.
+
+The distribution card highlights the next buyer and shows the note (or reason) under their bar. Turn it off with `show_next_buyer: false`.
+
 ## Notification Test Mode
 
 Use these entities to test all flows without notifying everyone:

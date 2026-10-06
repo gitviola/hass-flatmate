@@ -6,12 +6,13 @@ from collections.abc import Mapping
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
+from homeassistant.util import slugify
 
 from .const import (
     DOMAIN,
@@ -639,6 +640,93 @@ class ShoppingDistributionSensor(HassFlatmateCoordinatorEntity, SensorEntity):
         }
 
 
+class ShoppingNextBuyerSensor(HassFlatmateCoordinatorEntity, SensorEntity):
+    """Who should buy next, fair to people who moved in recently."""
+
+    _attr_name = "Shopping Next Buyer"
+    _attr_unique_id = "hass_flatmate_shopping_next_buyer"
+    _attr_icon = "mdi:cart-arrow-right"
+
+    def _order(self) -> list[dict[str, Any]]:
+        return self.coordinator.data.get("shopping_stats", {}).get("buy_order") or []
+
+    @property
+    def native_value(self) -> str | None:
+        order = self._order()
+        return order[0]["name"] if order else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        order = self._order()
+        window_days = int(self.coordinator.data.get("shopping_stats", {}).get("window_days", 90))
+        first = order[0] if order else {}
+        names = [row["name"] for row in order]
+        return {
+            "member_id": first.get("member_id"),
+            "person_entity_id": first.get("person_entity_id"),
+            "reason": first.get("reason", ""),
+            "note": first.get("note", ""),
+            "order": order,
+            "order_names": names,
+            "order_comma": ", ".join(names),
+            "order_semicolon": ";".join(names),
+            "order_lines": "\n".join(
+                f"{row['rank']}. {row['name']}: {row['reason']}" + (f" ({row['note']})" if row["note"] else "")
+                for row in order
+            ),
+            "window_days": window_days,
+            "method": (
+                f"Purchases from the last {window_days} days are split into fair shares by how many of "
+                "those days each flatmate lived here. Whoever is furthest below their fair share buys "
+                "next; on a tie, whoever bought longest ago."
+            ),
+        }
+
+
+class MemberMovedInSensor(HassFlatmateCoordinatorEntity, SensorEntity):
+    """When a flatmate moved in, for templates and other tools."""
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_icon = "mdi:home-import-outline"
+
+    def __init__(self, config_entry: ConfigEntry, runtime, member: Mapping[str, Any]) -> None:
+        self._member_id = int(member["id"])
+        person_entity_id = str(member.get("ha_person_entity_id") or "")
+        slug = person_entity_id.split(".", 1)[1] if "." in person_entity_id else slugify(str(member["display_name"]))
+        super().__init__(config_entry, runtime)
+        self._attr_unique_id = f"hass_flatmate_member_{self._member_id}_moved_in"
+        self._attr_object_id = f"hass_flatmate_{slug}_moved_in"
+        self._attr_suggested_object_id = self._attr_object_id
+        self._attr_name = f"{member['display_name']} Moved In"
+
+    def _member(self) -> dict[str, Any] | None:
+        for member in self.coordinator.data.get("members", []):
+            if int(member.get("id", -1)) == self._member_id:
+                return member
+        return None
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._member() is not None
+
+    @property
+    def native_value(self) -> datetime | None:
+        member = self._member() or {}
+        # Members from the initial sync have no known move-in; their first sync is the best we know.
+        return dt_util.parse_datetime(str(member.get("moved_in_at") or member.get("created_at") or ""))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        member = self._member() or {}
+        return {
+            "member_id": self._member_id,
+            "name": member.get("display_name"),
+            "person_entity_id": member.get("ha_person_entity_id"),
+            "active": bool(member.get("active", False)),
+            "from_initial_sync": member.get("created_at") is not None and member.get("moved_in_at") is None,
+        }
+
+
 class ShoppingDataSensor(HassFlatmateCoordinatorEntity, SensorEntity):
     _attr_name = "Shopping Data"
     _attr_unique_id = "hass_flatmate_shopping_data"
@@ -1062,6 +1150,7 @@ async def async_setup_entry(
         [
             ShoppingOpenCountSensor(entry, runtime),
             ShoppingDistributionSensor(entry, runtime),
+            ShoppingNextBuyerSensor(entry, runtime),
             ShoppingDataSensor(entry, runtime),
             CleaningCurrentAssigneeSensor(entry, runtime),
             CleaningCurrentStatusSensor(entry, runtime),
@@ -1070,3 +1159,20 @@ async def async_setup_entry(
             ActivityRecentSensor(entry, runtime),
         ]
     )
+
+    known_member_ids: set[int] = set()
+
+    @callback
+    def _add_member_sensors() -> None:
+        new_members = [
+            member
+            for member in runtime.coordinator.data.get("members", [])
+            if member.get("active") and int(member.get("id", -1)) not in known_member_ids
+        ]
+        if not new_members:
+            return
+        known_member_ids.update(int(member["id"]) for member in new_members)
+        async_add_entities([MemberMovedInSensor(entry, runtime, member) for member in new_members])
+
+    _add_member_sensors()
+    entry.async_on_unload(runtime.coordinator.async_add_listener(_add_member_sensors))

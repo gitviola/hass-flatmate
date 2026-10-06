@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.0] - 2026-10-06
+
+### Added
+- New sensor `sensor.hass_flatmate_shopping_next_buyer`: who should buy next, fair to people who moved in recently. Each flatmate's fair share of the last 90 days' purchases depends on how many of those days they lived here; whoever is furthest below their share goes next, and a tie goes to whoever bought longest ago. Every flatmate gets a `reason`, plus a `note` when the order looks odd (e.g. someone with 3 purchases going before a newcomer with 0). The order is also available as a list of objects, a list of names, comma- or semicolon-separated text and one line per flatmate, for templates and other tools.
+- One `sensor.hass_flatmate_<person>_moved_in` timestamp sensor per active flatmate, based on when they were first synced. Flatmates from the very first sync are treated as living here for the whole window.
+- Shopping distribution card highlights the next buyer ("Buys next") and shows why under their bar. Turn it off with `show_next_buyer: false`.
+- Backend: `GET /v1/stats/buys` returns `buy_order`; `GET /v1/members` returns `created_at` and `moved_in_at`.
+
 ## [0.4.1] - 2026-10-05
 
 ### Fixed

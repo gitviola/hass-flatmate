@@ -31,6 +31,9 @@ class MemberResponse(BaseModel):
     notify_services: list[str] = Field(default_factory=list)
     device_trackers: list[str] = Field(default_factory=list)
     active: bool
+    created_at: datetime | None = None
+    # None for members from the initial sync, whose created_at is the install date.
+    moved_in_at: datetime | None = None
 
 
 class ShoppingItemCreateRequest(BaseModel):
@@ -66,12 +69,29 @@ class DistributionEntry(BaseModel):
     percent: float
 
 
+class BuyOrderEntry(BaseModel):
+    rank: int
+    member_id: int
+    name: str
+    person_entity_id: str | None
+    count: int
+    fair_share: float
+    balance: float
+    days_present: int
+    moved_in_at: datetime | None
+    new_member: bool
+    last_purchase_at: datetime | None
+    reason: str
+    note: str
+
+
 class BuyStatsResponse(BaseModel):
     window_days: int
     total_completed: int
     unknown_excluded_count: int
     distribution: list[DistributionEntry]
     svg_render_version: str
+    buy_order: list[BuyOrderEntry] = Field(default_factory=list)
 
 
 class MemberPurchase(BaseModel):

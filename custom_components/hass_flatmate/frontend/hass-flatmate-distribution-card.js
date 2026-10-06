@@ -64,7 +64,24 @@ class HassFlatmateDistributionCard extends HTMLElement {
       window_days: attrs.window_days,
       distribution: attrs.distribution,
       layout: this._layout(),
+      next: this._nextBuyer(hass),
     });
+  }
+
+  _nextBuyer(hass = this._hass) {
+    if (this._config?.show_next_buyer === false) {
+      return null;
+    }
+    const entityId = this._config?.next_buyer_entity || "sensor.hass_flatmate_shopping_next_buyer";
+    const attrs = hass?.states?.[entityId]?.attributes;
+    if (!attrs || attrs.member_id == null) {
+      return null;
+    }
+    return {
+      memberId: Number(attrs.member_id),
+      // The note explains orders that look odd; otherwise the plain reason is enough.
+      why: String(attrs.note || attrs.reason || ""),
+    };
   }
 
   _layout() {
@@ -278,6 +295,9 @@ class HassFlatmateDistributionCard extends HTMLElement {
       "#bc6c25",
     ];
 
+    const nextBuyer = this._nextBuyer();
+    const isNext = (row) => nextBuyer !== null && Number(row.memberId) === nextBuyer.memberId;
+
     const rowsHtml = distribution
       .map((row, idx) => {
         const relativeWidth = maxCount > 0 ? (row.count / maxCount) * 100 : 0;
@@ -287,14 +307,18 @@ class HassFlatmateDistributionCard extends HTMLElement {
         const accent = palette[idx % palette.length];
 
         return `
-          <li class="row" style="--accent:${accent}; --bar-width:${barWidth}%;">
+          <li class="row ${isNext(row) ? "next" : ""}" style="--accent:${accent}; --bar-width:${barWidth}%;">
             <div class="row-head">
-              ${this._nameHtml(row, "name")}
+              <span class="name-wrap">
+                ${this._nameHtml(row, "name")}
+                ${isNext(row) ? '<span class="next-chip">Buys next</span>' : ""}
+              </span>
               <span class="metrics">${row.count} purchase${row.count === 1 ? "" : "s"}</span>
             </div>
             <div class="track">
               <div class="fill"></div>
             </div>
+            ${isNext(row) && nextBuyer.why ? `<div class="next-why">${this._escape(nextBuyer.why)}</div>` : ""}
           </li>
         `;
       })
@@ -331,7 +355,7 @@ class HassFlatmateDistributionCard extends HTMLElement {
     const compactRowsHtml = distribution
       .map(
         (row, idx) => `
-          <li class="compact-cell" style="--compact-share:${compactShares[idx] || 0};">
+          <li class="compact-cell ${isNext(row) ? "next" : ""}" style="--compact-share:${compactShares[idx] || 0};" ${isNext(row) && nextBuyer.why ? `title="Buys next: ${this._escape(nextBuyer.why)}"` : ""}>
             ${this._nameHtml(row, "compact-name")}
             <span class="compact-count">${row.count}</span>
           </li>
@@ -473,6 +497,58 @@ class HassFlatmateDistributionCard extends HTMLElement {
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
+        }
+
+        .name-wrap {
+          display: flex;
+          align-items: baseline;
+          gap: var(--ha-space-2, 8px);
+          min-width: 0;
+        }
+
+        .next-chip {
+          flex: none;
+          font-size: var(--ha-font-size-xs, 0.6875rem);
+          font-weight: var(--ha-font-weight-bold, 600);
+          padding: 1px var(--ha-space-2, 8px);
+          border-radius: var(--ha-border-radius-pill, 9999px);
+          background: var(--primary-color);
+          color: var(--text-primary-color, #fff);
+          white-space: nowrap;
+        }
+
+        .row.next .name {
+          font-weight: var(--ha-font-weight-bold, 600);
+        }
+
+        .next-why {
+          color: var(--secondary-text-color);
+          font-size: var(--ha-font-size-s, 0.75rem);
+          line-height: var(--ha-line-height-condensed, 1.2);
+        }
+
+        .compact-cell.next {
+          background: rgba(var(--rgb-primary-color, 3, 169, 244), 0.14);
+          box-shadow: inset 0 -3px 0 var(--primary-color);
+        }
+
+        .compact-cell.next .compact-name {
+          font-weight: var(--ha-font-weight-bold, 600);
+        }
+
+        .card.eink .next-chip {
+          background: #000;
+          color: #fff;
+        }
+
+        .card.eink .compact-cell.next {
+          background: #000;
+          box-shadow: none;
+        }
+
+        .card.eink .compact-cell.next .compact-name,
+        .card.eink .compact-cell.next .compact-count {
+          color: #fff;
         }
 
         .metrics {
@@ -782,6 +858,11 @@ class HassFlatmateDistributionCardEditor extends HTMLElement {
           <input id="hf-editor-eink" type="checkbox" ${this._config.eink ? "checked" : ""} />
           E-ink display mode (high contrast)
         </label>
+
+        <label>
+          <input id="hf-editor-next-buyer" type="checkbox" ${this._config.show_next_buyer === false ? "" : "checked"} />
+          Highlight who buys next
+        </label>
       </div>
 
       <style>
@@ -862,6 +943,14 @@ class HassFlatmateDistributionCardEditor extends HTMLElement {
       });
     });
 
+    const nextBuyerCheckbox = this._root.querySelector("#hf-editor-next-buyer");
+    nextBuyerCheckbox?.addEventListener("change", (event) => {
+      this._emitConfig({
+        ...this._config,
+        show_next_buyer: event.target.checked,
+      });
+    });
+
     this._editorReady = true;
   }
 
@@ -897,6 +986,11 @@ class HassFlatmateDistributionCardEditor extends HTMLElement {
     const einkCheckbox = this._root.querySelector("#hf-editor-eink");
     if (einkCheckbox) {
       einkCheckbox.checked = !!this._config.eink;
+    }
+
+    const nextBuyerCheckbox = this._root.querySelector("#hf-editor-next-buyer");
+    if (nextBuyerCheckbox) {
+      nextBuyerCheckbox.checked = this._config.show_next_buyer !== false;
     }
   }
 }

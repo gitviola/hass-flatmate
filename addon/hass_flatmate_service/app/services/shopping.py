@@ -276,6 +276,19 @@ def buy_distribution(session: Session, window_days: int = 90) -> dict:
         if member_id in counts_by_member:
             counts_by_member[member_id] += 1
 
+    # All-time, so a tie can still be broken by purchases older than the window.
+    last_purchase_by_member = dict(
+        session.execute(
+            select(ShoppingItem.completed_by_member_id, func.max(ShoppingItem.completed_at))
+            .where(
+                ShoppingItem.status == ShoppingStatus.COMPLETED,
+                ShoppingItem.completed_by_member_id.is_not(None),
+            )
+            .group_by(ShoppingItem.completed_by_member_id)
+        ).all()
+    )
+    first_member_created_at = session.execute(select(func.min(Member.created_at))).scalar_one_or_none()
+
     valid_total = sum(counts_by_member.values())
 
     distribution = [
@@ -300,10 +313,154 @@ def buy_distribution(session: Session, window_days: int = 90) -> dict:
         "unknown_excluded_count": unknown_excluded_count,
         "distribution": distribution,
         "svg_render_version": svg_render_version,
+        "buy_order": buy_order(
+            active_members,
+            counts_by_member,
+            last_purchase_by_member,
+            first_member_created_at=first_member_created_at,
+            window_days=window_days,
+        ),
     }
 
 
-def _as_utc(value: datetime) -> datetime:
+# Members created this close to the very first one came from the initial sync,
+# so their created_at is the install date, not the day they moved in.
+FOUNDING_MEMBER_GRACE = timedelta(days=1)
+
+
+def moved_in_at(member: Member, first_member_created_at: datetime | None) -> datetime | None:
+    """When the member joined the flat, or None for members from the initial sync."""
+
+    created_at = as_utc(member.created_at)
+    if first_member_created_at is None or created_at <= as_utc(first_member_created_at) + FOUNDING_MEMBER_GRACE:
+        return None
+    return created_at
+
+
+def _days_ago(days: int) -> str:
+    if days <= 0:
+        return "today"
+    if days == 1:
+        return "yesterday"
+    return f"{days} days ago"
+
+
+def buy_order(
+    members: list[Member],
+    counts_by_member: dict[int, int],
+    last_purchase_by_member: dict[int, datetime],
+    *,
+    first_member_created_at: datetime | None,
+    window_days: int,
+) -> list[dict]:
+    """Rank active members by who should buy next.
+
+    The purchases in the window are split into fair shares by how many of the
+    window's days each member lived in the flat, so someone who just moved in
+    isn't pushed to the front for having bought nothing yet. Whoever is furthest
+    below their fair share goes first; on a tie, whoever bought least recently.
+    """
+
+    now = now_utc()
+    total = sum(counts_by_member.get(member.id, 0) for member in members)
+
+    rows = []
+    for member in members:
+        joined = moved_in_at(member, first_member_created_at)
+        if joined is None:
+            days_present = float(window_days)
+        else:
+            days_present = min(max((now - joined).total_seconds() / 86400, 0.0), float(window_days))
+        last_purchase = last_purchase_by_member.get(member.id)
+        rows.append(
+            {
+                "member": member,
+                "count": counts_by_member.get(member.id, 0),
+                "joined": joined,
+                "days_present": days_present,
+                "last_purchase": as_utc(last_purchase) if last_purchase is not None else None,
+            }
+        )
+
+    present_total = sum(row["days_present"] for row in rows)
+    for row in rows:
+        row["fair_share"] = total * row["days_present"] / present_total if present_total else 0.0
+        # Rounded so float noise can't split a real tie.
+        row["balance"] = round(row["count"] - row["fair_share"], 6)
+
+    def _sort_key(row: dict) -> tuple:
+        reference = row["last_purchase"] or row["joined"]
+        return (
+            row["balance"],
+            reference.timestamp() if reference is not None else float("-inf"),
+            row["member"].display_name.lower(),
+        )
+
+    rows.sort(key=_sort_key)
+
+    order = []
+    for index, row in enumerate(rows):
+        member = row["member"]
+        is_new = row["joined"] is not None and row["days_present"] < window_days
+        days_since_joined = int((now - row["joined"]).total_seconds() // 86400) if row["joined"] else None
+
+        if row["balance"] < -0.05:
+            standing = f"{-row['balance']:.1f} behind"
+        elif row["balance"] > 0.05:
+            standing = f"{row['balance']:.1f} ahead"
+        else:
+            standing = "even"
+        reason = f"{row['count']} bought in {window_days} days, fair share {row['fair_share']:.1f}, {standing}"
+        if is_new:
+            reason = f"Moved in {_days_ago(days_since_joined)}: {reason}"
+
+        # Explain the spots where the order contradicts the raw counts.
+        notes = []
+        overtaken = [
+            other for other in rows[index + 1 :] if other["count"] < row["count"] and other["joined"] is not None
+        ]
+        if overtaken:
+            details = ", ".join(
+                f"{other['member'].display_name} moved in {_days_ago(int((now - other['joined']).total_seconds() // 86400))}"
+                f" (fair share {other['fair_share']:.1f})"
+                for other in overtaken
+            )
+            names = ", ".join(other["member"].display_name for other in overtaken)
+            notes.append(f"Before {names} despite buying more: {details}")
+        ahead = [other["member"].display_name for other in rows[:index] if other["count"] > row["count"]]
+        if ahead and is_new:
+            notes.append(
+                f"After {', '.join(ahead)} despite buying less: moved in {_days_ago(days_since_joined)}, "
+                f"so the fair share is only {row['fair_share']:.1f}"
+            )
+        for other in rows[index - 1 : index] if index else []:
+            if other["balance"] == row["balance"]:
+                notes.append(f"Tied with {other['member'].display_name}, who last bought longer ago")
+        for other in rows[index + 1 : index + 2]:
+            if other["balance"] == row["balance"]:
+                notes.append(f"Tied with {other['member'].display_name}, but last bought longer ago")
+
+        order.append(
+            {
+                "rank": index + 1,
+                "member_id": member.id,
+                "name": member.display_name,
+                "person_entity_id": member.ha_person_entity_id,
+                "count": row["count"],
+                "fair_share": round(row["fair_share"], 2),
+                "balance": round(row["balance"], 2),
+                "days_present": round(row["days_present"]),
+                "moved_in_at": row["joined"],
+                "new_member": is_new,
+                "last_purchase_at": row["last_purchase"],
+                "reason": reason,
+                "note": ". ".join(notes),
+            }
+        )
+    return order
+
+
+def as_utc(value: datetime) -> datetime:
     # SQLite drops the offset; stored timestamps are UTC.
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
@@ -332,7 +489,7 @@ def member_purchase_history(session: Session, member_id: int, window_days: int =
 
     purchases = []
     for row in rows:
-        completed_at = _as_utc(row.completed_at)
+        completed_at = as_utc(row.completed_at)
         purchases.append(
             {
                 "id": row.id,

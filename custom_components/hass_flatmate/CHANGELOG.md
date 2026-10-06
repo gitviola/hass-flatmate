@@ -1,5 +1,12 @@
 # Hass Flatmate Integration Changelog
 
+## [0.5.0] - 2026-10-06
+
+### Added
+- New sensor `sensor.hass_flatmate_shopping_next_buyer`: who should buy next, fair to people who moved in recently. Attributes include `reason`, `note` (only when the order looks odd), `order` (list of objects), `order_names`, `order_comma`, `order_semicolon`, `order_lines` and `method`.
+- One `sensor.hass_flatmate_<person>_moved_in` timestamp sensor per active flatmate.
+- Shopping distribution card highlights the next buyer and shows why under their bar (`show_next_buyer: false` to turn off).
+
 ## [0.4.1] - 2026-10-05
 
 ### Fixed
