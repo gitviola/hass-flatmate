@@ -66,8 +66,10 @@ def test_new_member_is_not_pushed_to_front(client, auth_headers) -> None:
     assert andy["person_entity_id"] == "person.andy"
 
     assert carolina["reason"].startswith("Moved in 7 days ago: 0 bought in 90 days")
-    assert andy["note"] == "Before Carolina despite buying more: Carolina moved in 7 days ago (fair share 0.4)"
-    assert "After Andy despite buying less" in carolina["note"]
+    assert andy["note"] == (
+        "Andy goes before Carolina (moved in 7 days ago, fair share 0.4), who bought less but moved in recently."
+    )
+    assert carolina["note"] == ""
     assert order[2]["note"] == ""
 
 
@@ -88,8 +90,8 @@ def test_tie_goes_to_whoever_bought_longer_ago(client, auth_headers) -> None:
 
     order = _order(client, auth_headers)
     assert [row["name"] for row in order] == ["Andy", "Michelle", "Carolina", "Martin"]
-    assert order[0]["note"] == "Tied with Michelle, but last bought longer ago"
-    assert order[1]["note"].startswith("Tied with Andy, who last bought longer ago")
+    assert order[0]["note"] == "Andy and Michelle are even, but Andy last bought longer ago."
+    assert order[1]["note"] == "Michelle and Carolina are even, but Michelle last bought longer ago."
 
 
 def test_members_expose_move_in(client, auth_headers) -> None:

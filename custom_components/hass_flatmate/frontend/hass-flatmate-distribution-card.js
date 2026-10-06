@@ -79,9 +79,9 @@ class HassFlatmateDistributionCard extends HTMLElement {
     }
     return recommended.map((row, idx) => ({
       memberId: Number(row?.member_id),
-      label: idx === 0 ? "Buys next" : "Then",
-      // The note explains orders that look odd; otherwise the plain reason is enough.
-      why: String(row?.note || row?.reason || ""),
+      primary: idx === 0,
+      // Only set when the order would make someone ask "why me?".
+      why: String(row?.note || ""),
     }));
   }
 
@@ -313,7 +313,7 @@ class HassFlatmateDistributionCard extends HTMLElement {
             <div class="row-head">
               <span class="name-wrap">
                 ${this._nameHtml(row, "name")}
-                ${next ? `<span class="next-chip ${next.label === "Then" ? "then" : ""}">${next.label}</span>` : ""}
+                ${next ? `<span class="next-chip ${next.primary ? "" : "then"}">Should buy</span>` : ""}
               </span>
               <span class="metrics">${row.count} purchase${row.count === 1 ? "" : "s"}</span>
             </div>
@@ -358,7 +358,7 @@ class HassFlatmateDistributionCard extends HTMLElement {
       .map((row, idx) => {
         const next = nextFor(row);
         return `
-          <li class="compact-cell ${next ? (next.label === "Then" ? "next then" : "next") : ""}" style="--compact-share:${compactShares[idx] || 0};" ${next?.why ? `title="${next.label}: ${this._escape(next.why)}"` : ""}>
+          <li class="compact-cell ${next ? (next.primary ? "next" : "next then") : ""}" style="--compact-share:${compactShares[idx] || 0};" ${next?.why ? `title="${this._escape(next.why)}"` : ""}>
             ${this._nameHtml(row, "compact-name")}
             <span class="compact-count">${row.count}</span>
           </li>
@@ -890,7 +890,7 @@ class HassFlatmateDistributionCardEditor extends HTMLElement {
 
         <label>
           <input id="hf-editor-next-buyer" type="checkbox" ${this._config.show_next_buyer === false ? "" : "checked"} />
-          Highlight the two who buy next
+          Highlight the two who should buy next
         </label>
       </div>
 

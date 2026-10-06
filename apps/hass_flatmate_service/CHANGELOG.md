@@ -1,5 +1,10 @@
 # Hass Flatmate Service App Changelog
 
+## [0.5.2] - 2026-10-06
+
+### Changed
+- `buy_order` notes only explain "why me?" (going before a newcomer who bought less, or a tie) and are full sentences naming the flatmate.
+
 ## [0.5.1] - 2026-10-06
 
 ### Changed

@@ -414,31 +414,24 @@ def buy_order(
         if is_new:
             reason = f"Moved in {_days_ago(days_since_joined)}: {reason}"
 
-        # Explain the spots where the order contradicts the raw counts.
+        # Only answers "why me?": someone ranked after this member bought less, or is even with them.
         notes = []
         overtaken = [
             other for other in rows[index + 1 :] if other["count"] < row["count"] and other["joined"] is not None
         ]
         if overtaken:
             details = ", ".join(
-                f"{other['member'].display_name} moved in {_days_ago(int((now - other['joined']).total_seconds() // 86400))}"
-                f" (fair share {other['fair_share']:.1f})"
+                f"{other['member'].display_name} (moved in "
+                f"{_days_ago(int((now - other['joined']).total_seconds() // 86400))}, fair share {other['fair_share']:.1f})"
                 for other in overtaken
             )
-            names = ", ".join(other["member"].display_name for other in overtaken)
-            notes.append(f"Before {names} despite buying more: {details}")
-        ahead = [other["member"].display_name for other in rows[:index] if other["count"] > row["count"]]
-        if ahead and is_new:
-            notes.append(
-                f"After {', '.join(ahead)} despite buying less: moved in {_days_ago(days_since_joined)}, "
-                f"so the fair share is only {row['fair_share']:.1f}"
-            )
-        for other in rows[index - 1 : index] if index else []:
-            if other["balance"] == row["balance"]:
-                notes.append(f"Tied with {other['member'].display_name}, who last bought longer ago")
+            notes.append(f"{member.display_name} goes before {details}, who bought less but moved in recently.")
         for other in rows[index + 1 : index + 2]:
             if other["balance"] == row["balance"]:
-                notes.append(f"Tied with {other['member'].display_name}, but last bought longer ago")
+                notes.append(
+                    f"{member.display_name} and {other['member'].display_name} are even, "
+                    f"but {member.display_name} last bought longer ago."
+                )
 
         order.append(
             {
@@ -454,7 +447,7 @@ def buy_order(
                 "new_member": is_new,
                 "last_purchase_at": row["last_purchase"],
                 "reason": reason,
-                "note": ". ".join(notes),
+                "note": " ".join(notes),
             }
         )
     return order

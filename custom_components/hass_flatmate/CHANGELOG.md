@@ -1,5 +1,11 @@
 # Hass Flatmate Integration Changelog
 
+## [0.5.2] - 2026-10-06
+
+### Changed
+- `sensor.hass_flatmate_shopping_next_buyer`: `recommended` is the ordered list of the two, plus a `caveat` text only when a recommended flatmate might ask "why me?". `first_*` / `second_*` attributes removed.
+- Shopping distribution card labels both "Should buy" and shows only the caveat under the bar.
+
 ## [0.5.1] - 2026-10-06
 
 ### Changed

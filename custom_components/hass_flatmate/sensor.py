@@ -661,18 +661,11 @@ class ShoppingNextBuyerSensor(HassFlatmateCoordinatorEntity, SensorEntity):
         window_days = int(self.coordinator.data.get("shopping_stats", {}).get("window_days", 90))
         recommended = order[:2]
         names = [row["name"] for row in order]
-        attributes: dict[str, Any] = {}
-        for key, index in (("first", 0), ("second", 1)):
-            row = order[index] if len(order) > index else {}
-            attributes[key] = row.get("name")
-            attributes[f"{key}_member_id"] = row.get("member_id")
-            attributes[f"{key}_person_entity_id"] = row.get("person_entity_id")
-            attributes[f"{key}_reason"] = row.get("reason", "")
-            attributes[f"{key}_note"] = row.get("note", "")
         return {
-            **attributes,
             "recommended": recommended,
             "recommended_names": [row["name"] for row in recommended],
+            # Answers "why me?" for the recommended pair; empty when the order is unsurprising.
+            "caveat": " ".join(row["note"] for row in recommended if row.get("note")),
             "order": order,
             "order_names": names,
             "order_comma": ", ".join(names),

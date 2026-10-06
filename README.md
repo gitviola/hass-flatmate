@@ -167,13 +167,10 @@ Attributes, so templates can shape the data for other tools:
 
 | Attribute | Example |
 | --- | --- |
-| `first`, `second` | `Andy`, `Carolina` |
-| `first_reason`, `second_reason` | `3 bought in 90 days, fair share 4.7, 1.7 behind` |
-| `first_note`, `second_note` | only set when the order looks odd, e.g. `Before Carolina despite buying more: Carolina moved in 7 days ago (fair share 0.4)` |
-| `first_member_id`, `first_person_entity_id` (and `second_…`) | for linking to the person |
-| `recommended` | the two `order` entries below |
+| `recommended` | ordered list (most pressing first) of the two entries from `order` |
 | `recommended_names` | `["Andy", "Carolina"]` |
-| `order` | list of objects: `rank`, `member_id`, `name`, `person_entity_id`, `count`, `fair_share`, `balance`, `days_present`, `moved_in_at`, `new_member`, `last_purchase_at`, `reason`, `note` |
+| `caveat` | only set when a recommended flatmate might ask "why me?", e.g. `Andy goes before Carolina (moved in 7 days ago, fair share 0.4), who bought less but moved in recently.` Handy as a `*` footnote. |
+| `order` | everyone, ranked: `rank`, `member_id`, `name`, `person_entity_id`, `count`, `fair_share`, `balance`, `days_present`, `moved_in_at`, `new_member`, `last_purchase_at`, `reason`, `note` (the per-person "why me?") |
 | `order_names` | `["Andy", "Carolina", ...]` |
 | `order_comma` | `Andy, Carolina, Martin, Gianmarco, Michelle` |
 | `order_semicolon` | `Andy;Carolina;Martin;Gianmarco;Michelle` |
@@ -183,14 +180,14 @@ Attributes, so templates can shape the data for other tools:
 Examples:
 
 ```jinja
-{{ state_attr('sensor.hass_flatmate_shopping_next_buyer', 'first') }} buys next, then {{ state_attr('sensor.hass_flatmate_shopping_next_buyer', 'second') }}
-{{ state_attr('sensor.hass_flatmate_shopping_next_buyer', 'first_note') or state_attr('sensor.hass_flatmate_shopping_next_buyer', 'first_reason') }}
+Should buy: {{ state_attr('sensor.hass_flatmate_shopping_next_buyer', 'recommended_names') | join(' & ') }}
+{% set caveat = state_attr('sensor.hass_flatmate_shopping_next_buyer', 'caveat') %}{% if caveat %}* {{ caveat }}{% endif %}
 {{ state_attr('sensor.hass_flatmate_shopping_next_buyer', 'order') | map(attribute='name') | join(' > ') }}
 ```
 
 Each active flatmate also gets a `sensor.hass_flatmate_<person>_moved_in` timestamp sensor (with `person_entity_id` and `from_initial_sync` attributes; for initial-sync flatmates the state is that first sync, not a real move-in date). Home Assistant doesn't let integrations add attributes to `person.*` entities, so this sits next to them.
 
-The distribution card marks the two with "Buys next" and "Then" and shows the note (or reason) under their bars. Turn it off with `show_next_buyer: false`.
+The distribution card marks both with "Should buy" (the stronger color is the more pressing one) and shows the "why me?" note under a bar when there is one. Turn it off with `show_next_buyer: false`.
 
 ## Notification Test Mode
 

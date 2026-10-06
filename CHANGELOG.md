@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.2] - 2026-10-06
+
+### Changed
+- `sensor.hass_flatmate_shopping_next_buyer`: `recommended` is now the ordered list of the two (most pressing first), with a single `caveat` text that's only set when a recommended flatmate might ask "why me?" (e.g. going before a newcomer who bought less, or a tie). The `first_*` / `second_*` attributes are gone.
+- Per-flatmate `note` now only answers "why me?" and is written as a full sentence, so it works as a footnote.
+- Shopping distribution card labels both "Should buy" (the color shows who's first) and shows only the caveat under the bar, not the routine reason.
+
 ## [0.5.1] - 2026-10-06
 
 ### Changed
