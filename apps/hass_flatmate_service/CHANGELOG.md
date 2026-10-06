@@ -1,5 +1,13 @@
 # Hass Flatmate Service App Changelog
 
+## [0.5.5] - 2026-10-06
+
+### Changed
+- `buy_order_note` uses full sentences and names the tied flatmates.
+
+### Fixed
+- "Moved in N days ago" counts calendar days instead of full 24-hour periods.
+
 ## [0.5.4] - 2026-10-06
 
 ### Changed

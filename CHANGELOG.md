@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.5] - 2026-10-06
+
+### Changed
+- The next-buyer `note` reads better below the distribution chart: full sentences, and a tie names the people involved (`Gianmarco's last purchase was longer ago than Martin's.`) instead of the abstract `Same amount, so whoever bought longest ago goes first`.
+
+### Fixed
+- "Moved in N days ago" counts calendar days, so someone who moved in on the 1st shows "5 days ago" on the 6th instead of 4.
+
 ## [0.5.4] - 2026-10-06
 
 ### Fixed

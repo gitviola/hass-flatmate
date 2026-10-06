@@ -70,7 +70,7 @@ def test_new_member_is_not_pushed_to_front(client, auth_headers) -> None:
     assert andy["person_entity_id"] == "person.andy"
 
     assert carolina["reason"].startswith("Moved in 7 days ago: 0 bought in 90 days")
-    assert _stats(client, auth_headers)["buy_order_note"] == "Carolina only moved in 7 days ago"
+    assert _stats(client, auth_headers)["buy_order_note"] == "Carolina only moved in 7 days ago."
 
 
 def test_new_member_who_is_behind_goes_first(client, auth_headers) -> None:
@@ -91,7 +91,24 @@ def test_tie_goes_to_whoever_bought_longer_ago(client, auth_headers) -> None:
 
     stats = _stats(client, auth_headers)
     assert [row["name"] for row in stats["buy_order"]] == ["Andy", "Michelle", "Carolina", "Martin"]
-    assert stats["buy_order_note"] == "Same amount, so whoever bought longest ago goes first"
+    assert stats["buy_order_note"] == (
+        "Andy, Michelle, Carolina and Martin have the same amount, so whoever bought longest ago goes first."
+    )
+
+
+def test_two_way_tie_names_who_bought_longer_ago(client, auth_headers) -> None:
+    purchases = [(30, "Andy"), (10, "Martin"), (12, "Martin"), (5, "Michelle"), (6, "Michelle")]
+    _setup(client, auth_headers, purchases)
+    _set_created_days_ago("Carolina", 200)  # everyone founding: equal shares
+
+    stats = _stats(client, auth_headers)
+    assert [row["name"] for row in stats["buy_order"]] == ["Carolina", "Andy", "Martin", "Michelle"]
+    assert stats["buy_order_note"] == ""
+
+    client.post("/v1/import/manual", headers=auth_headers, json={"shopping_history_rows": f"{(date.today() - timedelta(days=40)).isoformat()},Item,Carolina"})
+    stats = _stats(client, auth_headers)
+    assert [row["name"] for row in stats["buy_order"][:3]] == ["Carolina", "Andy", "Martin"]
+    assert stats["buy_order_note"] == "Carolina's last purchase was longer ago than Andy's."
 
 
 def test_several_newcomers_are_summarised(client, auth_headers) -> None:
@@ -100,13 +117,13 @@ def test_several_newcomers_are_summarised(client, auth_headers) -> None:
 
     stats = _stats(client, auth_headers)
     assert [row["name"] for row in stats["buy_order"]] == ["Andy", "Michelle", "Carolina", "Martin"]
-    assert stats["buy_order_note"] == "Michelle and Carolina only moved in recently"
+    assert stats["buy_order_note"] == "Michelle and Carolina only moved in recently."
 
 
 def test_newcomer_note_uses_weeks(client, auth_headers) -> None:
     _setup(client, auth_headers, [(10, "Andy"), (10, "Martin"), (11, "Martin")] + [(10, "Michelle")] * 3)
     _set_created_days_ago("Carolina", 21)
-    assert _stats(client, auth_headers)["buy_order_note"] == "Carolina only moved in 3 weeks ago"
+    assert _stats(client, auth_headers)["buy_order_note"] == "Carolina only moved in 3 weeks ago."
 
 
 def test_members_expose_move_in(client, auth_headers) -> None:

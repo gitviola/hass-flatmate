@@ -185,10 +185,11 @@ Should buy: {{ state_attr('sensor.hass_flatmate_shopping_next_buyer', 'recommend
 {{ state_attr('sensor.hass_flatmate_shopping_next_buyer', 'order') | map(attribute='name') | join(' > ') }}
 ```
 
-Possible notes (joined with ` · ` when both apply):
-- `Carolina only moved in 7 days ago` (or `today`, `yesterday`, `3 weeks ago`): a recommended flatmate goes before someone who bought less but moved in recently.
-- `Carolina and Bob only moved in recently`: the same, for several newcomers.
-- `Same amount, so whoever bought longest ago goes first`: equal standing decided who is recommended or in which order.
+Possible notes (full sentences; both appear when both apply):
+- `Carolina only moved in 5 days ago.` (or `today`, `yesterday`, `3 weeks ago`): a recommended flatmate goes before someone who bought less but moved in recently.
+- `Carolina and Bob only moved in recently.`: the same, for several newcomers.
+- `Gianmarco's last purchase was longer ago than Martin's.`: two flatmates have the same standing and that decided who is recommended, or in which order.
+- `Gianmarco, Martin and Andy have the same amount, so whoever bought longest ago goes first.`: the same for three or more (or when someone hasn't bought anything yet).
 
 Each active flatmate also gets a `sensor.hass_flatmate_<person>_moved_in` timestamp sensor (with `person_entity_id` and `from_initial_sync` attributes; for initial-sync flatmates the state is that first sync, not a real move-in date). Home Assistant doesn't let integrations add attributes to `person.*` entities, so this sits next to them.
 

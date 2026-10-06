@@ -337,6 +337,11 @@ def moved_in_at(member: Member, first_member_created_at: datetime | None) -> dat
     return created_at
 
 
+def _calendar_days_since(value: datetime, now: datetime) -> int:
+    # Calendar days, so someone who moved in on the 1st "moved in 5 days ago" on the 6th.
+    return (now.date() - value.date()).days
+
+
 def _days_ago(days: int) -> str:
     if days <= 0:
         return "today"
@@ -411,7 +416,7 @@ def buy_order(
     for index, row in enumerate(rows):
         member = row["member"]
         is_new = row["joined"] is not None and row["days_present"] < window_days
-        days_since_joined = int((now - row["joined"]).total_seconds() // 86400) if row["joined"] else None
+        days_since_joined = _calendar_days_since(row["joined"], now) if row["joined"] else None
 
         if row["balance"] < -0.05:
             standing = f"{-row['balance']:.1f} behind"
@@ -459,14 +464,27 @@ def _recommendation_note(rows: list[dict], now: datetime) -> str:
     ]
     notes = []
     if len(newcomers) == 1:
-        days = int((now - newcomers[0]["joined"]).total_seconds() // 86400)
-        notes.append(f"{newcomers[0]['member'].display_name} only moved in {_days_ago(days)}")
+        days = _calendar_days_since(newcomers[0]["joined"], now)
+        notes.append(f"{newcomers[0]['member'].display_name} only moved in {_days_ago(days)}.")
     elif newcomers:
-        notes.append(f"{_join_names([row['member'].display_name for row in newcomers])} only moved in recently")
-    # A tie that decides who is recommended, or in which order.
-    if any(rows[index]["balance"] == rows[index + 1]["balance"] for index in range(min(RECOMMENDED_COUNT, len(rows) - 1))):
-        notes.append("Same amount, so whoever bought longest ago goes first")
-    return " · ".join(notes)
+        notes.append(f"{_join_names([row['member'].display_name for row in newcomers])} only moved in recently.")
+
+    # A tie that decides who is recommended, or in which order, named so it reads under the chart.
+    for index in range(min(RECOMMENDED_COUNT, len(rows) - 1)):
+        if rows[index]["balance"] != rows[index + 1]["balance"]:
+            continue
+        tied = [rows[index]]
+        for other in rows[index + 1 :]:
+            if other["balance"] != rows[index]["balance"]:
+                break
+            tied.append(other)
+        names = [row["member"].display_name for row in tied]
+        if len(tied) == 2 and all(row["last_purchase"] is not None for row in tied):
+            notes.append(f"{names[0]}'s last purchase was longer ago than {names[1]}'s.")
+        else:
+            notes.append(f"{_join_names(names)} have the same amount, so whoever bought longest ago goes first.")
+        break
+    return " ".join(notes)
 
 
 def as_utc(value: datetime) -> datetime:

@@ -1,5 +1,10 @@
 # Hass Flatmate Integration Changelog
 
+## [0.5.5] - 2026-10-06
+
+### Changed
+- Version alignment release: the next-buyer `note` wording comes from the app (full sentences, tie names the people involved).
+
 ## [0.5.4] - 2026-10-06
 
 ### Fixed
