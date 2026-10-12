@@ -255,6 +255,12 @@ def buy_distribution(session: Session, window_days: int = 90) -> dict:
     cutoff = now_utc() - timedelta(days=window_days)
 
     active_members = get_active_members(session)
+    # Former flatmates still count for the purchases made while they lived here.
+    # Without a known move-out date they're left out entirely.
+    former_members = session.execute(
+        select(Member).where(Member.active.is_(False), Member.moved_out_at.is_not(None))
+    ).scalars().all()
+    sharing_member_ids = {member.id for member in [*active_members, *former_members]}
 
     counts_by_member = {member.id: 0 for member in active_members}
     purchases: list[tuple[int, datetime]] = []
@@ -276,6 +282,7 @@ def buy_distribution(session: Session, window_days: int = 90) -> dict:
             continue
         if member_id in counts_by_member:
             counts_by_member[member_id] += 1
+        if member_id in sharing_member_ids:
             purchases.append((member_id, as_utc(completed_at)))
 
     # All-time, so a tie can still be broken by purchases older than the window.
@@ -309,6 +316,7 @@ def buy_distribution(session: Session, window_days: int = 90) -> dict:
         last_purchase_by_member,
         first_member_created_at=first_member_created_at,
         window_days=window_days,
+        former_members=former_members,
     )
     # Most purchases first; on equal counts the more pressing buyer goes lower, next to the recommendation.
     rank_by_member = {row["member_id"]: row["rank"] for row in recommendation["buy_order"]}
@@ -336,6 +344,8 @@ FOUNDING_MEMBER_GRACE = timedelta(days=1)
 def moved_in_at(member: Member, first_member_created_at: datetime | None) -> datetime | None:
     """When the member joined the flat, or None for members from the initial sync."""
 
+    if member.moved_in_at is not None:
+        return as_utc(member.moved_in_at)
     created_at = as_utc(member.created_at)
     if first_member_created_at is None or created_at <= as_utc(first_member_created_at) + FOUNDING_MEMBER_GRACE:
         return None
@@ -368,14 +378,17 @@ def buy_order(
     *,
     first_member_created_at: datetime | None,
     window_days: int,
+    former_members: list[Member] = (),
 ) -> list[dict]:
     """Rank active members by who should buy next.
 
     ``purchases`` are the window's ``(member_id, completed_at)`` pairs. Each
     purchase is split evenly among the members who lived in the flat when it
     was made, so someone who just moved in owes a share of what was bought since
-    then, but nothing from before. Whoever is furthest below their fair share
-    goes first; on a tie, whoever bought least recently.
+    then, but nothing from before. ``former_members`` (with a move-out date)
+    take part in those splits until they moved out, so moving out doesn't shift
+    anyone else's balance; they aren't ranked. Whoever is furthest below their
+    fair share goes first; on a tie, whoever bought least recently.
 
     Returns ``buy_order`` plus ``buy_order_note``: one short line explaining the
     recommended pair when it would otherwise look unfair, else empty.
@@ -387,6 +400,16 @@ def buy_order(
         counts_by_member[member_id] = counts_by_member.get(member_id, 0) + 1
 
     rows = []
+    sharing = []
+    for member in former_members:
+        sharing.append(
+            {
+                "member": member,
+                "joined": moved_in_at(member, first_member_created_at),
+                "left": as_utc(member.moved_out_at),
+                "fair_share": 0.0,
+            }
+        )
     for member in members:
         joined = moved_in_at(member, first_member_created_at)
         if joined is None:
@@ -401,16 +424,22 @@ def buy_order(
                 "joined": joined,
                 "days_present": days_present,
                 "last_purchase": as_utc(last_purchase) if last_purchase is not None else None,
+                "left": None,
                 "fair_share": 0.0,
             }
         )
+    sharing.extend(rows)
 
     for buyer_id, completed_at in purchases:
-        # The buyer always shares their own purchase, even one imported from before they moved in.
+        # The buyer always shares their own purchase, even one imported from outside their stay.
         present = [
             row
-            for row in rows
-            if row["joined"] is None or row["joined"] <= completed_at or row["member"].id == buyer_id
+            for row in sharing
+            if row["member"].id == buyer_id
+            or (
+                (row["joined"] is None or row["joined"] <= completed_at)
+                and (row["left"] is None or completed_at < row["left"])
+            )
         ]
         for row in present:
             row["fair_share"] += 1 / len(present)

@@ -1,5 +1,10 @@
 # Hass Flatmate Integration Changelog
 
+## [0.6.0] - 2026-10-12
+
+### Added
+- Admin service `hass_flatmate_set_member_tenancy`: set or clear a flatmate's `moved_in` / `moved_out`, by `member_name` or `member_id`. A plain date means local midnight at the start of that day.
+
 ## [0.5.9] - 2026-10-12
 
 ### Changed

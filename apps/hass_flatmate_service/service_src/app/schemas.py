@@ -34,6 +34,15 @@ class MemberResponse(BaseModel):
     created_at: datetime | None = None
     # None for members from the initial sync, whose created_at is the install date.
     moved_in_at: datetime | None = None
+    moved_out_at: datetime | None = None
+
+
+class MemberTenancyRequest(BaseModel):
+    """Only the fields sent are changed; null clears one."""
+
+    moved_in_at: datetime | None = None
+    moved_out_at: datetime | None = None
+    actor_user_id: str | None = None
 
 
 class ShoppingItemCreateRequest(BaseModel):

@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.6.0] - 2026-10-12
+
+### Added
+- Flatmates have move-in and move-out dates. Removing a person from Home Assistant records their move-out. Coming back after more than a day records a new move-in.
+- Admin service `hass_flatmate.hass_flatmate_set_member_tenancy` sets or clears `moved_in` / `moved_out` for a flatmate, by `member_name` or `member_id`.
+- Members API: `moved_out_at`, and `PUT /v1/members/{id}/tenancy`. Snapshots include both dates.
+
+### Changed
+- Former flatmates with a move-out date keep their part of the purchases made while they lived here, so moving out no longer shifts the remaining flatmates' next-buyer balances. Former flatmates without a move-out date are left out, as before.
+
 ## [0.5.9] - 2026-10-12
 
 ### Fixed

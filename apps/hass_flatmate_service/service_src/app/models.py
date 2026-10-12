@@ -67,6 +67,9 @@ class Member(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+    # Set when known; otherwise move-in is derived from created_at (see shopping.moved_in_at).
+    moved_in_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    moved_out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ShoppingItem(Base):

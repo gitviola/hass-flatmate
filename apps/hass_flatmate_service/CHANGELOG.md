@@ -1,5 +1,14 @@
 # Hass Flatmate Service App Changelog
 
+## [0.6.0] - 2026-10-12
+
+### Added
+- `members.moved_in_at` / `members.moved_out_at`, added to existing databases on startup. Sync stamps the move-out on deactivation and a new move-in on a return after more than a day.
+- `PUT /v1/members/{id}/tenancy` sets or clears either date (only the fields sent change). `GET /v1/members` returns `moved_out_at`. Snapshot export/import includes both dates.
+
+### Changed
+- `buy_order` fair shares include former members with a move-out date for the purchases made while they lived here. They aren't ranked.
+
 ## [0.5.9] - 2026-10-12
 
 ### Fixed

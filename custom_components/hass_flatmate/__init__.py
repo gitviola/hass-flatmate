@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import hashlib
 import json
 import logging
@@ -75,6 +75,9 @@ from .const import (
     SERVICE_ATTR_CLEANING_OVERRIDE_ROWS,
     SERVICE_ATTR_DISPATCH_EVENT_ID,
     SERVICE_ATTR_MEMBER_ID,
+    SERVICE_ATTR_MEMBER_NAME,
+    SERVICE_ATTR_MOVED_IN,
+    SERVICE_ATTR_MOVED_OUT,
     SERVICE_ATTR_MEMBER_A_ID,
     SERVICE_ATTR_MEMBER_B_ID,
     SERVICE_ATTR_NAME,
@@ -92,6 +95,7 @@ from .const import (
     SERVICE_MARK_CLEANING_UNDONE,
     SERVICE_MARK_CLEANING_TAKEOVER_DONE,
     SERVICE_RESEND_CLEANING_NOTIFICATION,
+    SERVICE_SET_MEMBER_TENANCY,
     SERVICE_SWAP_CLEANING_WEEK,
     SERVICE_SYNC_MEMBERS,
 )
@@ -763,6 +767,39 @@ def _get_domain_data(hass: HomeAssistant) -> HassFlatmateData:
     return hass.data.setdefault(DOMAIN, HassFlatmateData())
 
 
+def _tenancy_datetime(value: str | None, field_name: str) -> datetime | None:
+    """Parse a move-in/out value; a plain date means local midnight at the start of that day."""
+
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    day = dt_util.parse_date(raw) if len(raw) == 10 else None
+    if day is not None:
+        return dt_util.start_of_local_day(day)
+    parsed = dt_util.parse_datetime(raw)
+    if parsed is None:
+        raise HomeAssistantError(f"{field_name} must be a date (YYYY-MM-DD) or a datetime")
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+    return parsed
+
+
+def _resolve_member_id(runtime: HassFlatmateRuntime, data: dict[str, Any]) -> int:
+    if SERVICE_ATTR_MEMBER_ID in data:
+        return int(data[SERVICE_ATTR_MEMBER_ID])
+    members = (runtime.coordinator.data or {}).get("members", [])
+    name = str(data[SERVICE_ATTR_MEMBER_NAME]).strip().casefold()
+    matches = [row for row in members if str(row.get("display_name", "")).strip().casefold() == name]
+    if not matches:
+        raise HomeAssistantError(f"No flatmate named {data[SERVICE_ATTR_MEMBER_NAME]!r}")
+    if len(matches) > 1:
+        ids = ", ".join(str(row.get("id")) for row in matches)
+        raise HomeAssistantError(
+            f"Several flatmates are named {data[SERVICE_ATTR_MEMBER_NAME]!r}; use member_id ({ids})"
+        )
+    return int(matches[0]["id"])
+
+
 def _get_primary_runtime(hass: HomeAssistant) -> HassFlatmateRuntime:
     data = _get_domain_data(hass)
     if not data.entries:
@@ -1188,6 +1225,26 @@ async def _register_services(hass: HomeAssistant) -> None:
             "purchases": purchases,
         }
 
+    async def set_member_tenancy(call: ServiceCall) -> None:
+        runtime = _get_primary_runtime(hass)
+        changes = {
+            api_field: _tenancy_datetime(call.data[service_field], service_field)
+            for service_field, api_field in (
+                (SERVICE_ATTR_MOVED_IN, "moved_in_at"),
+                (SERVICE_ATTR_MOVED_OUT, "moved_out_at"),
+            )
+            if service_field in call.data
+        }
+        try:
+            await runtime.api.set_member_tenancy(
+                member_id=_resolve_member_id(runtime, dict(call.data)),
+                changes=changes,
+                actor_user_id=call.context.user_id,
+            )
+        except HassFlatmateApiError as exc:
+            raise HomeAssistantError(str(exc)) from exc
+        _schedule_refresh_and_process_activity(hass, runtime)
+
     async def import_manual_data(call: ServiceCall) -> None:
         runtime = _get_primary_runtime(hass)
         try:
@@ -1287,6 +1344,24 @@ async def _register_services(hass: HomeAssistant) -> None:
         get_member_purchases,
         schema=vol.Schema({vol.Required(SERVICE_ATTR_MEMBER_ID): cv.positive_int}),
         supports_response=SupportsResponse.ONLY,
+    )
+    async_register_admin_service(
+        hass,
+        DOMAIN,
+        SERVICE_SET_MEMBER_TENANCY,
+        set_member_tenancy,
+        schema=vol.All(
+            vol.Schema(
+                {
+                    vol.Exclusive(SERVICE_ATTR_MEMBER_ID, "member"): cv.positive_int,
+                    vol.Exclusive(SERVICE_ATTR_MEMBER_NAME, "member"): cv.string,
+                    # Empty clears the date; left out keeps it.
+                    vol.Optional(SERVICE_ATTR_MOVED_IN): vol.Any(None, cv.string),
+                    vol.Optional(SERVICE_ATTR_MOVED_OUT): vol.Any(None, cv.string),
+                }
+            ),
+            cv.has_at_least_one_key(SERVICE_ATTR_MEMBER_ID, SERVICE_ATTR_MEMBER_NAME),
+        ),
     )
     async_register_admin_service(
         hass,

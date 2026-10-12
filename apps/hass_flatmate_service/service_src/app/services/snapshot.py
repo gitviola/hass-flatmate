@@ -100,6 +100,8 @@ def export_snapshot(session: Session) -> dict[str, Any]:
                 "active",
                 "created_at",
                 "updated_at",
+                "moved_in_at",
+                "moved_out_at",
             ],
         ),
         "rotation_config": None,
@@ -281,6 +283,16 @@ def import_snapshot(
                 updated_at=_parse_datetime(
                     row.get("updated_at") or now_utc().isoformat(),
                     field_name="members.updated_at",
+                ),
+                moved_in_at=(
+                    _parse_datetime(row["moved_in_at"], field_name="members.moved_in_at")
+                    if row.get("moved_in_at")
+                    else None
+                ),
+                moved_out_at=(
+                    _parse_datetime(row["moved_out_at"], field_name="members.moved_out_at")
+                    if row.get("moved_out_at")
+                    else None
                 ),
             )
         )

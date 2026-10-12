@@ -163,6 +163,19 @@ How it's fair: each purchase of the last 90 days is split evenly among the flatm
 
 The move-in date is when the person was first synced from Home Assistant (the sync automation runs regularly, so that's within minutes of adding them). Flatmates from the very first sync count as living here for the whole window.
 
+The move-out date is recorded when a person is removed from Home Assistant. A former flatmate keeps their part of the purchases made while they lived here, so moving out doesn't shift anyone else's balance. They just aren't recommended any more. If they come back after more than a day, that counts as a new move-in.
+
+To set or correct the dates, admins can call `hass_flatmate.hass_flatmate_set_member_tenancy`. A plain date means midnight at the start of that day. Leave a field out to keep it, send it empty to clear it:
+
+```yaml
+action: hass_flatmate.hass_flatmate_set_member_tenancy
+data:
+  member_name: Emilie
+  moved_out: "2026-10-01"
+```
+
+Former flatmates removed before move-out dates existed (0.6.0) have none, and are left out of the fair shares entirely until one is set.
+
 Attributes, so templates can shape the data for other tools:
 
 | Attribute | Example |

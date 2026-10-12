@@ -2,11 +2,39 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import Member
 from ..schemas import MemberSyncItem
+from .time_utils import now_utc
+
+# Someone re-added within this long after being removed never really moved out
+# (e.g. their HA person was edited), so they keep their original move-in.
+BRIEF_ABSENCE = timedelta(days=1)
+
+
+def _as_utc(value: datetime) -> datetime:
+    # SQLite drops the offset; stored timestamps are UTC.
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+def _set_active(member: Member, active: bool, now: datetime) -> None:
+    """Record move-out on deactivation and a new move-in on a real return."""
+
+    if bool(member.active) == active:
+        return
+    member.active = active
+    if not active:
+        if member.moved_out_at is None:
+            member.moved_out_at = now
+        return
+    if member.moved_out_at is not None:
+        if now - _as_utc(member.moved_out_at) > BRIEF_ABSENCE:
+            member.moved_in_at = now
+        member.moved_out_at = None
 
 
 def sync_members(session: Session, items: list[MemberSyncItem]) -> tuple[list[Member], list[int]]:
@@ -19,6 +47,7 @@ def sync_members(session: Session, items: list[MemberSyncItem]) -> tuple[list[Me
 
     seen_user_ids: set[str] = set()
     deactivated_member_ids: set[int] = set()
+    now = now_utc()
 
     for item in items:
         notify_services = [str(value) for value in item.notify_services if str(value)]
@@ -42,7 +71,7 @@ def sync_members(session: Session, items: list[MemberSyncItem]) -> tuple[list[Me
             member.notify_service = item.notify_service
             member.notify_services = notify_services
             member.device_trackers = device_trackers
-            member.active = item.active
+            _set_active(member, item.active, now)
             if was_active and not member.active:
                 deactivated_member_ids.add(member.id)
 
@@ -52,13 +81,27 @@ def sync_members(session: Session, items: list[MemberSyncItem]) -> tuple[list[Me
     for member in existing.values():
         if member.ha_user_id and member.ha_user_id not in seen_user_ids:
             if member.active:
-                member.active = False
+                _set_active(member, False, now)
                 deactivated_member_ids.add(member.id)
 
     session.commit()
 
     rows = session.execute(select(Member).order_by(Member.display_name.asc())).scalars().all()
     return rows, sorted(deactivated_member_ids)
+
+
+def set_tenancy(session: Session, member: Member, changes: dict[str, datetime | None]) -> Member:
+    """Set or clear ``moved_in_at`` / ``moved_out_at``; keys left out stay unchanged."""
+
+    moved_in_at = changes.get("moved_in_at", member.moved_in_at)
+    moved_out_at = changes.get("moved_out_at", member.moved_out_at)
+    if moved_out_at is not None and member.active:
+        raise ValueError("Only a flatmate who is no longer active can have a move-out date")
+    if moved_in_at is not None and moved_out_at is not None and _as_utc(moved_out_at) <= _as_utc(moved_in_at):
+        raise ValueError("moved_out_at must be after moved_in_at")
+    member.moved_in_at = _as_utc(moved_in_at) if moved_in_at is not None else None
+    member.moved_out_at = _as_utc(moved_out_at) if moved_out_at is not None else None
+    return member
 
 
 def resolve_actor_member(session: Session, actor_user_id: str | None) -> Member | None:

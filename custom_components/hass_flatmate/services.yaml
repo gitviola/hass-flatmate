@@ -155,6 +155,33 @@ hass_flatmate_resend_cleaning_notification:
           min: 1
           mode: box
 
+hass_flatmate_set_member_tenancy:
+  name: Set member move-in / move-out
+  description: Admin only. Set when a flatmate moved in or out. Former flatmates with a move-out date keep their part of the purchases made while they lived here, so moving out doesn't shift anyone else's next-buyer balance. A date means midnight at the start of that day. Leave a field out to keep it, send it empty to clear it.
+  fields:
+    member_name:
+      required: false
+      example: Emilie
+      selector:
+        text:
+    member_id:
+      required: false
+      example: 7
+      selector:
+        number:
+          min: 1
+          mode: box
+    moved_in:
+      required: false
+      example: "2026-03-01"
+      selector:
+        text:
+    moved_out:
+      required: false
+      example: "2026-10-01"
+      selector:
+        text:
+
 hass_flatmate_sync_members:
   name: Sync members
   description: Sync Home Assistant users/persons into hass-flatmate members (deactivates departed members and auto-cancels impacted planned overrides).

@@ -124,6 +124,23 @@ class HassFlatmateApiClient:
             params={"window_days": window_days},
         )
 
+    async def set_member_tenancy(
+        self,
+        *,
+        member_id: int,
+        changes: dict[str, datetime | None],
+        actor_user_id: str | None,
+    ) -> dict[str, Any]:
+        # Only the keys in ``changes`` are sent; None clears that date.
+        return await self._request(
+            "PUT",
+            f"/v1/members/{member_id}/tenancy",
+            json={
+                **{key: value.isoformat() if value else None for key, value in changes.items()},
+                "actor_user_id": actor_user_id,
+            },
+        )
+
     async def get_buy_stats_svg(self, *, window_days: int = 90) -> str:
         return await self._request("GET", "/v1/stats/buys.svg", params={"window_days": window_days})
 

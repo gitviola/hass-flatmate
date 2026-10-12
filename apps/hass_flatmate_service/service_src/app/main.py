@@ -8,7 +8,7 @@ import json
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import HTMLResponse, PlainTextResponse
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from . import db
@@ -40,6 +40,7 @@ from .schemas import (
     ManualImportResponse,
     FavoritesResponse,
     MemberResponse,
+    MemberTenancyRequest,
     MembersSyncResponse,
     MembersSyncRequest,
     OperationResponse,
@@ -53,8 +54,8 @@ from .schemas import (
     SnapshotImportResponse,
 )
 from .services import cleaning, importer, shopping, snapshot
-from .services.activity import list_events
-from .services.members import sync_members
+from .services.activity import list_events, log_event
+from .services.members import resolve_actor_member, set_tenancy, sync_members
 from .services.time_utils import parse_timezone, use_timezone
 from .settings import settings
 
@@ -81,6 +82,10 @@ async def lifespan(_app: FastAPI):
             conn.execute(text("ALTER TABLE members ADD COLUMN notify_services JSON DEFAULT '[]'"))
         if "device_trackers" not in member_columns:
             conn.execute(text("ALTER TABLE members ADD COLUMN device_trackers JSON DEFAULT '[]'"))
+        if "moved_in_at" not in member_columns:
+            conn.execute(text("ALTER TABLE members ADD COLUMN moved_in_at DATETIME DEFAULT NULL"))
+        if "moved_out_at" not in member_columns:
+            conn.execute(text("ALTER TABLE members ADD COLUMN moved_out_at DATETIME DEFAULT NULL"))
 
     yield
 
@@ -665,25 +670,69 @@ def ingress_migration_ui() -> str:
     return ui_html.replace("__API_TOKEN__", json.dumps(settings.api_token))
 
 
+def _member_response(row: Member, first_member_created_at) -> MemberResponse:
+    return MemberResponse(
+        id=row.id,
+        display_name=row.display_name,
+        ha_user_id=row.ha_user_id,
+        ha_person_entity_id=row.ha_person_entity_id,
+        notify_service=row.notify_service,
+        notify_services=list(row.notify_services or []),
+        device_trackers=list(row.device_trackers or []),
+        active=row.active,
+        created_at=shopping.as_utc(row.created_at),
+        moved_in_at=shopping.moved_in_at(row, first_member_created_at),
+        moved_out_at=shopping.as_utc(row.moved_out_at) if row.moved_out_at else None,
+    )
+
+
+def _first_member_created_at(session: Session):
+    return session.execute(select(func.min(Member.created_at))).scalar_one_or_none()
+
+
 @app.get("/v1/members", response_model=list[MemberResponse], dependencies=[Depends(require_token)])
 def get_members(session: Session = Depends(get_session)) -> list[MemberResponse]:
     rows = session.execute(select(Member).order_by(Member.display_name.asc())).scalars().all()
     first_member_created_at = min((row.created_at for row in rows), default=None)
-    return [
-        MemberResponse(
-            id=row.id,
-            display_name=row.display_name,
-            ha_user_id=row.ha_user_id,
-            ha_person_entity_id=row.ha_person_entity_id,
-            notify_service=row.notify_service,
-            notify_services=list(row.notify_services or []),
-            device_trackers=list(row.device_trackers or []),
-            active=row.active,
-            created_at=shopping.as_utc(row.created_at),
-            moved_in_at=shopping.moved_in_at(row, first_member_created_at),
-        )
-        for row in rows
-    ]
+    return [_member_response(row, first_member_created_at) for row in rows]
+
+
+@app.put(
+    "/v1/members/{member_id}/tenancy",
+    response_model=MemberResponse,
+    dependencies=[Depends(require_token)],
+)
+def put_member_tenancy(
+    member_id: int,
+    payload: MemberTenancyRequest,
+    session: Session = Depends(get_session),
+) -> MemberResponse:
+    member = session.get(Member, member_id)
+    if member is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found")
+    changes = {
+        field: getattr(payload, field)
+        for field in ("moved_in_at", "moved_out_at")
+        if field in payload.model_fields_set
+    }
+    try:
+        set_tenancy(session, member, changes)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    actor_member = resolve_actor_member(session, payload.actor_user_id)
+    log_event(
+        session,
+        domain="members",
+        action="member_tenancy_updated",
+        actor_member_id=actor_member.id if actor_member else None,
+        actor_user_id_raw=payload.actor_user_id,
+        payload={
+            "member_id": member.id,
+            **{field: value.isoformat() if value else None for field, value in changes.items()},
+        },
+    )
+    session.commit()
+    return _member_response(member, _first_member_created_at(session))
 
 
 @app.put("/v1/members/sync", response_model=MembersSyncResponse, dependencies=[Depends(require_token)])
