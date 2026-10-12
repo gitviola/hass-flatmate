@@ -257,9 +257,10 @@ def buy_distribution(session: Session, window_days: int = 90) -> dict:
     active_members = get_active_members(session)
 
     counts_by_member = {member.id: 0 for member in active_members}
+    purchases: list[tuple[int, datetime]] = []
 
     completed_rows = session.execute(
-        select(ShoppingItem.completed_by_member_id)
+        select(ShoppingItem.completed_by_member_id, ShoppingItem.completed_at)
         .where(
             ShoppingItem.status == ShoppingStatus.COMPLETED,
             ShoppingItem.completed_at.is_not(None),
@@ -269,12 +270,13 @@ def buy_distribution(session: Session, window_days: int = 90) -> dict:
 
     total_completed = len(completed_rows)
     unknown_excluded_count = 0
-    for (member_id,) in completed_rows:
+    for member_id, completed_at in completed_rows:
         if member_id is None:
             unknown_excluded_count += 1
             continue
         if member_id in counts_by_member:
             counts_by_member[member_id] += 1
+            purchases.append((member_id, as_utc(completed_at)))
 
     # All-time, so a tie can still be broken by purchases older than the window.
     last_purchase_by_member = dict(
@@ -303,7 +305,7 @@ def buy_distribution(session: Session, window_days: int = 90) -> dict:
 
     recommendation = buy_order(
         active_members,
-        counts_by_member,
+        purchases,
         last_purchase_by_member,
         first_member_created_at=first_member_created_at,
         window_days=window_days,
@@ -361,7 +363,7 @@ def _join_names(names: list[str]) -> str:
 
 def buy_order(
     members: list[Member],
-    counts_by_member: dict[int, int],
+    purchases: list[tuple[int, datetime]],
     last_purchase_by_member: dict[int, datetime],
     *,
     first_member_created_at: datetime | None,
@@ -369,17 +371,20 @@ def buy_order(
 ) -> list[dict]:
     """Rank active members by who should buy next.
 
-    The purchases in the window are split into fair shares by how many of the
-    window's days each member lived in the flat, so someone who just moved in
-    isn't pushed to the front for having bought nothing yet. Whoever is furthest
-    below their fair share goes first; on a tie, whoever bought least recently.
+    ``purchases`` are the window's ``(member_id, completed_at)`` pairs. Each
+    purchase is split evenly among the members who lived in the flat when it
+    was made, so someone who just moved in owes a share of what was bought since
+    then, but nothing from before. Whoever is furthest below their fair share
+    goes first; on a tie, whoever bought least recently.
 
     Returns ``buy_order`` plus ``buy_order_note``: one short line explaining the
     recommended pair when it would otherwise look unfair, else empty.
     """
 
     now = now_utc()
-    total = sum(counts_by_member.get(member.id, 0) for member in members)
+    counts_by_member: dict[int, int] = {}
+    for member_id, _ in purchases:
+        counts_by_member[member_id] = counts_by_member.get(member_id, 0) + 1
 
     rows = []
     for member in members:
@@ -396,12 +401,21 @@ def buy_order(
                 "joined": joined,
                 "days_present": days_present,
                 "last_purchase": as_utc(last_purchase) if last_purchase is not None else None,
+                "fair_share": 0.0,
             }
         )
 
-    present_total = sum(row["days_present"] for row in rows)
+    for buyer_id, completed_at in purchases:
+        # The buyer always shares their own purchase, even one imported from before they moved in.
+        present = [
+            row
+            for row in rows
+            if row["joined"] is None or row["joined"] <= completed_at or row["member"].id == buyer_id
+        ]
+        for row in present:
+            row["fair_share"] += 1 / len(present)
+
     for row in rows:
-        row["fair_share"] = total * row["days_present"] / present_total if present_total else 0.0
         # Rounded so float noise can't split a real tie.
         row["balance"] = round(row["count"] - row["fair_share"], 6)
 

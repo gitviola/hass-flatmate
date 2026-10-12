@@ -62,9 +62,9 @@ def test_new_member_is_not_pushed_to_front(client, auth_headers) -> None:
     assert [row["name"] for row in order] == ["Andy", "Carolina", "Martin", "Michelle"]
 
     andy, carolina = order[0], order[1]
-    # 14 purchases over 3x90 + 7 present days
-    assert andy["fair_share"] == round(14 * 90 / 277, 2)
-    assert carolina["fair_share"] == round(14 * 7 / 277, 2)
+    # All 14 purchases were made before Carolina moved in.
+    assert andy["fair_share"] == round(14 / 3, 2)
+    assert carolina["fair_share"] == 0
     assert carolina["new_member"] is True and carolina["days_present"] == 7
     assert andy["new_member"] is False and andy["moved_in_at"] is None
     assert andy["person_entity_id"] == "person.andy"
@@ -146,7 +146,7 @@ def test_two_way_tie_names_who_bought_longer_ago(client, auth_headers) -> None:
 
 
 def test_several_newcomers_are_summarised(client, auth_headers) -> None:
-    _setup(client, auth_headers, [(10, "Andy")] + [(10, "Martin")] * 10)
+    _setup(client, auth_headers, [(25, "Andy")] + [(25, "Martin")] * 10 + [(10, "Andy")])
     _set_created_days_ago("Michelle", 20)
 
     stats = _stats(client, auth_headers)
@@ -155,9 +155,36 @@ def test_several_newcomers_are_summarised(client, auth_headers) -> None:
 
 
 def test_newcomer_note_uses_weeks(client, auth_headers) -> None:
-    _setup(client, auth_headers, [(10, "Andy"), (10, "Martin"), (11, "Martin")] + [(10, "Michelle")] * 3)
+    _setup(client, auth_headers, [(25, "Andy")] + [(25, "Martin")] * 2 + [(25, "Michelle")] * 4)
     _set_created_days_ago("Carolina", 21)
     assert _stats(client, auth_headers)["buy_order_note"] == "Carolina only moved in 3 weeks ago."
+
+
+def _import(client, headers, purchases: list[tuple[int, str]]) -> None:
+    today = date.today()
+    rows = "\n".join(f"{(today - timedelta(days=days)).isoformat()},Item,{name}" for days, name in purchases)
+    response = client.post("/v1/import/manual", headers=headers, json={"shopping_history_rows": rows})
+    assert response.status_code == 200, response.text
+
+
+def test_newcomer_shares_every_purchase_made_since_moving_in(client, auth_headers) -> None:
+    # Before Carolina: 10 purchases between three. Since she moved in a week ago: 4 between four.
+    _setup(client, auth_headers, [(40, "Andy")] * 3 + [(40, "Martin")] * 3 + [(40, "Michelle")] * 4)
+    _import(client, auth_headers, [(5, "Michelle")] * 2 + [(5, "Martin")] * 2)
+
+    order = _order(client, auth_headers)
+    assert [row["name"] for row in order[:2]] == ["Andy", "Carolina"]
+    assert next(row for row in order if row["name"] == "Carolina")["fair_share"] == 1.0
+
+    # Andy catches up; Carolina lived here for those purchases too, so she stays recommended.
+    _import(client, auth_headers, [(2, "Andy")] * 2)
+    order = _order(client, auth_headers)
+    assert [(row["name"], row["fair_share"], row["balance"]) for row in order] == [
+        ("Carolina", 1.5, -1.5),
+        ("Martin", 4.83, 0.17),
+        ("Andy", 4.83, 0.17),
+        ("Michelle", 4.83, 1.17),
+    ]
 
 
 def test_members_expose_move_in(client, auth_headers) -> None:

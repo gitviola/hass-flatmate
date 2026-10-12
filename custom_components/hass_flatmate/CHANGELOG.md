@@ -1,5 +1,10 @@
 # Hass Flatmate Integration Changelog
 
+## [0.5.9] - 2026-10-12
+
+### Changed
+- Next-buyer `method` text: each purchase is split among the flatmates who lived in the flat when it was bought.
+
 ## [0.5.8] - 2026-10-12
 
 ### Fixed

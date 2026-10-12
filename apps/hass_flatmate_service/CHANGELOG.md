@@ -1,5 +1,10 @@
 # Hass Flatmate Service App Changelog
 
+## [0.5.9] - 2026-10-12
+
+### Fixed
+- `buy_order` fair shares split each purchase among the members who lived in the flat when it was made, instead of splitting the 90-day total by days lived in the flat.
+
 ## [0.5.8] - 2026-10-12
 
 ### Fixed

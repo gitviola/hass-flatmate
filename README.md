@@ -159,7 +159,7 @@ layout: compact
 
 `sensor.hass_flatmate_shopping_next_buyer` recommends the two flatmates who should buy next, most pressing first (state: `Andy, Carolina`).
 
-How it's fair: the purchases of the last 90 days are split into fair shares by how many of those days each flatmate lived in the flat. The two furthest below their fair share are recommended, most behind first, so someone who moved in last week isn't pushed to the front for having bought nothing yet. On a tie, whoever bought longest ago goes first.
+How it's fair: each purchase of the last 90 days is split evenly among the flatmates who lived in the flat when it was bought, which adds up to everyone's fair share. The two furthest below their fair share are recommended, most behind first. Someone who moved in last week owes a share of what was bought since then, but nothing from before. On a tie, whoever bought longest ago goes first.
 
 The move-in date is when the person was first synced from Home Assistant (the sync automation runs regularly, so that's within minutes of adding them). Flatmates from the very first sync count as living here for the whole window.
 

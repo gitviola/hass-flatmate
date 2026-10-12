@@ -675,8 +675,8 @@ class ShoppingNextBuyerSensor(HassFlatmateCoordinatorEntity, SensorEntity):
             ),
             "window_days": window_days,
             "method": (
-                f"Purchases from the last {window_days} days are split into fair shares by how many of "
-                "those days each flatmate lived here. The two furthest below their fair share are "
+                f"Each purchase from the last {window_days} days is split evenly among the flatmates "
+                "who lived here when it was bought. The two furthest below their fair share are "
                 "recommended, most behind first; on a tie, whoever bought longest ago."
             ),
         }

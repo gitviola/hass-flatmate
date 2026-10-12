@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.9] - 2026-10-12
+
+### Fixed
+- Next-buyer fair shares split each purchase evenly among the flatmates who lived in the flat when it was bought. Before, the 90-day total was split by days lived in the flat, so purchases made after someone moved in barely raised their share. Example: someone who moved in 11 days ago owed only 0.7 of the 6 purchases made since then, and fell out of the recommendation when someone else bought.
+- The next-buyer `method` text and README describe the new calculation.
+
 ## [0.5.8] - 2026-10-12
 
 ### Fixed
