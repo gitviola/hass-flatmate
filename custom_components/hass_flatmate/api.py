@@ -15,10 +15,19 @@ class HassFlatmateApiError(Exception):
 class HassFlatmateApiClient:
     """Async client for communicating with hass-flatmate add-on service."""
 
-    def __init__(self, session: ClientSession, base_url: str, api_token: str) -> None:
+    def __init__(
+        self,
+        session: ClientSession,
+        base_url: str,
+        api_token: str,
+        time_zone: str | None = None,
+    ) -> None:
         self._session = session
         self._base_url = base_url.rstrip("/")
         self._headers = {"x-flatmate-token": api_token}
+        if time_zone:
+            # The backend starts new weeks/days at HA's local midnight.
+            self._headers["x-flatmate-timezone"] = time_zone
 
     async def _request(
         self,

@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 import json
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -55,6 +55,7 @@ from .schemas import (
 from .services import cleaning, importer, shopping, snapshot
 from .services.activity import list_events
 from .services.members import sync_members
+from .services.time_utils import parse_timezone, use_timezone
 from .settings import settings
 
 
@@ -85,6 +86,13 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="hass-flatmate-service", version="0.1.50", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def home_assistant_timezone(request: Request, call_next):
+    # Week and day boundaries follow HA's local midnight, not UTC.
+    with use_timezone(parse_timezone(request.headers.get("x-flatmate-timezone"))):
+        return await call_next(request)
 
 
 def require_token(x_flatmate_token: str | None = Header(default=None)) -> None:

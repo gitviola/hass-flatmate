@@ -1635,6 +1635,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         session,
         base_url=resolved_base_url,
         api_token=entry.data[CONF_API_TOKEN],
+        time_zone=hass.config.time_zone,
     )
 
     coordinator = HassFlatmateCoordinator(

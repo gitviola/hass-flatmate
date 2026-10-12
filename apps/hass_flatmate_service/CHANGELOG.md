@@ -1,5 +1,11 @@
 # Hass Flatmate Service App Changelog
 
+## [0.5.8] - 2026-10-12
+
+### Fixed
+- The current cleaning week, rotation and schedule follow Home Assistant's time zone (`X-Flatmate-Timezone` header, else `HASS_FLATMATE_TIMEZONE`/`TZ`) instead of UTC, so the new week starts at local midnight, including across daylight saving time changes.
+- "Moved in N days ago" counts local calendar days.
+
 ## [0.5.7] - 2026-10-06
 
 ### Added

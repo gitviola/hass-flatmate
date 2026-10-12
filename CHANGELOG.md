@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.8] - 2026-10-12
+
+### Fixed
+- The cleaning week now changes at midnight on Monday in Home Assistant's time zone, not at midnight UTC. Before, sensors, cards, the calendar and dashboards built on them (e.g. the TRMNL fridge display) showed last week's cleaner until 02:00 in summer and 01:00 in winter, in Central European time. Daylight saving time is handled.
+- "Moved in N days ago" counts calendar days in the local time zone.
+- Notification times are unchanged: Monday 11:00 and Sunday 11:00/18:00/21:00 local time, sent to the person cleaning that week.
+
+### Changed
+- The integration sends HA's time zone to the backend in an `X-Flatmate-Timezone` header. Without it the backend uses `HASS_FLATMATE_TIMEZONE` or `TZ`, then UTC.
+
 ## [0.5.7] - 2026-10-06
 
 ### Added

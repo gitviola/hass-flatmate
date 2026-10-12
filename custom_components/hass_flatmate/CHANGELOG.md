@@ -1,5 +1,10 @@
 # Hass Flatmate Integration Changelog
 
+## [0.5.8] - 2026-10-12
+
+### Fixed
+- The backend gets HA's configured time zone with every request, so the cleaning sensors switch to the new week at local midnight on Monday instead of 01:00/02:00.
+
 ## [0.5.7] - 2026-10-06
 
 ### Added

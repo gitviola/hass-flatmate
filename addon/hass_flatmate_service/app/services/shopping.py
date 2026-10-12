@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from ..models import Member, ShoppingFavorite, ShoppingItem, ShoppingStatus
 from ..services.activity import log_event
 from ..services.members import get_active_members, resolve_actor_member
-from ..services.time_utils import now_utc
+from ..services.time_utils import local_date, now_utc
 
 
 def list_items(session: Session) -> list[ShoppingItem]:
@@ -342,7 +342,7 @@ def moved_in_at(member: Member, first_member_created_at: datetime | None) -> dat
 
 def _calendar_days_since(value: datetime, now: datetime) -> int:
     # Calendar days, so someone who moved in on the 1st "moved in 5 days ago" on the 6th.
-    return (now.date() - value.date()).days
+    return (local_date(now) - local_date(value)).days
 
 
 def _days_ago(days: int) -> str:

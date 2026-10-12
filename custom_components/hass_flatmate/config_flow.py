@@ -34,6 +34,7 @@ class HassFlatmateConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 async_get_clientsession(self.hass),
                 user_input[CONF_BASE_URL],
                 user_input[CONF_API_TOKEN],
+                time_zone=self.hass.config.time_zone,
             )
             try:
                 await api.health()

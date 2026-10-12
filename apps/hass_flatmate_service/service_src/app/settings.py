@@ -31,6 +31,12 @@ class Settings:
         return os.environ.get("HASS_FLATMATE_API_TOKEN", "dev-token")
 
     @property
+    def timezone(self) -> str | None:
+        # Fallback when the integration doesn't send X-Flatmate-Timezone.
+        # The HA Supervisor sets TZ for apps.
+        return os.environ.get("HASS_FLATMATE_TIMEZONE") or os.environ.get("TZ")
+
+    @property
     def db_url(self) -> str:
         return f"sqlite:///{self.db_path}"
 

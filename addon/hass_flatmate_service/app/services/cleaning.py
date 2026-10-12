@@ -105,7 +105,7 @@ def sync_rotation_members(session: Session) -> RotationConfig:
     if not config.ordered_member_ids_json:
         active_ids = [m.id for m in get_active_members(session)]
         config.ordered_member_ids_json = active_ids
-        config.anchor_week_start = monday_for(now_utc().date())
+        config.anchor_week_start = week_start_for(now_utc())
         session.commit()
         return config
 
@@ -118,7 +118,7 @@ def sync_rotation_members(session: Session) -> RotationConfig:
         changed = True
 
     if config.anchor_week_start is None:
-        config.anchor_week_start = monday_for(now_utc().date())
+        config.anchor_week_start = week_start_for(now_utc())
         changed = True
 
     if changed:
